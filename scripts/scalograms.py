@@ -11,7 +11,7 @@ import torch
 import numpy as np
 import ptwt
 import matplotlib.pyplot as plt
-import spectograms as sp
+import src.spectograms as sp
 
 import tikzplotlib as tikz
 from pathlib import Path

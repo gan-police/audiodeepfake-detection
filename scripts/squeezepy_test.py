@@ -7,7 +7,7 @@ See also: https://github.com/OverLordGoldDragon/ssqueezepy
 
 import matplotlib.pyplot as plt
 from ssqueezepy import ssq_cwt, ssq_stft, cwt, stft
-import spectograms as sp
+import src.spectograms as sp
 import librosa
 
 
