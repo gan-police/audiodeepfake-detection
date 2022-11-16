@@ -53,5 +53,5 @@ def format(session):
     """Fix common convention problems automatically."""
     session.install("black")
     session.install("isort")
-    session.run("isort", "src", "tests", "noxfile.py")
-    session.run("black", "src", "tests", "noxfile.py")
+    session.run("isort", "src", "scripts", "noxfile.py")
+    session.run("black", "src", "scripts", "noxfile.py")
