@@ -4,7 +4,7 @@ For generating scalograms of ssq_cwt of audio samples generated with different D
 
 See also: https://github.com/OverLordGoldDragon/ssqueezepy
 """
-
+import numpy as np
 import matplotlib.pyplot as plt
 from ssqueezepy import ssq_cwt, ssq_stft, cwt, stft
 import spectograms as sp
@@ -18,7 +18,8 @@ def cwt_plot(sig, title):
     # ssqueezepy.wavs()
     # {'hhhat', 'gmw', 'morlet', 'bump', 'cmhat'}
     coeffs, Wx, *_ = ssq_cwt(signal, wavelet="bump")
-    #Tsxo, Sxo, *_ = ssq_stft(signal)
+    # coeffs, Sxo, *_ = ssq_stft(signal)
+    #coeffs = np.flipud(coeffs)
 
     fig, ax = plt.subplots(1)
     ax.set_title(title)

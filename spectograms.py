@@ -207,7 +207,7 @@ def plot_spectrogram(spec: torch.Tensor, max_frame: int, start_frame: int = 0, e
     else:
         fig_width, fig_height = None, None
 
-    plt.show(block=False)
+    #plt.show(block=False)
     tikz.save(f"standalone_plots/stft/{fig_name}-spectrogram.tex", encoding="utf-8",
               standalone=True, axis_width=fig_width, axis_height=fig_height)
 
