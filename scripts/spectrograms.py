@@ -10,14 +10,13 @@ Deep Learning methods and architectures that already exist, e.g. MelGAN, Waveglo
 import os
 import sys
 
-import numpy as np
-
 DEBUG = True
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 if DEBUG:
     # Set python path automatically to base directory
     sys.path.append(BASE_PATH)
+
 import src.util as util
 
 if __name__ == "__main__":
@@ -54,16 +53,22 @@ if __name__ == "__main__":
     ]
 
     from_frame = 0
-    to_frame = 50000
-    wavelet = "shan0.5-15.0"
-    scales = np.arange(1, 256)
+    to_frame = -1  # -1 for last
 
+    n_fft = 1024  # Frank et al. use 256 in statistics.py...
+
+    rect_plot = False
+
+    print("Plotting Spectrograms of LJ008 0217.wav")
     for i in range(len(audios)):
-        util.plot_scalogram(
-            util.get_np_signal(f"{data_base_dir}/{audios[i]}", from_frame, to_frame),
-            scales,
-            wavelet,
-            titles[i],
-            fig_names[i],
-            False,
+        path = f"{data_base_dir}/{audios[i]}"
+        spec, frames = util.compute_spectogram(path, from_frame, to_frame, n_fft)
+        util.plot_spectrogram(
+            spec,
+            frames,
+            from_frame,
+            to_frame,
+            title=titles[i],
+            fig_name=fig_names[i],
+            rect_plot=rect_plot,
         )

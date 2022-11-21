@@ -1,19 +1,21 @@
 """This module implements our CI function calls.
+
+Run with 'nox -r -v -s name'.
 See also: https://nox.thea.codes/en/stable/
 """
 import nox
 
-# Evt: Test pipeline aufsetzen. 
-#@nox.session(name="test")
-#def run_test(session):
-#    """Run pytest."""
-#    session.install("-r", "requirements.txt")
-#    session.install("pytest")
-#    session.run("pytest")
 
-# TODO: Requirements.txt anlegen.
+@nox.session(name="test")
+def run_test(session) -> None:
+    """Run tests."""
+    session.install("-r", "requirements.txt")
+    session.install("pytest")
+    session.run("pytest", "tests")
+
+
 @nox.session(name="lint")
-def lint(session):
+def lint(session) -> None:
     """Check code conventions."""
     session.install("flake8==4.0.1")
     session.install(
@@ -31,7 +33,7 @@ def lint(session):
 
 
 @nox.session(name="typing")
-def mypy(session):
+def mypy(session) -> None:
     """Check type hints."""
     session.install("-r", "requirements.txt")
     session.install("mypy")
@@ -40,8 +42,8 @@ def mypy(session):
         "--install-types",
         "--non-interactive",
         "--ignore-missing-imports",
-        "--no-strict-optional",
-        "--no-warn-return-any",
+        # "--no-strict-optional",
+        # "--no-warn-return-any",
         "--implicit-reexport",
         "--allow-untyped-calls",
         "src",
@@ -49,7 +51,7 @@ def mypy(session):
 
 
 @nox.session(name="format")
-def format(session):
+def format(session) -> None:
     """Fix common convention problems automatically."""
     session.install("black")
     session.install("isort")

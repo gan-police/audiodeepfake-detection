@@ -3,4 +3,7 @@ librosa
 torch
 numpy
 ptwt
+pywavelets
 matplotlib
+torchaudio
+tikzplotlib
