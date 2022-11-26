@@ -8,8 +8,6 @@ import os
 import sys
 
 import librosa
-
-# import numpy as np
 import matplotlib.pyplot as plt
 import ssqueezepy
 
@@ -26,7 +24,7 @@ import src.util as sp
 def cwt_plot(sig, title) -> None:
     """Plot SSQ_CWT of given signal."""
     signal, t = sig
-    # coeffs, Wx, *_ = cwt(signal, wavelet="bump")
+    # coeffs, wx, *_ = ssqueezepy.cwt(signal, wavelet="bump")
 
     # ssqueezepy.wavs()
     # {'hhhat', 'gmw', 'morlet', 'bump', 'cmhat'}
@@ -39,19 +37,19 @@ def cwt_plot(sig, title) -> None:
     ax.set_xlabel("Zeit (Frame)")
     ax.set_ylabel("Skale")
 
-    vmin = -25
-    vmax = -100
-
     power_to_db = librosa.power_to_db(abs(coeffs) ** 2)
+    # vmin = np.amin(power_to_db)
+    # vmax = np.amax(power_to_db)
+    vmin = -35
+    vmax = -100
     im = ax.imshow(power_to_db, aspect="auto", cmap="turbo", vmin=vmin, vmax=vmax)
     fig.colorbar(im, ax=ax)
-    plt.show()
 
 
 if __name__ == "__main__":
 
-    from_frame = 0
-    to_frame = 50000
+    from_frame = 200
+    to_frame = 4000
 
     wav_label = "LJ008-0217"
     data_base_dir = f"{BASE_PATH}/tests/data"
@@ -78,3 +76,5 @@ if __name__ == "__main__":
     for i in range(len(audios)):
         path = f"{data_base_dir}/{audios[i]}"
         cwt_plot(sp.get_np_signal(path, from_frame, to_frame), titles[i])
+
+    plt.show()

@@ -141,6 +141,39 @@ def compute_spectogram(
     return spec_transform(waveform), waveform.shape[0]
 
 
+def compute_cwt(
+    path: str,
+    wavelet: str,
+    scales: np.ndarray,
+    from_frame: int = 0,
+    to_frame: int = -1,
+) -> Tuple[torch.Tensor, np.ndarray]:
+    """Compute cwt of audio file given at path.
+
+    Args:
+        path (str): The path to .wav audio file.
+        wavelet (str): Mother wavelet of the cwt. Must be from pywt.families(), additionally with
+                        own center frequency and bandwidth.
+        scales (np.ndarray): Scales under which the mother wavelet is to be dilated in the cwt.
+        from_frame (int): Start frame index of part of audio wav sample that is of interest.
+                           Default is 0. (Optional)
+        to_frame (int): End frame index of part of audio wav sample that the spectrogram shows.
+                         Default is last frame. (Optional)
+
+    Returns:
+        Tuple[torch.Tensor, np.ndarray]: The tensor of the scales power matrix and the frequencies
+                                            that correspond to the scales.
+    """
+    signal = get_np_signal(path, from_frame, to_frame)
+
+    sampling_period = 1.0 / SAMPLE_RATE
+    cwt_out = ptwt.cwt(
+        torch.from_numpy(signal), scales, wavelet, sampling_period=sampling_period
+    )
+
+    return cwt_out
+
+
 def plot_spectrogram(
     spec: torch.Tensor,
     max_frame: int,
@@ -168,7 +201,7 @@ def plot_spectrogram(
                          Default is last frame. (Optional)
         title (str): Title on top of the plot. (Optinal)
         fig_name (str): Title prefix of the file that is generated from the plot. It will be saved
-                        under standalone_plots/{fig_name}-spectrogram.tex. (Optional)
+                        under plots/{fig_name}-spectrogram.tex. (Optional)
         in_khz (bool): True if y-axis should be in kHz. False results in Hz. Default is kHz. (Optional)
         cmap (str or `matplotlib.colors.Colormap`): The Colormap instance or registered colormap name
                         used to map scalar data to colors. This parameter is ignored for RGB(A) data.
@@ -202,15 +235,16 @@ def plot_spectrogram(
     ]
     axes.set_ylabel(ylabel)
     vmin = (
-        -50
+        -50.0
     )  # have to be the same in all plots for comparability -> used same as [FS21]
-    vmax = 50
+    vmax = 50.0
 
     spec_np = spec.numpy()
 
     # if preferred: approx. same colormap as [FS21]
     # cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", ["#066b7f", "white", "#aa3a03"])
     # cmap = "RdYlBu_r"     # another nice colormap
+    cmap = "turbo"
     im = axes.imshow(
         librosa.power_to_db(spec_np),
         extent=extent,
@@ -222,9 +256,9 @@ def plot_spectrogram(
     )
 
     fig.colorbar(im, ax=axes)
-
+    plt.show()
     print(f"saving {fig_name}-spectrogram.tex")
-    Path("plots/stft/gfx/tikz").mkdir(parents=True, exist_ok=True)
+    Path(f"{BASE_PATH}/stft/gfx/tikz").mkdir(parents=True, exist_ok=True)
 
     # for rectangular plots
     if rect_plot:
@@ -247,32 +281,49 @@ def plot_spectrogram(
 
 
 def plot_scalogram(
-    signal,
-    widths: np.ndarray,
-    mother_wavelet: str = "shan0.5-15.0",
+    scal,
+    start_frame: int = 0,
+    end_frame: int = -1,
     title: str = "Skalogramm",
     fig_name: str = "sample",
     rect_plot: bool = True,
 ) -> None:
-    """Get and plot scaleogram of given signal at given scales."""
-    sig, t = signal
+    """
+    Plot scaleogram to given scale-time matrix of a time-dependent signal.
 
-    sampling_period = 1.0 / SAMPLE_RATE
-    cwtmatr_pt, freqs = ptwt.cwt(
-        torch.from_numpy(sig), widths, mother_wavelet, sampling_period=sampling_period
-    )
-    cwtmatr = cwtmatr_pt.numpy()
+    Different plotting options possible. Saving via tikz to .tex.
 
-    vmin = -80
-    vmax = 0
+    Args:
+        scal (Tuple[torch.Tensor, np.ndarray]): Input tensor containing frequency powers corresponding to
+                                                scales in cwt. Corresponding frequencies in Hz in np.ndarray.
+        start_frame (int): Start frame index of part of audio wav sample that the scaleogram shows.
+                           Default is 0. (Optional)
+        end_frame (int): End frame index of part of audio wav sample that the scaleogram shows.
+                         Default is last frame. (Optional)
+        title (str): Title on top of the plot. (Optinal)
+        fig_name (str): Title prefix of the file that is generated from the plot. It will be saved
+                        under plots/{fig_name}-scaleogram.tex. (Optional)
+        rect_plot (bool): If True a rectangular plot is given, otherwise it will be square. (Optional)
+    """
+    coeff_pt, freqs = scal
+    coeff = coeff_pt.numpy()
+
+    freqs /= 1000  # because plot is in kHz not in Hz
+
     fig, axs = plt.subplots(1, 1)
+    cmap = "turbo"
+    coeff_db = librosa.power_to_db(np.abs(coeff) ** 2)
+    # plt.axhline(y=11.02, color='b', linestyle='-')  # nyquist freq
 
-    # freqs contains very weird frequencies that are way too high
+    vmin = -20
+    vmax = -80
+    extent = [start_frame / SAMPLE_RATE, end_frame / SAMPLE_RATE, freqs[-1], freqs[0]]
+
     im = axs.imshow(
-        librosa.power_to_db(np.abs(cwtmatr) ** 2),
-        cmap="plasma",
+        coeff_db,
+        cmap=cmap,
         aspect="auto",
-        extent=[t[0], t[-1], widths[-1], widths[0]],
+        extent=extent,
         vmin=vmin,
         vmax=vmax,
     )
@@ -284,15 +335,14 @@ def plot_scalogram(
     else:
         fig_width, fig_height = None, None
 
+    axs.set_title(title)
+    axs.set_xlabel("Zeit (sek)")
+    axs.set_ylabel("Frequenz (kHz)")
+    cb = fig.colorbar(im, ax=axs, label="dB")
+    # axs.set_yscale('symlog')
+
     print(f"saving {fig_name}-scalogram.tex")
     Path("plots/cwt/gfx/tikz").mkdir(parents=True, exist_ok=True)
-
-    axs.set_title(title)
-    fig.set_dpi(200)
-    axs.set_xlabel("Zeit (sek)")
-    axs.set_ylabel("Skale")
-    cb = fig.colorbar(im, ax=axs, label="dB")
-
     tikz.save(
         f"{BASE_PATH}/plots/cwt/{fig_name}-scalogram.tex",
         encoding="utf-8",
@@ -308,15 +358,13 @@ def plot_scalogram(
     axs.set_axis_off()
     cb.remove()  # remove colorbar
     plt.savefig(
-        f"plots/cwt/gfx/tikz/{fig_name}-scalogram-000.png",
+        f"{BASE_PATH}/plots/cwt/gfx/tikz/{fig_name}-scalogram-000.png",
         bbox_inches="tight",
         pad_inches=0,
     )
 
 
-def get_np_signal(
-    path: str, start_frame: int, to_frame: int
-) -> tuple[np.ndarray, np.ndarray]:
+def get_np_signal(path: str, start_frame: int, to_frame: int) -> np.ndarray:
     """
     Get normalized signal from wav file at path as Numpy-Array. Amplitude in [-1.0, 1.0]. This is just some utility.
 
@@ -328,9 +376,9 @@ def get_np_signal(
                          Default is last frame. (Optional)
 
     Returns:
-        Tuple[np.array, np.array]. First ist array like signal in [-1., 1.], second is time axis in seconds.
+        np.array: Array like signal in [-1., 1.].
     """
     sig: torch.Tensor = load_from_wav(path, start_frame, to_frame, normalize=True)
     sig_np: np.ndarray = sig.numpy()
-    t: np.ndarray = np.linspace(0, sig.shape[0] / SAMPLE_RATE, 20, False)
-    return sig_np, t
+    # t: np.ndarray = np.linspace(0, sig.shape[0] / SAMPLE_RATE, 20, False)
+    return sig_np

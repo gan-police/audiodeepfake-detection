@@ -53,7 +53,7 @@ if __name__ == "__main__":
     ]
 
     from_frame = 0
-    to_frame = -1  # -1 for last
+    to_frame = 100000  # -1 for last
 
     n_fft = 1024  # Frank et al. use 256 in statistics.py...
 

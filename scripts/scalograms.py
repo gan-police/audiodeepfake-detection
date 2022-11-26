@@ -11,6 +11,7 @@ import os
 import sys
 
 import numpy as np
+import pywt
 
 DEBUG = True
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -53,17 +54,38 @@ if __name__ == "__main__":
         "parallel-wavegan",
     ]
 
+    # 512, [0,-1], symlog oder ohne (eher ohne), bandwith = 0.0001, center_freq = 0.87, shan for viewing
+    # 1024, [0,100000], symlog oder ohne (eher ohne), bandwith = 0.0001, center_freq = 0.87, shan for saving and tex
     from_frame = 0
-    to_frame = 50000
-    wavelet = "shan0.5-15.0"
-    scales = np.arange(1, 256)
+    to_frame = 100000  # -1 for last
 
+    center_freq = 0.87
+    bandwith = 0.0001
+    wavelet = f"shan{bandwith}-{center_freq}"
+
+    # The highest frequency that will not be aliased is equal to half the sampling fre-
+    # quency, f/2
+    nyquist_freq = util.SAMPLE_RATE / 2.0  # maximum frequency that can be analyzed
+    resolution = 1024
+    freqs = (
+        np.linspace(nyquist_freq, 1, resolution) / util.SAMPLE_RATE
+    )  # equally spaced frequencies to be analyzed
+
+    scales = pywt.frequency2scale(
+        wavelet, freqs
+    )  # generate corresponding scales to the freuqencies
+
+    print("Plotting Scaleogram of LJ008 0217.wav")
     for i in range(len(audios)):
+        path = f"{data_base_dir}/{audios[i]}"
+        scal = util.compute_cwt(path, wavelet, scales, from_frame, to_frame)
         util.plot_scalogram(
-            util.get_np_signal(f"{data_base_dir}/{audios[i]}", from_frame, to_frame),
-            scales,
-            wavelet,
+            scal,
+            from_frame,
+            to_frame,
             titles[i],
             fig_names[i],
             False,
         )
+
+    # plt.show()
