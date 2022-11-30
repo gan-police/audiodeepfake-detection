@@ -15,7 +15,7 @@ https://github.com/pytorch/tutorials/blob/master/beginner_source/audio_feature_e
 import os
 from os import path as pth
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 import librosa
 import matplotlib
@@ -34,6 +34,88 @@ SAMPLE_RATE = 22050
 NUM_CHANNELS = 1
 BITS_PER_SAMPLE = 16
 ENCODING = "PCM_S"
+
+
+class AudioDataset(torch.utils.data.Dataset):
+    """Torch dataset to load data from a provided directory.
+
+    Port of: https://github.com/RUB-SysSec/WaveFake/blob/main/dfadetect/datasets.py
+    Args:
+        directory_or_path_list: Path to the directory containing wav files to load. Or a list of paths.
+    Raises:
+        IOError: If the directory does ot exists or the directory did not contain any wav files.
+    """
+
+    def __init__(
+        self,
+        directory_or_path_list: Union[str, Path],
+        sample_rate: int = 16_000,
+        amount: Optional[int] = None,
+        normalize: bool = True,
+    ) -> None:
+        """Initialize Audioloader.
+
+        Raises:
+            IOError: If directory does not exist, or does not contain wav files.
+            TypeError: If given path is weird.
+        """
+        super().__init__()
+
+        self.sample_rate = sample_rate
+        self.normalize = normalize
+
+        if isinstance(directory_or_path_list, Path) or isinstance(
+            directory_or_path_list, str
+        ):
+            directory = Path(directory_or_path_list)
+            if not directory.exists():
+                raise IOError(f"Directory does not exists: {directory}")
+
+            paths = find_wav_files(directory)
+            if paths is None:
+                raise IOError(f"Directory did not contain wav files: {directory}")
+        else:
+            raise TypeError(
+                f"Supplied unsupported type for argument directory_or_path_list {type(directory_or_path_list)}!"
+            )
+
+        if amount is not None:
+            paths = paths[:amount]
+
+        self._paths = paths
+
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, int]:
+        """Load signal from .wav."""
+        path = self._paths[index]
+
+        waveform, sample_rate = torchaudio.load(path, normalize=self.normalize)
+
+        if sample_rate != self.sample_rate:
+            waveform, sample_rate = torchaudio.sox_effects.apply_effects_file(
+                path, [["rate", f"{self.sample_rate}"]], normalize=self.normalize
+            )
+
+        return waveform, sample_rate
+
+    def __len__(self) -> int:
+        """Length of path list."""
+        return len(self._paths)
+
+
+def find_wav_files(path_to_dir: Union[Path, str]) -> Union[list[Path], None]:
+    """Find all wav files in the directory and its subtree.
+
+    Port of: https://github.com/RUB-SysSec/WaveFake/blob/main/dfadetect/utils.py
+    Args:
+        path_to_dir: Path top directory.
+    Returns:
+        List containing Path objects or None (nothing found).
+    """
+    paths = list(sorted(Path(path_to_dir).glob("**/*.wav")))
+
+    if len(paths) == 0:
+        return None
+    return paths
 
 
 def load_from_wav(
@@ -255,8 +337,8 @@ def plot_spectrogram(
         vmax=vmax,
     )
 
-    fig.colorbar(im, ax=axes)
-    plt.show()
+    cb = fig.colorbar(im, ax=axes, label="dB")
+
     print(f"saving {fig_name}-spectrogram.tex")
     Path(f"{BASE_PATH}/stft/gfx/tikz").mkdir(parents=True, exist_ok=True)
 
@@ -267,8 +349,9 @@ def plot_spectrogram(
     else:
         fig_width, fig_height = None, None
 
-    save_path = f"{BASE_PATH}/plots/stft/{fig_name}-spectrogram.tex"
+    save_path = f"{BASE_PATH}/plots/stft/{fig_name}-spectrogram-small.tex"
     tikz_path = "gfx/tikz"
+
     tikz.save(
         save_path,
         encoding="utf-8",
@@ -278,6 +361,16 @@ def plot_spectrogram(
         tex_relative_path_to_data=tikz_path,
         override_externals=True,
     )
+
+    axes.set_title("")
+    # axes.set_axis_off()
+    cb.remove()  # remove colorbar
+    plt.savefig(
+        f"{BASE_PATH}/plots/stft/gfx/tikz/{fig_name}-spectrogram-small-000.png",
+        bbox_inches="tight",
+        pad_inches=0,
+    )
+    # TODO: introduce parameter vmin, vmax, plot_show
 
 
 def plot_scalogram(
@@ -313,7 +406,6 @@ def plot_scalogram(
     fig, axs = plt.subplots(1, 1)
     cmap = "turbo"
     coeff_db = librosa.power_to_db(np.abs(coeff) ** 2)
-    # plt.axhline(y=11.02, color='b', linestyle='-')  # nyquist freq
 
     vmin = -20
     vmax = -80
@@ -339,7 +431,7 @@ def plot_scalogram(
     axs.set_xlabel("Zeit (sek)")
     axs.set_ylabel("Frequenz (kHz)")
     cb = fig.colorbar(im, ax=axs, label="dB")
-    # axs.set_yscale('symlog')
+    axs.set_yscale("asinh")
 
     print(f"saving {fig_name}-scalogram.tex")
     Path("plots/cwt/gfx/tikz").mkdir(parents=True, exist_ok=True)
@@ -355,13 +447,14 @@ def plot_scalogram(
 
     # workaround for smaller images
     axs.set_title("")
-    axs.set_axis_off()
+    # axs.set_axis_off()
     cb.remove()  # remove colorbar
     plt.savefig(
         f"{BASE_PATH}/plots/cwt/gfx/tikz/{fig_name}-scalogram-000.png",
         bbox_inches="tight",
         pad_inches=0,
     )
+    # TODO: introduce parameter vmin, vmax, cmap, yscale, plot_show
 
 
 def get_np_signal(path: str, start_frame: int, to_frame: int) -> np.ndarray:
