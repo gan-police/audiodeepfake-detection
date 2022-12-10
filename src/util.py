@@ -13,6 +13,7 @@ https://github.com/pytorch/tutorials/blob/master/beginner_source/audio_feature_e
 """
 
 import os
+import random
 from os import path as pth
 from pathlib import Path
 from typing import Optional, Tuple, Union
@@ -26,6 +27,8 @@ import tikzplotlib as tikz
 import torch
 import torchaudio
 import torchaudio.transforms as tf
+
+from cwt import CWT
 
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -94,8 +97,92 @@ class AudioDataset(torch.utils.data.Dataset):
             waveform, sample_rate = torchaudio.sox_effects.apply_effects_file(
                 path, [["rate", f"{self.sample_rate}"]], normalize=self.normalize
             )
-
         return waveform, sample_rate
+
+    def __len__(self) -> int:
+        """Length of path list."""
+        return len(self._paths)
+
+
+class TransformDataset(torch.utils.data.Dataset):
+    """Torch dataset to load data from a provided directory.
+
+    Port of: https://github.com/RUB-SysSec/WaveFake/blob/main/dfadetect/datasets.py
+    Args:
+        directory_or_path_list: Path to the directory containing wav files to load. Or a list of paths.
+    Raises:
+        IOError: If the directory does ot exists or the directory did not contain any wav files.
+    """
+
+    def __init__(
+        self,
+        directory_or_path_list: Union[str, Path],
+        device: str = "cpu",
+        sample_rate: int = 16000,
+        amount: Optional[int] = None,
+        normalize: bool = True,
+    ) -> None:
+        """Initialize Audioloader.
+
+        Raises:
+            IOError: If directory does not exist, or does not contain wav files.
+            TypeError: If given path is weird.
+        """
+        super().__init__()
+
+        self.sample_rate = sample_rate
+        self.normalize = normalize
+        self.transform = CWT(sample_rate=self.sample_rate)
+        self.device = device
+
+        self.size = 1000
+
+        if isinstance(directory_or_path_list, Path) or isinstance(
+            directory_or_path_list, str
+        ):
+            directory = Path(directory_or_path_list)
+            if not directory.exists():
+                raise IOError(f"Directory does not exists: {directory}")
+
+            paths = find_wav_files(directory)
+            if paths is None:
+                raise IOError(f"Directory did not contain wav files: {directory}")
+        else:
+            raise TypeError(
+                f"Supplied unsupported type for argument directory_or_path_list {type(directory_or_path_list)}!"
+            )
+
+        if amount is not None:
+            paths = paths[:amount]
+
+        self._paths = paths
+
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, int]:
+        """Load signal from .wav."""
+        path = self._paths[index]
+
+        waveform, sample_rate = torchaudio.load(path, normalize=self.normalize)
+
+        if sample_rate != self.sample_rate:
+            waveform, sample_rate = torchaudio.sox_effects.apply_effects_file(
+                path, [["rate", f"{self.sample_rate}"]], normalize=self.normalize
+            )
+
+        wav_len = waveform.shape[1]
+        if wav_len >= self.size:
+            rand = random.randint(0, wav_len - self.size - 1)
+            waveform = waveform[:, rand : rand + self.size]
+
+        if self.transform:
+            waveform = self.transform(waveform)
+
+        # a bit hardcoded sorry
+        path_str = str(path)
+        if "generated" in path_str or "gen" in path_str:
+            label = 1
+        else:
+            label = 0
+        return waveform, label
 
     def __len__(self) -> int:
         """Length of path list."""
@@ -323,6 +410,7 @@ def plot_spectrogram(
 
     spec_np = spec.numpy()
 
+    # TODO: Rather use: torchaudio.transforms.AmplitudeToDB
     # if preferred: approx. same colormap as [FS21]
     # cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", ["#066b7f", "white", "#aa3a03"])
     # cmap = "RdYlBu_r"     # another nice colormap

@@ -25,7 +25,7 @@ if DEBUG:
 
 import src.util as util
 
-N_FFT = 256
+N_FFT = 600
 RES = N_FFT // 2
 
 # Latex font
@@ -200,7 +200,7 @@ if __name__ == "__main__":
     stats = False
     Path(f"{BASE_PATH}/plots/energy/stft").mkdir(parents=True, exist_ok=True)
 
-    amount = 5000
+    amount = 13000
 
     data_base_dir = f"{BASE_PATH}/tests/data"
     paths = [

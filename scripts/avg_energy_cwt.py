@@ -2,6 +2,7 @@
 
 Port of: https://github.com/RUB-SysSec/WaveFake/blob/main/statistics.py
 """
+# TODO: save results to json to be able to change plotting
 import os
 import sys
 from pathlib import Path
@@ -146,14 +147,14 @@ if __name__ == "__main__":
     data_base_dir = f"{BASE_PATH}/tests/data"
     paths = [
         "real/",
-        "ljspeech_melgan/",
+        "ljspeech_waveglow/",
     ]
 
     # Important: Put corresponding data directories here!
     data_base_dir = "/home/kons/uni/bachelor_thesis/git/data/"
-    paths = ["LJSpeech-1.1/wavs/", "generated_audio/ljspeech_melgan/"]
+    paths = ["LJSpeech-1.1/wavs/", "generated_audio/ljspeech_waveglow/"]
 
-    fig_names = ["Original", "MelGAN"]
+    fig_names = ["Original", "WaveGlow"]
 
     for i in range(len(paths)):
         print("\n======================================")

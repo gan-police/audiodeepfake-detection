@@ -52,15 +52,19 @@ if __name__ == "__main__":
         "parallel-wavegan",
     ]
 
-    from_frame = 0
-    to_frame = 100000  # -1 for last
+    # nfft 1024 [0,100000], bandwith = 0.0001, center_freq = 0.87 for tikz and tex [50,-50]dB turbo
+    # nfft 1024 and 256 [39500, 49500], bandwith = 0.0001, center_freq = 0.87 for tikz and tex,
+    # comp. with stft [30,-60]dB hot
 
-    n_fft = 1024  # Frank et al. use 256 in statistics.py...
+    from_frame = 39500
+    to_frame = 49500  # -1 for last
+
+    n_fft = 1024  # Frank et al. use 256 in statistics.py
 
     rect_plot = False
 
     print("Plotting Spectrograms of LJ008 0217.wav")
-    for i in range(len(audios)):
+    for i in range(2):
         path = f"{data_base_dir}/{audios[i]}"
         spec, frames = util.compute_spectogram(path, from_frame, to_frame, n_fft)
         util.plot_spectrogram(
@@ -72,3 +76,7 @@ if __name__ == "__main__":
             fig_name=fig_names[i],
             rect_plot=rect_plot,
         )
+
+    import matplotlib.pyplot as plt
+
+    plt.show()

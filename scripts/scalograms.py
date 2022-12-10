@@ -56,27 +56,32 @@ if __name__ == "__main__":
 
     # 512, [0,-1], symlog oder ohne (eher ohne), bandwith = 0.0001, center_freq = 0.87, shan for viewing
     # 1024, [0,100000], symlog oder ohne (eher ohne), bandwith = 0.0001, center_freq = 0.87, shan for saving and tex
-    from_frame = 0
-    to_frame = 100000  # -1 for last
+    # 512, [0,100000], asinh, bandwith = 1.0, center_freq = 0.87, cmor [10,-80]
+    # 512, [0,100000], asinh, bandwith = 0.001, center_freq = 0.87, cmor [25,-60], 1-2500 Hz, hot
 
-    center_freq = 0.87
-    bandwith = 0.0001
+    # 1024 [39500, 49500], bandwith = 0.0001, center_freq = 0.87 for tikz and tex, comp. with stft [-20,-80]dB turbo
+
+    from_frame = 60000
+    to_frame = 70000  # -1 for last
+
+    center_freq = 2.87
+    bandwith = 0.2
     wavelet = f"shan{bandwith}-{center_freq}"
 
-    # The highest frequency that will not be aliased is equal to half the sampling fre-
-    # quency, f/2
+    # The highest frequency that will not be aliased is equal to half the sampling frequency, f/2
     nyquist_freq = util.SAMPLE_RATE / 2.0  # maximum frequency that can be analyzed
     resolution = 1024
     freqs = (
         np.linspace(nyquist_freq, 1, resolution) / util.SAMPLE_RATE
-    )  # equally spaced frequencies to be analyzed
+    )  # equally spaced normalized frequencies to be analyzed
 
     scales = pywt.frequency2scale(
         wavelet, freqs
     )  # generate corresponding scales to the freuqencies
+    # also helpful, because then y axis ist linear
 
     print("Plotting Scaleogram of LJ008 0217.wav")
-    for i in range(len(audios)):
+    for i in range(2):
         path = f"{data_base_dir}/{audios[i]}"
         scal = util.compute_cwt(path, wavelet, scales, from_frame, to_frame)
         util.plot_scalogram(
@@ -87,5 +92,6 @@ if __name__ == "__main__":
             fig_names[i],
             False,
         )
+    import matplotlib.pyplot as plt
 
-    # plt.show()
+    plt.show()
