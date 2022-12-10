@@ -18,62 +18,19 @@ BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_PATH)
 
 import src.util as util
-
-amount = 500  # max train samples used
-
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-data_folder = f"{BASE_PATH}/../data/Test"
-# real_dir = f"{data_folder}/LJSpeech-1.1/wavs/"
-# fake_dir = f"{data_folder}/generated_audio/ljspeech_hifiGAN/"
-train_data = util.TransformDataset(
-    data_folder, device=device, sample_rate=util.SAMPLE_RATE, amount=amount
-)
-
-test_size = 0.2  # 20% of total
-test_len = int(len(train_data) * test_size)
-train_len = len(train_data) - test_len
-lengths = [train_len, test_len]
-train, val = torch.utils.data.random_split(train_data, lengths)
-
-
-class CNN(nn.Module):
-    """For classifying deepfakes."""
-
-    def __init__(self) -> None:
-        """Define network sturcture."""
-        super(CNN, self).__init__()
-        self.cnn = nn.Sequential(
-            nn.Conv2d(1, 64, kernel_size=3),
-            nn.MaxPool2d(2),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3),
-            nn.MaxPool2d(2),
-            nn.ReLU(),
-        )
-        self.fc = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(349184, 256),
-            nn.ReLU(),
-            nn.Linear(256, 2, bias=False),
-        )
-
-    def forward(self, input) -> torch.float64:
-        """Forward pass."""
-        x = self.cnn(input)
-        x = self.fc(x)
-        return x
+from src.models import CNN
 
 
 def get_data() -> tuple[DataLoader, DataLoader]:
     """Get Dataloaders for training and validation dataset."""
-    trn_dl = DataLoader(train, batch_size=64, shuffle=True)
-    val_dl = DataLoader(val, batch_size=len(val), shuffle=True)
+    trn_dl = DataLoader(train, batch_size=batch_size, shuffle=True)
+    val_dl = DataLoader(val, batch_size=batch_size, shuffle=True)
     return trn_dl, val_dl
 
 
 def train_batch(x, y, model, opt, loss_fn) -> torch.float64:
     """Train a single batch: forward, loss, backward pass."""
+    model.train()
     prediction = model(x)
     batch_loss = loss_fn(prediction, y)
     batch_loss.backward()
@@ -101,38 +58,94 @@ def val_loss(x, y, model) -> torch.float64:
     return val_loss.item()
 
 
+# transformation params
+length = 2000  # length of audiosamples
+resol = 50  # number of scales of cwt
+audio_channels = 1
+sample_rate = 16000.0
+
+# training params
+amount = 100  # max train samples used
+epochs = 5
+batch_size = 10
+
 if __name__ == "__main__":
-    model = CNN()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    data_folder = "/home/s6kogase/wavefake/data/classifier"
+    train_data = util.TransformDataset(
+        data_folder,
+        device=device,
+        sample_rate=sample_rate,
+        amount=amount,
+        length=length,
+    )
+
+    test_size = 0.2  # 20% of total
+    test_len = int(len(train_data) * test_size)
+    train_len = len(train_data) - test_len
+    lengths = [train_len, test_len]
+    train, val = torch.utils.data.random_split(train_data, lengths)
+
+    print("Trainset length: ", train_len)
+    print("Valset length: ", test_len)
+
+    model = CNN(n_input=audio_channels)
     model.double()
     model.to(device)
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
+
+    # reduce the learning after 5 epochs by a factor of 10
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
 
     trn_dl, val_dl = get_data()
 
     train_losses, train_accuracies = [], []
     val_losses, val_accuracies = [], []
 
-    epochs = 6
+    # plotting first data tensor
+    fig, axes = plt.subplots(1, 1)
+    x = next(iter(trn_dl))[0]
+    y = x.cpu()
+    y = y[0]
+    y = y.squeeze()
+    y = y.numpy()
+    im = axes.imshow(
+        y,
+        cmap="turbo",
+        extent=[0, length, 0, sample_rate / 2],
+        vmin=-100,
+        vmax=0,
+    )
+    plt.savefig("test.png")
+
     for epoch in range(epochs):
-        print(f"epoch {epoch+1} of {epochs}")
+        print(f"Epoch {epoch+1} of {epochs}")
         train_epoch_losses, train_epoch_accuracies = [], []
-        for _ix, batch in enumerate(iter(trn_dl)):
-            x, y = batch
-            batch_loss = train_batch(x, y, model, optimizer, loss_fn)
+
+        # training
+        for batch_idx, (data, target) in enumerate(iter(trn_dl)):
+            batch_loss = train_batch(data, target, model, optimizer, loss_fn)
             train_epoch_losses.append(batch_loss)
+
+            if batch_idx % 5 == 0:
+                print(
+                    f"Train Epoch: {epoch+1} [{batch_idx * len(data)}/{train_len} \
+                    ({100. * (batch_idx * len(data)) / train_len:.0f}%)]\tLoss: {batch_loss:.6f}"
+                )
+
         train_epoch_loss = np.array(train_epoch_losses).mean()
 
-        for _ix, batch in enumerate(iter(trn_dl)):
-            x, y = batch
-            is_correct = accuracy(x, y, model)
+        for _batch_idx, (data, target) in enumerate(iter(trn_dl)):
+            is_correct = accuracy(data, target, model)
             train_epoch_accuracies.extend(is_correct)
         train_epoch_accuracy = np.mean(train_epoch_accuracies)
 
-        for _ix, batch in enumerate(iter(val_dl)):
-            x, y = batch
-            val_is_correct = accuracy(x, y, model)
-            validation_loss = val_loss(x, y, model)
+        # testing
+        for _batch_idx, (data, target) in enumerate(iter(val_dl)):
+            val_is_correct = accuracy(data, target, model)
+            validation_loss = val_loss(data, target, model)
         val_epoch_accuracy = np.mean(val_is_correct)
 
         train_losses.append(train_epoch_loss)
@@ -141,8 +154,10 @@ if __name__ == "__main__":
         val_accuracies.append(val_epoch_accuracy)
 
         print("Training loss: ", train_epoch_loss)
-        print("Accuracy: ", train_epoch_accuracy)
+        print("Training Accuracy: ", train_epoch_accuracy)
+        print("Validation Accuracy: ", val_epoch_accuracy)
 
+    # summary(model, (audio_channels, resol, length))
     epochs = np.arange(epochs) + 1
     print("train losses: ", train_losses)
     print("val losses: ", val_losses)
@@ -167,4 +182,5 @@ if __name__ == "__main__":
     )
     plt.legend()
     plt.grid("off")
-    plt.show()
+    # plt.show()
+    plt.savefig("test-run.png")

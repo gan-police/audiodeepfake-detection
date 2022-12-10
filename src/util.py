@@ -28,7 +28,7 @@ import torch
 import torchaudio
 import torchaudio.transforms as tf
 
-from cwt import CWT
+from src.cwt import CWT
 
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -119,8 +119,10 @@ class TransformDataset(torch.utils.data.Dataset):
         directory_or_path_list: Union[str, Path],
         device: str = "cpu",
         sample_rate: int = 16000,
+        length: int = 1000,
         amount: Optional[int] = None,
         normalize: bool = True,
+        resolution: int = 50,
     ) -> None:
         """Initialize Audioloader.
 
@@ -132,10 +134,15 @@ class TransformDataset(torch.utils.data.Dataset):
 
         self.sample_rate = sample_rate
         self.normalize = normalize
-        self.transform = CWT(sample_rate=self.sample_rate)
         self.device = device
 
-        self.size = 1000
+        self.size = length
+        self.resolution = resolution
+
+        self.transform = CWT(
+            sample_rate=self.sample_rate,
+            n_lin=self.resolution,
+        )
 
         if isinstance(directory_or_path_list, Path) or isinstance(
             directory_or_path_list, str
@@ -179,10 +186,11 @@ class TransformDataset(torch.utils.data.Dataset):
         # a bit hardcoded sorry
         path_str = str(path)
         if "generated" in path_str or "gen" in path_str:
-            label = 1
+            label = torch.tensor(1.0, dtype=torch.int64)
         else:
-            label = 0
-        return waveform, label
+            label = torch.tensor(0.0, dtype=torch.int64)
+
+        return waveform.to(self.device), label.to(self.device)
 
     def __len__(self) -> int:
         """Length of path list."""

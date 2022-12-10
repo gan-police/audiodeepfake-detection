@@ -7,3 +7,4 @@ pywavelets
 matplotlib
 torchaudio
 tikzplotlib
+torch-summary
