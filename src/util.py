@@ -118,11 +118,13 @@ class TransformDataset(torch.utils.data.Dataset):
         self,
         directory_or_path_list: Union[str, Path],
         device: str = "cpu",
-        sample_rate: int = 16000,
+        sample_rate: float = 16000.0,
         length: int = 1000,
         amount: Optional[int] = None,
         normalize: bool = True,
         resolution: int = 50,
+        f_min: float = 80.0,
+        f_max: float = 1000.0,
     ) -> None:
         """Initialize Audioloader.
 
@@ -142,6 +144,8 @@ class TransformDataset(torch.utils.data.Dataset):
         self.transform = CWT(
             sample_rate=self.sample_rate,
             n_lin=self.resolution,
+            f_min=f_min,
+            f_max=f_max,
         )
 
         if isinstance(directory_or_path_list, Path) or isinstance(
@@ -164,7 +168,7 @@ class TransformDataset(torch.utils.data.Dataset):
 
         self._paths = paths
 
-    def __getitem__(self, index: int) -> Tuple[torch.Tensor, int]:
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """Load signal from .wav."""
         path = self._paths[index]
 
@@ -177,6 +181,7 @@ class TransformDataset(torch.utils.data.Dataset):
 
         wav_len = waveform.shape[1]
         if wav_len >= self.size:
+            # taking random frames from wavs
             rand = random.randint(0, wav_len - self.size - 1)
             waveform = waveform[:, rand : rand + self.size]
 
