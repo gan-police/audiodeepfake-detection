@@ -37,6 +37,11 @@ SAMPLE_RATE = 22050
 NUM_CHANNELS = 1
 BITS_PER_SAMPLE = 16
 ENCODING = "PCM_S"
+SOX_SILENCE = [
+    # trim all silence that is longer than 0.2s and louder than 1% volume (relative to the file)
+    # from beginning and middle/end
+    ["silence", "1", "0.2", "1%", "-1", "0.2", "1%"],
+]
 
 
 class AudioDataset(torch.utils.data.Dataset):
@@ -119,12 +124,14 @@ class TransformDataset(torch.utils.data.Dataset):
         directory_or_path_list: Union[str, Path],
         device: str = "cpu",
         sample_rate: float = 16000.0,
-        length: int = 1000,
+        length: int = 64600,
         amount: Optional[int] = None,
         normalize: bool = True,
         resolution: int = 50,
+        lfcc_filter: int = 40,
         f_min: float = 80.0,
         f_max: float = 1000.0,
+        transform: str = "cwt",
     ) -> None:
         """Initialize Audioloader.
 
@@ -138,15 +145,32 @@ class TransformDataset(torch.utils.data.Dataset):
         self.normalize = normalize
         self.device = device
 
-        self.size = length
+        self.batch_length = length
         self.resolution = resolution
 
-        self.transform = CWT(
-            sample_rate=self.sample_rate,
-            n_lin=self.resolution,
-            f_min=f_min,
-            f_max=f_max,
-        )
+        if transform == "stft":
+            n_fft = 1024
+            hop_length = 512
+
+            self.transform = tf.LFCC(
+                sample_rate=self.sample_rate,
+                n_lfcc=lfcc_filter,
+                speckwargs={
+                    "n_fft": n_fft,
+                    "hop_length": hop_length,
+                },
+            )
+        elif transform == "cwt":
+            self.transform = CWT(
+                sample_rate=self.sample_rate,
+                n_lfcc=lfcc_filter,
+                resolution=self.resolution,
+                f_min=f_min,
+                f_max=f_max,
+                length=self.batch_length,
+            )
+        else:
+            self.transform = None
 
         if isinstance(directory_or_path_list, Path) or isinstance(
             directory_or_path_list, str
@@ -179,11 +203,29 @@ class TransformDataset(torch.utils.data.Dataset):
                 path, [["rate", f"{self.sample_rate}"]], normalize=self.normalize
             )
 
-        wav_len = waveform.shape[1]
-        if wav_len >= self.size:
-            # taking random frames from wavs
-            rand = random.randint(0, wav_len - self.size - 1)
-            waveform = waveform[:, rand : rand + self.size]
+        # cut all silences > 0.2s
+        (
+            waveform_trimmed,
+            sample_rate_trimmed,
+        ) = torchaudio.sox_effects.apply_effects_tensor(
+            waveform, sample_rate, SOX_SILENCE
+        )
+
+        if waveform_trimmed.size()[1] > 0:
+            waveform = waveform_trimmed
+            sample_rate = sample_rate_trimmed
+
+        if self.batch_length is not None:
+            length = waveform.shape[1]
+            if length >= self.batch_length:  # randomly cut signal
+                rand = random.randint(0, length - self.batch_length - 1)
+                waveform = waveform[:, rand : rand + self.batch_length]
+            if length < self.batch_length:  # pad signal
+                num_repeats = int(self.batch_length / length) + 1
+                waveform = torch.tile(waveform, (1, num_repeats))[
+                    :, : self.batch_length
+                ][0]
+                waveform = torch.unsqueeze(waveform, dim=0)
 
         if self.transform:
             waveform = self.transform(waveform)

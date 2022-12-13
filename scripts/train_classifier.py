@@ -4,8 +4,10 @@ Audio data from WaveFake-Dataset is transformed with Continous Wavelet Transform
 fed to a CNN with a label if fake or real.
 """
 
+import logging
 import os
 import sys
+from pathlib import Path
 from time import gmtime, strftime
 from typing import Any
 
@@ -21,7 +23,28 @@ BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_PATH)
 
 import src.util as util
-from src.models import Net
+import src.models as models
+
+LOGGER = logging.getLogger()
+
+
+def init_logger(log_file) -> None:
+    """Init logger handler."""
+    LOGGER.setLevel(logging.INFO)
+
+    # create file handler
+    fh = logging.FileHandler(log_file)
+
+    # create console handler
+    ch = logging.StreamHandler()
+
+    # create formatter and add it to the handlers
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+    # add the handlers to the logger
+    LOGGER.addHandler(fh)
+    LOGGER.addHandler(ch)
 
 
 def get_data(train, val) -> tuple[DataLoader, DataLoader]:
@@ -91,17 +114,21 @@ def val_performance(
 
 
 # transformation params
-length = 500  # length of audiosamples
-resol = 64  # number of scales of cwt
+length = 40000  # length of audio signal in samples
+resol = 128  # number of scales of cwt, and lfccs
+lfcc_filter = 128
 audio_channels = 1
-sample_rate = 16000.0
-f_min = 80.0
-f_max = 2000.0
+sample_rate = 22050.0
+f_min = 5000.0
+f_max = 9000.0
+
+cut = True
+max_length = 40000
 
 # training params
 amount = 1000  # max train samples used
-epochs = 5
-batch_size = 256
+epochs = 50
+batch_size = 32
 learning_rate = 0.01
 
 tensorboard = True
@@ -116,8 +143,11 @@ if __name__ == "__main__":
         sample_rate=sample_rate,
         amount=amount,
         length=length,
-        f_max=f_max,
         f_min=f_min,
+        f_max=f_max,
+        resolution=resol,
+        lfcc_filter=lfcc_filter,
+        transform="cwt",
     )
 
     test_size = 0.2  # 20% of total
@@ -126,25 +156,37 @@ if __name__ == "__main__":
     lengths = [train_len, test_len]
     train, val = torch.utils.data.random_split(train_data, lengths)
 
-    print("Trainset length: ", train_len)
-    print("Valset length: ", test_len)
-
-    # model = CNN(n_input=audio_channels)
-    model = Net(n_classes=2)
-    model_str = "Net()"
+    model = models.CNN()
+    model_str = model.get_name()
     model.double()
     model.to(device)
-    loss_fn = nn.NLLLoss()
+    loss_fn = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     # reduce the learning after 3 epochs by a factor of 10
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
 
+    LOGGER.info("Loading data...")
     trn_dl, val_dl = get_data(train, val)
 
     train_losses, train_accuracies = [], []
     val_losses, val_accuracies = [], []
     steps = 0
+
+    Path("logs").mkdir(parents=True, exist_ok=True)
+    init_logger(f"logs/experiments_{strftime('%Y-%m-%d_%H-%M-%S', gmtime())}.log")
+    LOGGER.info("-------------------------------")
+    LOGGER.info("New Experiment")
+    log_str = f"Parameters:\nTrainset length: {train_len}\n"
+    log_str += f"Valset length: {test_len}\n"
+    log_str += f"Length of input: {max_length}\n"
+    log_str += f"Number of scales: {resol}\n"
+    log_str += f"LFCCs: {lfcc_filter}\n"
+    log_str += f"[f_min, f_max]: {f_min, f_max}\n"
+    log_str += f"Sample rate: {sample_rate}\n"
+    log_str += f"Batch Size: {batch_size}\n"
+    log_str += f"Using Arch: {model_str}"
+    LOGGER.info(log_str)
 
     if tensorboard:
         writer_str = "runs/"
@@ -158,23 +200,27 @@ if __name__ == "__main__":
         writer = SummaryWriter(writer_str, max_queue=100)
 
     # plotting first data tensor
-    fig, axes = plt.subplots(1, 1)
-    x = next(iter(trn_dl))[0]
-    y = x.cpu()
-    y = y[0]
-    y = y.squeeze()
-    y = y.numpy()
-    im = axes.imshow(
-        y,
-        cmap="turbo",
-        extent=[0, length, 0, sample_rate / 2],
-        vmin=-100,
-        vmax=0,
-    )
-    plt.savefig("test.png")
+    for i in range(10):
+        fig, axes = plt.subplots(1, 1)
+        labels = next(iter(trn_dl))[1]
+        x = next(iter(trn_dl))[0]
+        y = x.cpu()
+        y = y[0]
+        y = y.squeeze()
+        y = y.numpy()
+        plt.title("Fake" if labels[i].item() == 1 else "Real")
+        im = axes.imshow(
+            y,
+            cmap="hot",
+            extent=[0, max_length, f_min, f_max],
+            vmin=-100,
+            vmax=100,
+        )
+        plt.savefig(f"plots/test-{i}.png")
 
+    # Trainer
     for epoch in range(epochs):
-        print(f"Epoch {epoch+1} of {epochs}")
+        LOGGER.info(f"Training data in epoch {epoch+1} of {epochs}.")
         train_epoch_losses, train_epoch_accuracies = [], []
 
         # training
@@ -187,7 +233,7 @@ if __name__ == "__main__":
             train_epoch_accuracies.append(acc.item())
 
             if batch_idx % 5 == 0:
-                print(
+                LOGGER.info(
                     f"Train Epoch: {epoch+1} [{batch_idx * len(data)}/{train_len} \
                     ({100. * (batch_idx * len(data)) / train_len:.0f}%)]\tLoss: {batch_loss:.6f}"
                 )
@@ -211,9 +257,9 @@ if __name__ == "__main__":
 
             writer.add_scalar("epochs", epoch, steps)
 
-        print("Training loss: ", train_epoch_loss)
-        print("Training Accuracy: ", train_epoch_accuracy)
-        print("Validation Accuracy: ", val_acc)
+        LOGGER.info(f"Training loss: {train_epoch_loss}")
+        LOGGER.info(f"Training Accuracy: {train_epoch_accuracy}")
+        LOGGER.info(f"Validation Accuracy: {val_acc}")
 
     if tensorboard:
         writer.flush()

@@ -1,7 +1,6 @@
 """Models for classification of audio deepfakes."""
 import torch
 import torch.nn as nn
-import torch.nn.functional as func
 
 
 class CNN(nn.Module):
@@ -20,7 +19,7 @@ class CNN(nn.Module):
         )
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(137984, 256),
+            nn.Linear(238080, 256),
             nn.ReLU(),
             nn.Dropout(0.5),
             nn.Linear(256, n_output, bias=False),
@@ -32,43 +31,76 @@ class CNN(nn.Module):
         x = self.fc(x)
         return x
 
+    def get_name(self) -> str:
+        """Return custom string identifier."""
+        return "CNN"
+
 
 class Net(nn.Module):
     """Another CNN for classifying deepfakes."""
 
-    def __init__(self, n_classes=2):
+    def __init__(self, n_classes=2) -> None:
         """Define network sturcture."""
         super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, 3, 1)
-        self.conv2 = nn.Conv2d(32, 64, 3, 1)
-        self.conv3 = nn.Conv2d(64, 128, 3, 1)
-        self.conv4 = nn.Conv2d(128, 256, 3, 1)
-        self.dropout1 = nn.Dropout(0.25)
-        self.dropout2 = nn.Dropout(0.5)
-        self.pooling = nn.AdaptiveAvgPool2d((8, 8))  # extended
-        self.fc1 = nn.Linear(16384, 128)
-        self.fc2 = nn.Linear(128, n_classes)
+        self.cnn = nn.Sequential(
+            nn.Conv2d(1, 32, 3),
+            nn.MaxPool2d(2),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 3),
+            nn.MaxPool2d(2),
+            nn.ReLU(),
+            nn.Dropout(0.25),
+            nn.Conv2d(64, 128, 3),
+            nn.MaxPool2d(2),
+            nn.ReLU(),
+            nn.Conv2d(128, 256, 3),
+            nn.MaxPool2d(2),
+            nn.ReLU(),
+            nn.Dropout(0.25),
+            nn.AdaptiveAvgPool2d((8, 8)),
+        )
 
-    def forward(self, x):
+        self.fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(16384, 128),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(128, n_classes),
+        )
+
+    def forward(self, x) -> torch.Tensor:
         """Forward Pass."""
-        x = self.conv1(x)
-        x = func.relu(x)
-        x = self.conv2(x)
-        x = func.relu(x)
-        x = func.max_pool2d(x, 2)
-        x = self.dropout1(x)
-
-        x = self.conv3(x)
-        x = func.relu(x)
-        x = self.conv4(x)
-        x = func.relu(x)
-        x = func.max_pool2d(x, 2)
-        x = self.dropout1(x)
-        x = self.pooling(x)
-
-        x = torch.flatten(x, 1)
-        x = self.fc1(x)
-        x = func.relu(x)
-        x = self.dropout2(x)
-        x = self.fc2(x)
+        x = self.cnn(input)
+        x = self.fc(x)
         return x
+
+    def get_name(self) -> str:
+        """Return custom string identifier."""
+        return "Net"
+
+
+class TestNet(nn.Module):
+    """Simple CNN for Testing."""
+
+    def __init__(self, n_classes=2) -> None:
+        """Define network sturcture."""
+        super(TestNet, self).__init__()
+        self.cnn = nn.Sequential(
+            nn.Conv2d(1, 64, kernel_size=5),
+            nn.MaxPool2d(2),
+            nn.AdaptiveAvgPool2d((8, 8)),
+        )
+        self.fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(4096, n_classes, bias=False),
+        )
+
+    def forward(self, input) -> torch.Tensor:
+        """Forward pass."""
+        x = self.cnn(input)
+        x = self.fc(x)
+        return x
+
+    def get_name(self) -> str:
+        """Return custom string identifier."""
+        return "TestNet"
