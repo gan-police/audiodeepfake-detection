@@ -156,7 +156,7 @@ if __name__ == "__main__":
     lengths = [train_len, test_len]
     train, val = torch.utils.data.random_split(train_data, lengths)
 
-    model = models.CNN()
+    model = models.TestNet()
     model_str = model.get_name()
     model.double()
     model.to(device)

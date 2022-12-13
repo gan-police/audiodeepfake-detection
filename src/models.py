@@ -10,16 +10,17 @@ class CNN(nn.Module):
         """Define network sturcture."""
         super(CNN, self).__init__()
         self.cnn = nn.Sequential(
-            nn.Conv2d(n_input, 64, kernel_size=3),
+            nn.Conv2d(n_input, 64, kernel_size=5),
             nn.MaxPool2d(2),
             nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3),
+            nn.Conv2d(64, 128, kernel_size=5),
             nn.MaxPool2d(2),
             nn.ReLU(),
+            nn.AdaptiveAvgPool2d((8, 8)),
         )
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(238080, 256),
+            nn.Linear(69120, 256),
             nn.ReLU(),
             nn.Dropout(0.5),
             nn.Linear(256, n_output, bias=False),
@@ -62,7 +63,7 @@ class Net(nn.Module):
 
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(16384, 128),
+            nn.Linear(69120, 128),
             nn.ReLU(),
             nn.Dropout(0.5),
             nn.Linear(128, n_classes),
