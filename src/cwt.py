@@ -3,11 +3,7 @@ import numpy as np
 import ptwt
 import pywt
 import torch
-import torchaudio.functional as funct
 from torchaudio.transforms import AmplitudeToDB
-
-center_freq = 0.87
-bandwith = 0.001
 
 
 class CWT(torch.nn.Module):
@@ -15,11 +11,9 @@ class CWT(torch.nn.Module):
 
     By default, this calculates the continuous wavelet transform on the DB-scaled scaleogram.
 
-    Port of torchaudio.transforms.LFCC but with CWT instead of STFT.
-
     Args:
-        sample_rate (int, optional): Sample rate of audio signal. (Default: ``16000``)
-        n_lin (int, optional): Number of scales to be computed. (Default: ``60``)
+        sample_rate (int, optional): Sample rate of audio signal. (Default: ``22050``)
+        n_lin (int, optional): Number of scales to be computed. (Default: ``50``)
         cut (bool, optional): Cut audio signal to equal length (for equal batch sizes). (Default: False)
         max_len (int, optional): If cut is True, the audio file is cut to this length. (Default: 4 sec)
         f_min (float, optional): Minimal frequency being analyzed.
@@ -28,63 +22,49 @@ class CWT(torch.nn.Module):
 
     def __init__(
         self,
-        length: int,
         sample_rate: float = 16000.0,
-        n_lfcc: int = 64,
+        n_lin: int = 60,
         f_min: float = 80.0,
         f_max: float = 2000.0,
-        resolution: int = 128,
+        wavelet: str = "cmor0.5-1.0",
     ) -> None:
         """Calculate scales for cwt, set object params."""
         super().__init__()
 
-        self.sample_period = 1.0 / sample_rate
-        self.wavelet = f"shan{bandwith}-{center_freq}"
-        self.transform = AmplitudeToDB(stype="power")
+        self.sample_rate = sample_rate
+        self.sample_period = 1.0 / self.sample_rate
+        self.n_lin = n_lin
+        self.wavelet = wavelet
+        self.transform = AmplitudeToDB(stype="power", top_db=80.0)
 
-        nyquist_freq = sample_rate / 2.0  # maximum frequency that can be analyzed
+        nyquist_freq = self.sample_rate / 2.0  # maximum frequency that can be analyzed
 
         if f_max >= nyquist_freq:
             f_max = nyquist_freq
+        if f_min >= f_max:
+            f_min = 80.0
+
         # equally spaced normalized frequencies to be analyzed
-        freqs = np.linspace(f_max, f_min, resolution) / sample_rate
+        freqs = np.linspace(f_max, f_min, self.n_lin) / self.sample_rate
         self.scales = pywt.frequency2scale(self.wavelet, freqs)
-        # self.scales = np.linspace(1, self.n_lfcc)
-
-        n_filter = 128
-        n_freqs = length
-        filter_mat = funct.linear_fbanks(
-            n_freqs=n_freqs,
-            f_min=f_min,
-            f_max=f_max,
-            n_filter=n_filter,
-            sample_rate=sample_rate,
-        )
-        self.filter_mat = filter_mat
-
-        dct_mat = funct.create_dct(n_lfcc, n_filter, "ortho")
-        self.dct_mat = dct_mat
+        # self.scales = np.linspace(self.scales[0], self.scales[-1], self.n_lin)
 
     def forward(self, waveform: torch.Tensor) -> torch.Tensor:
-        """Return lfcc using cwt of audio signal of correct dimensions.
+        """Return cwt audio signal of correct dimensions.
 
         Args:
             waveform (Tensor): Tensor of audio of dimension (..., time).
 
         Returns:
-            Tensor: scaleogram, time/freq representation of
-                    dims: (Channels, Number of Scales, n_filter)
+            torch.Tensor: scaleogram, dims (1, number of scales, number of audio samples).
         """
         sig, _freqs = ptwt.cwt(
             waveform, self.scales, self.wavelet, sampling_period=self.sample_period
         )
 
-        sig = torch.abs(sig) ** 2
-
-        sig_tr = sig.squeeze(1)
-        sig_tr = torch.unsqueeze(sig_tr, dim=0)
-        scale = torch.matmul(sig_tr, self.filter_mat.double())
-        scale = self.transform(scale)
-        lfcc_cwt = torch.matmul(scale, self.dct_mat.double())
-
-        return lfcc_cwt
+        scaleogram = sig.squeeze(1)
+        scaleogram = torch.abs(scaleogram) ** 2
+        scaleogram = scaleogram.to(torch.float32)
+        scaleogram = self.transform(scaleogram)
+        scaleogram = torch.unsqueeze(scaleogram, dim=0)
+        return scaleogram

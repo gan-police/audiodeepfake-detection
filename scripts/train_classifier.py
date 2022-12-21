@@ -4,11 +4,12 @@ Audio data from WaveFake-Dataset is transformed with Continous Wavelet Transform
 fed to a CNN with a label if fake or real.
 """
 
+import argparse
+import datetime
 import logging
 import os
 import sys
 from pathlib import Path
-from time import gmtime, strftime
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -18,12 +19,13 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from torchsummary import summary
 
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_PATH)
 
-import src.util as util
 import src.models as models
+import src.util as util
 
 LOGGER = logging.getLogger()
 
@@ -47,11 +49,115 @@ def init_logger(log_file) -> None:
     LOGGER.addHandler(ch)
 
 
-def get_data(train, val) -> tuple[DataLoader, DataLoader]:
+def _parse_args():
+    """Parse cmd line args for training an audio classifier."""
+    parser = argparse.ArgumentParser(description="Train an audio classifier")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=64,
+        help="input batch size for testing (default: 512)",
+    )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=0.001,
+        help="learning rate for optimizer (default: 1e-3)",
+    )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=0,
+        help="weight decay for optimizer (default: 0)",
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=30, help="number of epochs (default: 30)"
+    )
+    parser.add_argument(
+        "--model",
+        choices=["regression", "cnn", "testnet", "testnet2", "net"],
+        default="testnet",
+        help="The model type choose regression, CNN, TestNet, TestNet2. Default: testnet.",
+    )
+    parser.add_argument(
+        "--frame-size",
+        type=int,
+        default=500,
+        help="Size of window of audio file as number of samples. Default: 500.",
+    )
+    parser.add_argument(
+        "--scales",
+        type=int,
+        default=128,
+        help="Number of scales for the cwt. Default: 128.",
+    )
+    parser.add_argument(
+        "--amount",
+        type=int,
+        default=6000,
+        help="Max. number of training samples. Will be a little less. Default: 6000.",
+    )
+    parser.add_argument(
+        "--sample-rate",
+        type=float,
+        default=22050,
+        help="Desired sample rate of audio in Hz. Default: 22050.",
+    )
+    parser.add_argument(
+        "--fmin",
+        type=float,
+        default=80,
+        help="Minimum frequency to be analyzed in Hz. Default: 80.",
+    )
+    parser.add_argument(
+        "--fmax",
+        type=float,
+        default=8000,
+        help="Maximum frequency to be analyzed in Hz. Default: 8000.",
+    )
+    parser.add_argument(
+        "--max-length",
+        type=int,
+        default=15000,
+        help="Maximum number of samples that will be used from each audio file. Default: 15000.",
+    )
+    parser.add_argument(
+        "--wavelet",
+        type=str,
+        default="shan0.1-0.87",
+        help="Wavelet to use in CWT. Default: shan0.1-0.87.",
+    )
+    parser.add_argument(
+        "--m",
+        type=str,
+        help="Message that will be logged.",
+    )
+
+    parser.add_argument(
+        "--tensorboard",
+        action="store_true",
+        help="enables a tensorboard visualization.",
+    )
+
+    return parser.parse_args()
+
+
+def get_data(train, val, batch_size) -> tuple[DataLoader, DataLoader]:
     """Get Dataloaders for training and validation dataset."""
     trn_dl = DataLoader(train, batch_size=batch_size, shuffle=True)
-    val_dl = DataLoader(val, batch_size=len(val), shuffle=True)
+    val_dl = DataLoader(val, batch_size=batch_size, shuffle=False)
     return trn_dl, val_dl
+
+
+def get_mean_std_welford(train_data_set) -> tuple[float, float]:
+    """Calculate mean and standard deviation of dataset."""
+    LOGGER.info("Calculating mean and standard deviation...")
+    welford = util.WelfordEstimator()
+    for aud_no in range(train_data_set.__len__()):
+        welford.update(train_data_set.__getitem__(aud_no)[0])
+    mean, std = welford.finalize()
+
+    return mean.mean().item(), std.mean().item()
 
 
 def train_batch(x, y, model, opt, loss_fn) -> torch.Tensor:
@@ -60,8 +166,8 @@ def train_batch(x, y, model, opt, loss_fn) -> torch.Tensor:
     prediction = model(x)
     batch_loss = loss_fn(prediction, y)
     batch_loss.backward()
-    optimizer.step()
-    optimizer.zero_grad()
+    opt.step()
+    opt.zero_grad()
     return batch_loss.item()
 
 
@@ -79,9 +185,6 @@ def val_performance(
     data_loader,
     model: torch.nn.Module,
     loss_fun,
-    make_binary_labels: bool = True,
-    _description: str = "Validation",
-    pbar: bool = False,
 ) -> tuple[float, Any]:
     """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
 
@@ -90,9 +193,8 @@ def val_performance(
         data_loader (DataLoader): A DataLoader loading the data set on which the performance should be measured,
             e.g. a test or validation set in a data split.
         model (torch.nn.Module): The model to evaluate.
-        loss_fun: The loss function, which is used to measure the loss of the model on the data set
-        make_binary_labels (bool): If flag is set, we only classify binarily, i.e. whether an image is real or fake.
-            In this case, the label 0 encodes 'real'. All other labels are cosidered fake data, and are set to 1.
+        loss_fun: The loss function, which is used to measure the loss of the model on the data set.
+
     Returns:
         Tuple[float, Any]: The measured accuracy and loss of the model on the data set.
     """
@@ -114,113 +216,231 @@ def val_performance(
 
 
 # transformation params
-length = 40000  # length of audio signal in samples
-resol = 128  # number of scales of cwt, and lfccs
 lfcc_filter = 128
 audio_channels = 1
-sample_rate = 22050.0
-f_min = 5000.0
-f_max = 9000.0
 
-cut = True
-max_length = 40000
+# wavelet = "cmor4.6-0.95"
+# wavelet = "mexh"
+transform = "cwt"
 
 # training params
-amount = 1000  # max train samples used
-epochs = 50
-batch_size = 32
-learning_rate = 0.01
+lr_scheduler = True
+reduce_lr_each = 3
+use_mult_gpus = True
 
-tensorboard = True
+plotting = True
 
-if __name__ == "__main__":
+
+def main() -> None:
+    """Trains model to classify audio files.
+
+    Some parameters can be specified via cmd line arguments. Results are printed to
+    stdout and to log file in a new directory 'logs'.
+
+    Raises:
+        ValueError: If args.amount is to little.
+    """
+    args = _parse_args()
+
+    torch.manual_seed(42)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    data_folder = "/home/s6kogase/wavefake/data/classifier"
+    # Logs
+    time_now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+    day = datetime.datetime.now().strftime("%Y_%m_%d")
+    Path(f"logs/{day}/").mkdir(parents=True, exist_ok=True)
+    Path("saved_models/").mkdir(parents=True, exist_ok=True)
+    init_logger(f"logs/{day}/exp_{time_now}.log")
+
+    data_folder = [
+        "/home/s6kogase/wavefake/data/generated_audio/ljspeech_parallel_wavegan",
+        "/home/s6kogase/wavefake/data/generated_audio/ljspeech_hifiGAN",
+        "/home/s6kogase/wavefake/data/LJspeech-1.1/wavs",
+    ]
+    data_string = "LJSpeech_pwg_hifiGAN"
+
+    test_data_folder = [
+        "/home/s6kogase/wavefake/data/generated_audio/ljspeech_parallel_wavegan",
+        "/home/s6kogase/wavefake/data/generated_audio/ljspeech_hifiGAN",
+        "/home/s6kogase/wavefake/data/LJspeech-1.1/wavs",
+    ]
+
+    amount = args.amount // (
+        args.max_length // args.frame_size
+    )  # max train samples used
+
+    if amount <= len(data_folder):
+        raise ValueError("To little training samples.")
+
+    if args.fmax > args.sample_rate / 2:
+        f_max = args.sample_rate / 2
+    else:
+        f_max = args.fmax
+    if args.fmin >= f_max:
+        f_min = 80.0
+    else:
+        f_min = args.fmin
+
     train_data = util.TransformDataset(
         data_folder,
         device=device,
-        sample_rate=sample_rate,
-        amount=amount,
-        length=length,
+        sample_rate=args.sample_rate,
+        max_length=args.max_length,
+        frame_size=args.frame_size,
         f_min=f_min,
         f_max=f_max,
-        resolution=resol,
+        resolution=args.scales,
         lfcc_filter=lfcc_filter,
-        transform="cwt",
+        transform=transform,
+        wavelet=args.wavelet,
+        from_path=0,
+        to_path=amount,
     )
 
-    test_size = 0.2  # 20% of total
-    test_len = int(len(train_data) * test_size)
-    train_len = len(train_data) - test_len
-    lengths = [train_len, test_len]
-    train, val = torch.utils.data.random_split(train_data, lengths)
+    test_size = amount // 5  # 20% of total training samples
 
-    model = models.TestNet()
+    val_data = util.TransformDataset(
+        data_folder,
+        device=device,
+        sample_rate=args.sample_rate,
+        max_length=args.max_length,
+        frame_size=args.frame_size,
+        f_min=f_min,
+        f_max=f_max,
+        resolution=args.scales,
+        lfcc_filter=lfcc_filter,
+        transform=transform,
+        wavelet=args.wavelet,
+        from_path=amount + 1,
+        to_path=amount + test_size + 1,
+    )
+
+    test_len = len(val_data)
+    train_len = len(train_data)
+    # train, val = torch.utils.data.random_split(train_data, lengths)
+
+    if args.model == "regression":
+        model = models.Regression(classes=2)
+    elif args.model == "cnn":
+        model = models.CNN(n_output=2)
+    elif args.model == "testnet":
+        model = models.TestNet(classes=2, batch_size=args.batch_size)
+    elif args.model == "testnet2":
+        model = models.TestNet2(classes=2)
+    else:
+        model = models.Net(n_classes=2)
     model_str = model.get_name()
-    model.double()
+
+    if torch.cuda.device_count() > 1:
+        if use_mult_gpus:
+            model = nn.DataParallel(model)
+        else:
+            LOGGER.info("Recommended to use multiple gpus.")
+
     model.to(device)
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(
+        model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
+    )
 
-    # reduce the learning after 3 epochs by a factor of 10
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    # reduce the learning after 15 epochs by a factor of 10
+    scheduler = optim.lr_scheduler.StepLR(
+        optimizer, step_size=reduce_lr_each, gamma=0.5
+    )
 
     LOGGER.info("Loading data...")
-    trn_dl, val_dl = get_data(train, val)
+    trn_dl, val_dl = get_data(train_data, val_data, args.batch_size)
+    mean, std = get_mean_std_welford(
+        train_data
+    )  # calculate mean, std only on train data
+    train_data.set_mean_std(mean, std)
+    val_data.set_mean_std(mean, std)
+
+    test_data = util.TransformDataset(
+        test_data_folder,
+        device=device,
+        sample_rate=args.sample_rate,
+        max_length=args.max_length,
+        frame_size=args.frame_size,
+        f_min=f_min,
+        f_max=f_max,
+        resolution=args.scales,
+        lfcc_filter=lfcc_filter,
+        transform=transform,
+        wavelet=args.wavelet,
+        from_path=amount + test_size + 1,
+        to_path=amount + 2 * (test_size + 1),
+        mean=mean,
+        std=std,
+    )
+    test_dl = DataLoader(test_data, batch_size=args.batch_size, shuffle=False)
+    LOGGER.info(f"Test dataset length: {len(test_dl) * args.batch_size}")
 
     train_losses, train_accuracies = [], []
     val_losses, val_accuracies = [], []
     steps = 0
 
-    Path("logs").mkdir(parents=True, exist_ok=True)
-    init_logger(f"logs/experiments_{strftime('%Y-%m-%d_%H-%M-%S', gmtime())}.log")
+    LOGGER.info(summary(model, (audio_channels, args.scales, args.frame_size)))
+    if args.m:
+        LOGGER.info(args.m)
     LOGGER.info("-------------------------------")
     LOGGER.info("New Experiment")
-    log_str = f"Parameters:\nTrainset length: {train_len}\n"
-    log_str += f"Valset length: {test_len}\n"
-    log_str += f"Length of input: {max_length}\n"
-    log_str += f"Number of scales: {resol}\n"
-    log_str += f"LFCCs: {lfcc_filter}\n"
-    log_str += f"[f_min, f_max]: {f_min, f_max}\n"
-    log_str += f"Sample rate: {sample_rate}\n"
-    log_str += f"Batch Size: {batch_size}\n"
-    log_str += f"Using Arch: {model_str}"
-    LOGGER.info(log_str)
+    LOGGER.info(f"mean: {mean}, std: {std}")
+    LOGGER.info("Parameters:")
+    LOGGER.info(f"Trainset length: {train_len}")
+    LOGGER.info(f"Valset length: {test_len}")
+    LOGGER.info(f"Learning Rate: {args.learning_rate}")
+    LOGGER.info(f"Number of scales: {args.scales}")
+    LOGGER.info(f"LFCCs: {lfcc_filter}")
+    LOGGER.info(f"[f_min, f_max]: {f_min, f_max}")
+    LOGGER.info(f"Sample rate: {args.sample_rate}")
+    LOGGER.info(f"Batch Size: {args.batch_size}")
+    LOGGER.info(f"Using Arch: {model_str}")
+    LOGGER.info(f"Transform: {transform}")
+    LOGGER.info(f"data: {data_string}")
+    LOGGER.info(f"Frame size: {args.frame_size}")
+    LOGGER.info(f"Samples per file: {args.max_length}")
+    LOGGER.info(f"Wavelet: {args.wavelet}")
 
-    if tensorboard:
+    if args.tensorboard:
         writer_str = "runs/"
         writer_str += f"{model_str}/"
-        writer_str += f"{batch_size}/"
-        writer_str += data_folder
-        writer_str += f"{learning_rate}_"
-        writer_str += f"{resol}_"
-        writer_str += f"{length}_"
-        writer_str += f"{strftime('%Y-%m-%d_%H:%M:%S', gmtime())}"
+        writer_str += f"{args.batch_size}/"
+        writer_str += f"{data_string}/"
+        writer_str += f"{args.learning_rate}_"
+        writer_str += f"{args.weight_decay}_"
+        writer_str += f"{args.scales}_"
+        writer_str += f"{args.frame_size}_"
+        writer_str += time_now
         writer = SummaryWriter(writer_str, max_queue=100)
 
-    # plotting first data tensor
-    for i in range(10):
-        fig, axes = plt.subplots(1, 1)
-        labels = next(iter(trn_dl))[1]
-        x = next(iter(trn_dl))[0]
-        y = x.cpu()
-        y = y[0]
-        y = y.squeeze()
-        y = y.numpy()
-        plt.title("Fake" if labels[i].item() == 1 else "Real")
-        im = axes.imshow(
-            y,
-            cmap="hot",
-            extent=[0, max_length, f_min, f_max],
-            vmin=-100,
-            vmax=100,
-        )
-        plt.savefig(f"plots/test-{i}.png")
+    if plotting:
+        LOGGER.info("Plotting some input tensors...")
+        # plotting first 10 data tensors
+        for i in range(6):
+            fig, axes = plt.subplots(1, 1)
+            labels = next(iter(trn_dl))[1]
+            x = next(iter(trn_dl))[0]
+            y = x.cpu()
+            y = y[i]
+            y = y.squeeze()
+            y = y.numpy()
+            plt.title("Fake" if labels[i].item() == 1 else "Real")
+            im = axes.imshow(
+                y,
+                cmap="hot",
+                extent=[0, args.frame_size * 10, f_min, f_max],
+                vmin=-1,
+                vmax=3,
+            )
+            fig.colorbar(im, ax=axes)
+            plt.savefig(f"plots/test-{i}.png")
 
     # Trainer
-    for epoch in range(epochs):
-        LOGGER.info(f"Training data in epoch {epoch+1} of {epochs}.")
+    for epoch in range(args.epochs):
+        LOGGER.info("+------+")
+        LOGGER.info(f"Training data in epoch {epoch+1} of {args.epochs}.")
+        LOGGER.info(f"Learning rate: {scheduler.get_last_lr()}")
         train_epoch_losses, train_epoch_accuracies = [], []
 
         # training
@@ -241,7 +461,7 @@ if __name__ == "__main__":
         train_epoch_loss = np.array(train_epoch_losses).mean()
         train_epoch_accuracy = np.mean(train_epoch_accuracies)
 
-        # testing
+        # validation
         val_acc, val_loss = val_performance(val_dl, model, loss_fn)
 
         train_losses.append(train_epoch_loss)
@@ -249,7 +469,10 @@ if __name__ == "__main__":
         val_losses.append(val_loss.item())
         val_accuracies.append(val_acc)
 
-        if tensorboard:
+        if lr_scheduler:
+            scheduler.step()
+
+        if args.tensorboard:
             writer.add_scalar("Loss/train", train_epoch_loss, epoch)
             writer.add_scalar("Accuracy/train", train_epoch_accuracy, epoch)
             writer.add_scalar("Loss/validation", val_loss, epoch)
@@ -261,34 +484,54 @@ if __name__ == "__main__":
         LOGGER.info(f"Training Accuracy: {train_epoch_accuracy}")
         LOGGER.info(f"Validation Accuracy: {val_acc}")
 
-    if tensorboard:
+        if val_acc == 1.0 and val_accuracies[-2] == 1.0:
+            LOGGER.info("Validation accuracy ideal, stopping training.")
+            break
+
+    if args.tensorboard:
         writer.flush()
         writer.close()
 
-    # summary(model, (audio_channels, resol, length))
-    epochs = np.arange(epochs) + 1
-    print("train losses: ", train_losses)
-    print("val losses: ", val_losses)
-    print("train accuracies: ", train_accuracies)
-    print("val accuracies: ", val_accuracies)
-    plt.subplot(211)
-    plt.plot(epochs, train_losses, "bo", label="Training loss")
-    plt.plot(epochs, val_losses, "r", label="Validation loss")
-    plt.title("Training and validation loss with CNN")
-    plt.xlabel("Epochs")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.grid("off")
-    plt.subplot(212)
-    plt.plot(epochs, train_accuracies, "bo", label="Training accuracy")
-    plt.plot(epochs, val_accuracies, "r", label="Validation accuracy")
-    plt.title("Training and validation accuracy with CNN")
-    plt.xlabel("Epochs")
-    plt.ylabel("Accuracy")
-    plt.gca().set_yticklabels(
-        ["{:.0f}%".format(x * 100) for x in plt.gca().get_yticks()]
-    )
-    plt.legend()
-    plt.grid("off")
-    # plt.show()
-    plt.savefig("test-run.png")
+    LOGGER.info("-----------------")
+    LOGGER.info("Testing")
+
+    test_acc, test_loss = val_performance(test_dl, model, loss_fn)
+    LOGGER.info(f"Test loss: {test_loss.item()}")
+    LOGGER.info(f"Test Accuracy: {test_acc}")
+
+    models.save_model(model, f"./saved_models/{model_str}_{time_now}.pth")
+
+    if plotting:
+        plt.clf()
+        # Plotting
+        # summary(model, (audio_channels, resol, length))
+        epochs_scala = np.arange(args.epochs) + 1
+        print("train losses: ", train_losses)
+        print("val losses: ", val_losses)
+        print("train accuracies: ", train_accuracies)
+        print("val accuracies: ", val_accuracies)
+        plt.subplot(211)
+        plt.plot(epochs_scala, train_losses, "bo", label="Training loss")
+        plt.plot(epochs_scala, val_losses, "r", label="Validation loss")
+        plt.title("Training and validation loss with CNN")
+        plt.xlabel("Epochs")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.grid("off")
+        plt.subplot(212)
+        plt.plot(epochs_scala, train_accuracies, "bo", label="Training accuracy")
+        plt.plot(epochs_scala, val_accuracies, "r", label="Validation accuracy")
+        plt.title("Training and validation accuracy with CNN")
+        plt.xlabel("Epochs")
+        plt.ylabel("Accuracy")
+        plt.gca().set_yticklabels(
+            ["{:.0f}%".format(x * 100) for x in plt.gca().get_yticks()]
+        )
+        plt.legend()
+        plt.grid("off")
+        # plt.show()
+        plt.savefig("test-run.png")
+
+
+if __name__ == "__main__":
+    main()

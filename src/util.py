@@ -13,7 +13,6 @@ https://github.com/pytorch/tutorials/blob/master/beginner_source/audio_feature_e
 """
 
 import os
-import random
 from os import path as pth
 from pathlib import Path
 from typing import Optional, Tuple, Union
@@ -56,7 +55,7 @@ class AudioDataset(torch.utils.data.Dataset):
 
     def __init__(
         self,
-        directory_or_path_list: Union[str, Path],
+        directory_or_path_list: Union[str, Path, list],
         sample_rate: int = 16_000,
         amount: Optional[int] = None,
         normalize: bool = True,
@@ -72,16 +71,31 @@ class AudioDataset(torch.utils.data.Dataset):
         self.sample_rate = sample_rate
         self.normalize = normalize
 
-        if isinstance(directory_or_path_list, Path) or isinstance(
-            directory_or_path_list, str
+        paths = []
+        if (
+            isinstance(directory_or_path_list, Path)
+            or isinstance(directory_or_path_list, str)
+            or isinstance(directory_or_path_list, list)
         ):
-            directory = Path(directory_or_path_list)
-            if not directory.exists():
-                raise IOError(f"Directory does not exists: {directory}")
+            if isinstance(directory_or_path_list, list):
+                for path in directory_or_path_list:
+                    directory = Path(path)
+                    if not directory.exists():
+                        raise IOError(f"Directory does not exists: {directory}")
+                    path_list = find_wav_files(directory)
+                    paths.append(path_list)
+                    if path_list is None:
+                        raise IOError(
+                            f"Directory did not contain wav files: {directory}"
+                        )
+            else:
+                directory = Path(directory_or_path_list)
+                if not directory.exists():
+                    raise IOError(f"Directory does not exists: {directory}")
 
-            paths = find_wav_files(directory)
-            if paths is None:
-                raise IOError(f"Directory did not contain wav files: {directory}")
+                paths.append(find_wav_files(directory))
+                if path_list is None:
+                    raise IOError(f"Directory did not contain wav files: {directory}")
         else:
             raise TypeError(
                 f"Supplied unsupported type for argument directory_or_path_list {type(directory_or_path_list)}!"
@@ -113,27 +127,54 @@ class TransformDataset(torch.utils.data.Dataset):
     """Torch dataset to load data from a provided directory.
 
     Port of: https://github.com/RUB-SysSec/WaveFake/blob/main/dfadetect/datasets.py
-    Args:
-        directory_or_path_list: Path to the directory containing wav files to load. Or a list of paths.
-    Raises:
-        IOError: If the directory does ot exists or the directory did not contain any wav files.
+
+    Windowing happens as the file is loaded, because torchaudio.load can load file sample-wise. This
+    might lead to border effects as soon as cwt transform is applied afterwards.
     """
 
     def __init__(
         self,
-        directory_or_path_list: Union[str, Path],
-        device: str = "cpu",
+        directory_or_path_list: Union[str, Path, list],
+        device: Optional[str] = "cpu",
         sample_rate: float = 16000.0,
-        length: int = 64600,
+        max_length: int = 64600,
         amount: Optional[int] = None,
         normalize: bool = True,
         resolution: int = 50,
-        lfcc_filter: int = 40,
+        lfcc_filter: Optional[int] = 40,
         f_min: float = 80.0,
         f_max: float = 1000.0,
         transform: str = "cwt",
+        mean: Optional[float] = None,
+        std: Optional[float] = None,
+        frame_size: int = 1024,
+        wavelet: str = "cmor0.5-1.0",
+        from_path: int = 0,
+        to_path: int = 10,
     ) -> None:
         """Initialize Audioloader.
+
+        For each given all .wav file paths are put into a list and iterated. The first max_length
+        samples of each file is cut into frames of length frame_size until the maximum given amount
+        of training samples is reached. If (to_path - from_path) * (max_length // frame_size) is very
+        small then it might happen that only on audio file is enough to fill up all the training samples.
+
+        Args:
+            directory_or_path_list: Path to the directory containing wav files to load. Or a list of paths.
+            device (optional, str): Device on which tensors shall be stored, can be cpu or gpu.
+            sample_rate (float): Sample rate that audio signal shall have. If it sample rate is not the
+                            same as the sample rate of the loaded signal, it will be down- or upsampled.
+            max_length (int): Maximum number of samples that will be loaded from each audio file.
+            amount (optinal, int): Maximum number of paths being considerd when searching folders for audios.
+            normalize (bool): True if audio signal should be loaded with normalized amplitude (in [-1,1]).
+            resolution (int): Number of scales of CWT that are computed -> first dimension of input tensor.
+            lfcc_filter (optional, int): Number of lfccs that will be computed.
+            f_min (float): Smallest frequency that will be analyzed.
+            f_max (float): Biggest frequency that will be analyzed.
+            transform (str): Transformation that will be used. Can be 'cwt' or 'lfcc'.
+            mean (optional, float): Mean of dataset.
+            std (optional, float): Standard deviation of dataset.
+            frame_size (int): Number of samples per frame -> second dimension of input tensor.
 
         Raises:
             IOError: If directory does not exist, or does not contain wav files.
@@ -145,11 +186,15 @@ class TransformDataset(torch.utils.data.Dataset):
         self.normalize = normalize
         self.device = device
 
-        self.batch_length = length
+        self.max_length = max_length
         self.resolution = resolution
+        self.mean = mean
+        self.std = std
+        self.frame_size = frame_size
+        self.frames_per_file = self.max_length // self.frame_size
 
-        if transform == "stft":
-            n_fft = 1024
+        if transform == "lfcc":
+            n_fft = frame_size
             hop_length = 512
 
             self.transform = tf.LFCC(
@@ -163,72 +208,119 @@ class TransformDataset(torch.utils.data.Dataset):
         elif transform == "cwt":
             self.transform = CWT(
                 sample_rate=self.sample_rate,
-                n_lfcc=lfcc_filter,
-                resolution=self.resolution,
+                n_lin=resolution,
                 f_min=f_min,
                 f_max=f_max,
-                length=self.batch_length,
+                wavelet=wavelet,
             )
         else:
             self.transform = None
 
-        if isinstance(directory_or_path_list, Path) or isinstance(
-            directory_or_path_list, str
+        paths = []
+        if from_path >= to_path:
+            from_path = 0
+            to_path = 10
+        if (
+            isinstance(directory_or_path_list, Path)
+            or isinstance(directory_or_path_list, str)
+            or isinstance(directory_or_path_list, list)
         ):
-            directory = Path(directory_or_path_list)
-            if not directory.exists():
-                raise IOError(f"Directory does not exists: {directory}")
+            if isinstance(directory_or_path_list, list):
+                dir_num = len(directory_or_path_list)
+                amount = to_path - from_path
+                ind = amount // dir_num
+                if ind == 0:
+                    ind = 1
+                for p in range(dir_num):
+                    directory = Path(directory_or_path_list[p])
+                    if not directory.exists():
+                        raise IOError(f"Directory does not exists: {directory}")
+                    path_list = find_wav_files(directory)
+                    if path_list is None:
+                        raise IOError(
+                            f"Directory did not contain wav files: {directory}"
+                        )
 
-            paths = find_wav_files(directory)
-            if paths is None:
-                raise IOError(f"Directory did not contain wav files: {directory}")
+                    if from_path is not None and to_path is not None:
+                        # take equally spread number of audios from each directory
+                        # assuming that all directories shall be taken into account equally
+                        if p == dir_num - 1 and amount > 1:
+                            ind += amount % dir_num
+                        path_list = path_list[from_path : from_path + ind]
+
+                    paths.extend(path_list)
+            else:
+                directory = Path(directory_or_path_list)
+                if not directory.exists():
+                    raise IOError(f"Directory does not exists: {directory}")
+
+                paths.extend(find_wav_files(directory))
+                if paths is None:
+                    raise IOError(f"Directory did not contain wav files: {directory}")
+                if from_path is not None and to_path is not None:
+                    paths = paths[from_path:to_path]
         else:
             raise TypeError(
                 f"Supplied unsupported type for argument directory_or_path_list {type(directory_or_path_list)}!"
             )
 
-        if amount is not None:
-            paths = paths[:amount]
-
-        self._paths = paths
+        path_offsets = []
+        path_list = []
+        for path in paths:
+            for i in range(self.frames_per_file):
+                # assuming every audio file has max. max_length samples
+                path_list.append(path)
+                path_offsets.append(i * self.frame_size)
+        self._path_list = path_list
+        self._path_offsets = path_offsets
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Load signal from .wav."""
-        path = self._paths[index]
+        """Load signal from .wav.
 
-        waveform, sample_rate = torchaudio.load(path, normalize=self.normalize)
+        Audio files are loaded in frames of given frame size. They will be down- or upsampled if sample rate
+        differs from given sample rate. Afterwards the specified transform will be applied.
+        """
+        path = self._path_list[index]
+        offset = self._path_offsets[index]
 
-        if sample_rate != self.sample_rate:
-            waveform, sample_rate = torchaudio.sox_effects.apply_effects_file(
-                path, [["rate", f"{self.sample_rate}"]], normalize=self.normalize
+        meta = torchaudio.info(path)
+        if meta.num_frames < offset + self.frame_size:
+            offset = 0  # if audio file is smaller than max_length samples
+
+        if meta.sample_rate != self.sample_rate:
+            waveform, _sample_rate = torchaudio.sox_effects.apply_effects_file(
+                path,
+                [["rate", f"{self.sample_rate}"]],
+                normalize=self.normalize,
+            )
+            if waveform.shape[0] < offset + self.frame_size:
+                offset = 0  # if audio file is smaller than max_length samples
+            waveform = waveform[:, offset : offset + self.frame_size]
+        else:
+            # only load small window of audio -> faster than slicing afterwards and more convenient
+            waveform, _sample_rate = torchaudio.load(
+                path,
+                normalize=self.normalize,
+                num_frames=self.frame_size,
+                frame_offset=offset,
             )
 
+        """
         # cut all silences > 0.2s
-        (
-            waveform_trimmed,
-            sample_rate_trimmed,
-        ) = torchaudio.sox_effects.apply_effects_tensor(
+        waveform_trimmed, sample_rate_trimmed = torchaudio.sox_effects.apply_effects_tensor(
             waveform, sample_rate, SOX_SILENCE
         )
 
         if waveform_trimmed.size()[1] > 0:
             waveform = waveform_trimmed
             sample_rate = sample_rate_trimmed
-
-        if self.batch_length is not None:
-            length = waveform.shape[1]
-            if length >= self.batch_length:  # randomly cut signal
-                rand = random.randint(0, length - self.batch_length - 1)
-                waveform = waveform[:, rand : rand + self.batch_length]
-            if length < self.batch_length:  # pad signal
-                num_repeats = int(self.batch_length / length) + 1
-                waveform = torch.tile(waveform, (1, num_repeats))[
-                    :, : self.batch_length
-                ][0]
-                waveform = torch.unsqueeze(waveform, dim=0)
-
+        """
         if self.transform:
             waveform = self.transform(waveform)
+
+        # normalize data
+        if self.mean is not None:
+            waveform = (waveform - self.mean) / self.std
 
         # a bit hardcoded sorry
         path_str = str(path)
@@ -241,10 +333,15 @@ class TransformDataset(torch.utils.data.Dataset):
 
     def __len__(self) -> int:
         """Length of path list."""
-        return len(self._paths)
+        return len(self._path_list)
+
+    def set_mean_std(self, mean, std) -> None:
+        """Setter for mean and standard deviation."""
+        self.mean = mean
+        self.std = std
 
 
-def find_wav_files(path_to_dir: Union[Path, str]) -> Union[list[Path], None]:
+def find_wav_files(path_to_dir: Union[Path, str]) -> list[Path]:
     """Find all wav files in the directory and its subtree.
 
     Port of: https://github.com/RUB-SysSec/WaveFake/blob/main/dfadetect/utils.py
@@ -255,9 +352,54 @@ def find_wav_files(path_to_dir: Union[Path, str]) -> Union[list[Path], None]:
     """
     paths = list(sorted(Path(path_to_dir).glob("**/*.wav")))
 
-    if len(paths) == 0:
-        return None
     return paths
+
+
+class WelfordEstimator:
+    """Compute running mean and standard deviations.
+
+    The Welford approach greatly reduces memory consumption.
+    Port of: https://github.com/gan-police/frequency-forensics/blob/main/src/freqdect/prepare_dataset.py
+    """
+
+    def __init__(self) -> None:
+        """Create a Welfordestimator."""
+        self.collapsed_axis: Optional[Tuple[int, ...]] = None
+
+    # estimate running mean and std
+    # average all axis except the color channel
+    # https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
+    def update(self, batch_vals: torch.Tensor) -> None:
+        """Update the running estimation.
+
+        Args:
+            batch_vals (torch.Tensor): The current batch element.
+        """
+        if not self.collapsed_axis:
+            self.collapsed_axis = tuple(np.arange(len(batch_vals.shape[:-1])))
+            self.count = torch.zeros(1, device=batch_vals.device, dtype=torch.float64)
+            self.mean = torch.zeros(
+                batch_vals.shape[-1], device=batch_vals.device, dtype=torch.float64
+            )
+            self.std = torch.zeros(
+                batch_vals.shape[-1], device=batch_vals.device, dtype=torch.float64
+            )
+            self.m2 = torch.zeros(
+                batch_vals.shape[-1], device=batch_vals.device, dtype=torch.float64
+            )
+        self.count += torch.prod(torch.tensor(batch_vals.shape[:-1]))
+        delta = torch.sub(batch_vals, self.mean)
+        self.mean += torch.sum(delta / self.count, self.collapsed_axis)
+        delta2 = torch.sub(batch_vals, self.mean)
+        self.m2 += torch.sum(delta * delta2, self.collapsed_axis)
+
+    def finalize(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Finish the estimation and return the computed mean and std.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: Estimated mean and variance.
+        """
+        return self.mean, torch.sqrt(self.m2 / self.count)
 
 
 def load_from_wav(
