@@ -153,18 +153,21 @@ class TestNet2(nn.Module):
 
 
 class Regression(torch.nn.Module):
-    """A shallow linear-regression model."""
+    """A linear-regression model."""
 
-    def __init__(self, classes: int) -> None:
+    def __init__(self, classes: int, flt_size: int) -> None:
         """Create the regression model.
 
         Args:
             classes (int): The number of classes or sources to classify.
+            flt_size (int): The number of input pixels.
         """
         super().__init__()
         self.linear = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(12800, 256),
+            nn.Linear(flt_size, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 256),
             nn.ReLU(),
             nn.Linear(256, classes),
         )

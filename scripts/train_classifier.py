@@ -142,7 +142,7 @@ def _parse_args():
     return parser.parse_args()
 
 
-def get_data(train, val, batch_size) -> tuple[DataLoader, DataLoader]:
+def get_dataloaders(train, val, batch_size) -> tuple[DataLoader, DataLoader]:
     """Get Dataloaders for training and validation dataset."""
     trn_dl = DataLoader(train, batch_size=batch_size, shuffle=True)
     val_dl = DataLoader(val, batch_size=batch_size, shuffle=False)
@@ -211,7 +211,7 @@ def val_performance(
             val_ok += torch.sum(ok_mask).item()
             val_total += batch_labels.shape[0]
         val_acc = val_ok / val_total
-        print("acc", val_acc, "ok", val_ok, "total", val_total)
+        LOGGER.info(f"ok/total: {val_ok} / {val_total}.")
     return val_acc, val_loss
 
 
@@ -225,10 +225,9 @@ transform = "cwt"
 
 # training params
 lr_scheduler = True
-reduce_lr_each = 3
 use_mult_gpus = True
 
-plotting = True
+plotting = False
 
 
 def main() -> None:
@@ -241,6 +240,7 @@ def main() -> None:
         ValueError: If args.amount is to little.
     """
     args = _parse_args()
+    print(args)
 
     torch.manual_seed(42)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -252,24 +252,24 @@ def main() -> None:
     Path("saved_models/").mkdir(parents=True, exist_ok=True)
     init_logger(f"logs/{day}/exp_{time_now}.log")
 
-    data_folder = [
-        "/home/s6kogase/wavefake/data/generated_audio/ljspeech_parallel_wavegan",
-        "/home/s6kogase/wavefake/data/generated_audio/ljspeech_hifiGAN",
-        "/home/s6kogase/wavefake/data/LJspeech-1.1/wavs",
+    # DATA LOADING
+    fake_data_folder = [
+        # "/home/s6kogase/wavefake/data/generated_audio/ljspeech_parallel_wavegan",
+        # "/home/s6kogase/wavefake/data/generated_audio/ljspeech_hifiGAN",
+        # "/home/s6kogase/wavefake/data/generated_audio/ljspeech_melgan",
+        "/home/s6kogase/wavefake/data/generated_audio/ljspeech_multi_band_melgan",
+        # "/home/s6kogase/wavefake/data/generated_audio/ljspeech_waveglow",
     ]
-    data_string = "LJSpeech_pwg_hifiGAN"
+    real_data_folder = "/home/s6kogase/wavefake/data/LJspeech-1.1/wavs"
 
-    test_data_folder = [
-        "/home/s6kogase/wavefake/data/generated_audio/ljspeech_parallel_wavegan",
-        "/home/s6kogase/wavefake/data/generated_audio/ljspeech_hifiGAN",
-        "/home/s6kogase/wavefake/data/LJspeech-1.1/wavs",
-    ]
+    data_string = "LJSpeech_pwg_hifiGAN_melgan_mbmelgan_waveglow"
+    data_string = "LJSpeech_mbmelgan"
 
-    amount = args.amount // (
-        args.max_length // args.frame_size
-    )  # max train samples used
+    fake_test_data_folder = fake_data_folder
 
-    if amount <= len(data_folder):
+    amount = args.amount * args.frame_size // args.max_length  # max train samples used
+
+    if amount <= len(real_data_folder) + len(fake_data_folder):
         raise ValueError("To little training samples.")
 
     if args.fmax > args.sample_rate / 2:
@@ -281,8 +281,8 @@ def main() -> None:
     else:
         f_min = args.fmin
 
-    train_data = util.TransformDataset(
-        data_folder,
+    train_data_real = util.TransformDataset(
+        real_data_folder,
         device=device,
         sample_rate=args.sample_rate,
         max_length=args.max_length,
@@ -294,13 +294,10 @@ def main() -> None:
         transform=transform,
         wavelet=args.wavelet,
         from_path=0,
-        to_path=amount,
+        to_path=amount // 2,
     )
-
-    test_size = amount // 5  # 20% of total training samples
-
-    val_data = util.TransformDataset(
-        data_folder,
+    train_data_fake = util.TransformDataset(
+        fake_data_folder,
         device=device,
         sample_rate=args.sample_rate,
         max_length=args.max_length,
@@ -311,16 +308,53 @@ def main() -> None:
         lfcc_filter=lfcc_filter,
         transform=transform,
         wavelet=args.wavelet,
-        from_path=amount + 1,
-        to_path=amount + test_size + 1,
+        from_path=0,
+        to_path=amount // 2,
     )
+
+    train_data = torch.utils.data.ConcatDataset([train_data_real, train_data_fake])
+
+    test_size = int(amount * 0.3)  # 30% of total training samples
+
+    val_data_real = util.TransformDataset(
+        real_data_folder,
+        device=device,
+        sample_rate=args.sample_rate,
+        max_length=args.max_length,
+        frame_size=args.frame_size,
+        f_min=f_min,
+        f_max=f_max,
+        resolution=args.scales,
+        lfcc_filter=lfcc_filter,
+        transform=transform,
+        wavelet=args.wavelet,
+        from_path=(amount + 5) // 2,
+        to_path=(amount + test_size + 1) // 2,
+    )
+
+    val_data_fake = util.TransformDataset(
+        fake_data_folder,
+        device=device,
+        sample_rate=args.sample_rate,
+        max_length=args.max_length,
+        frame_size=args.frame_size,
+        f_min=f_min,
+        f_max=f_max,
+        resolution=args.scales,
+        lfcc_filter=lfcc_filter,
+        transform=transform,
+        wavelet=args.wavelet,
+        from_path=(amount + 5) // 2,
+        to_path=(amount + test_size + 5) // 2,
+    )
+
+    val_data = torch.utils.data.ConcatDataset([val_data_real, val_data_fake])
 
     test_len = len(val_data)
     train_len = len(train_data)
-    # train, val = torch.utils.data.random_split(train_data, lengths)
 
     if args.model == "regression":
-        model = models.Regression(classes=2)
+        model = models.Regression(classes=2, flt_size=args.frame_size * args.scales)
     elif args.model == "cnn":
         model = models.CNN(n_output=2)
     elif args.model == "testnet":
@@ -343,21 +377,24 @@ def main() -> None:
         model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
     )
 
-    # reduce the learning after 15 epochs by a factor of 10
+    reduce_lr_each = args.epochs // 4
+    # reduce the learning after reduce_lr_each epochs by a factor of 2
     scheduler = optim.lr_scheduler.StepLR(
         optimizer, step_size=reduce_lr_each, gamma=0.5
     )
 
     LOGGER.info("Loading data...")
-    trn_dl, val_dl = get_data(train_data, val_data, args.batch_size)
+    trn_dl, val_dl = get_dataloaders(train_data, val_data, args.batch_size)
     mean, std = get_mean_std_welford(
         train_data
     )  # calculate mean, std only on train data
-    train_data.set_mean_std(mean, std)
-    val_data.set_mean_std(mean, std)
+    train_data_real.set_mean_std(mean, std)
+    train_data_fake.set_mean_std(mean, std)
+    val_data_real.set_mean_std(mean, std)
+    val_data_fake.set_mean_std(mean, std)
 
-    test_data = util.TransformDataset(
-        test_data_folder,
+    test_data_fake = util.TransformDataset(
+        fake_test_data_folder,
         device=device,
         sample_rate=args.sample_rate,
         max_length=args.max_length,
@@ -368,11 +405,30 @@ def main() -> None:
         lfcc_filter=lfcc_filter,
         transform=transform,
         wavelet=args.wavelet,
-        from_path=amount + test_size + 1,
-        to_path=amount + 2 * (test_size + 1),
+        from_path=(amount + test_size + 5) // 2,
+        to_path=(amount + 2 * (test_size + 5)) // 2,
         mean=mean,
         std=std,
     )
+    test_data_real = util.TransformDataset(
+        real_data_folder,
+        device=device,
+        sample_rate=args.sample_rate,
+        max_length=args.max_length,
+        frame_size=args.frame_size,
+        f_min=f_min,
+        f_max=f_max,
+        resolution=args.scales,
+        lfcc_filter=lfcc_filter,
+        transform=transform,
+        wavelet=args.wavelet,
+        from_path=(amount + test_size + 5) // 2,
+        to_path=(amount + 2 * (test_size + 5)) // 2,
+        mean=mean,
+        std=std,
+    )
+    test_data = torch.utils.data.ConcatDataset([test_data_real, test_data_fake])
+
     test_dl = DataLoader(test_data, batch_size=args.batch_size, shuffle=False)
     LOGGER.info(f"Test dataset length: {len(test_dl) * args.batch_size}")
 
@@ -390,6 +446,7 @@ def main() -> None:
     LOGGER.info(f"Trainset length: {train_len}")
     LOGGER.info(f"Valset length: {test_len}")
     LOGGER.info(f"Learning Rate: {args.learning_rate}")
+    LOGGER.info(f"Weight decay: {args.weight_decay}")
     LOGGER.info(f"Number of scales: {args.scales}")
     LOGGER.info(f"LFCCs: {lfcc_filter}")
     LOGGER.info(f"[f_min, f_max]: {f_min, f_max}")
@@ -436,7 +493,7 @@ def main() -> None:
             fig.colorbar(im, ax=axes)
             plt.savefig(f"plots/test-{i}.png")
 
-    # Trainer
+    # TRAINER
     for epoch in range(args.epochs):
         LOGGER.info("+------+")
         LOGGER.info(f"Training data in epoch {epoch+1} of {args.epochs}.")
@@ -452,7 +509,7 @@ def main() -> None:
             acc = accuracy(data, target, model)
             train_epoch_accuracies.append(acc.item())
 
-            if batch_idx % 5 == 0:
+            if batch_idx % 2 == 0:
                 LOGGER.info(
                     f"Train Epoch: {epoch+1} [{batch_idx * len(data)}/{train_len} \
                     ({100. * (batch_idx * len(data)) / train_len:.0f}%)]\tLoss: {batch_loss:.6f}"
