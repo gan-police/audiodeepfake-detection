@@ -20,6 +20,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchsummary import summary
+from torchvision import models as tv_models
 
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_PATH)
@@ -75,9 +76,9 @@ def _parse_args():
     )
     parser.add_argument(
         "--model",
-        choices=["regression", "cnn", "testnet", "testnet2", "net"],
+        choices=["regression", "testnet", "resnet18", "resnet34"],
         default="testnet",
-        help="The model type choose regression, CNN, TestNet, TestNet2. Default: testnet.",
+        help="The model type choose regression, TestNet, ResNet18, ResNet34. Default: testnet.",
     )
     parser.add_argument(
         "--frame-size",
@@ -124,8 +125,8 @@ def _parse_args():
     parser.add_argument(
         "--wavelet",
         type=str,
-        default="shan0.1-0.87",
-        help="Wavelet to use in CWT. Default: shan0.1-0.87.",
+        default="cmor4.6-0.97",
+        help="Wavelet to use in CWT. Default: cmor4.6-0.97.",
     )
     parser.add_argument(
         "--m",
@@ -269,6 +270,11 @@ def main() -> None:
 
     amount = args.amount * args.frame_size // args.max_length  # max train samples used
 
+    if args.model == "resnet18" or args.model == "resnet34":
+        input_channels = 3
+    else:
+        input_channels = 1
+
     if amount <= len(real_data_folder) + len(fake_data_folder):
         raise ValueError("To little training samples.")
 
@@ -295,6 +301,7 @@ def main() -> None:
         wavelet=args.wavelet,
         from_path=0,
         to_path=amount // 2,
+        channels=input_channels,
     )
     train_data_fake = util.TransformDataset(
         fake_data_folder,
@@ -310,11 +317,12 @@ def main() -> None:
         wavelet=args.wavelet,
         from_path=0,
         to_path=amount // 2,
+        channels=input_channels,
     )
 
     train_data = torch.utils.data.ConcatDataset([train_data_real, train_data_fake])
 
-    test_size = int(amount * 0.3)  # 30% of total training samples
+    test_size = int(amount * 0.2)  # 30% of total training samples
 
     val_data_real = util.TransformDataset(
         real_data_folder,
@@ -330,6 +338,7 @@ def main() -> None:
         wavelet=args.wavelet,
         from_path=(amount + 5) // 2,
         to_path=(amount + test_size + 1) // 2,
+        channels=input_channels,
     )
 
     val_data_fake = util.TransformDataset(
@@ -346,6 +355,7 @@ def main() -> None:
         wavelet=args.wavelet,
         from_path=(amount + 5) // 2,
         to_path=(amount + test_size + 5) // 2,
+        channels=input_channels,
     )
 
     val_data = torch.utils.data.ConcatDataset([val_data_real, val_data_fake])
@@ -353,16 +363,22 @@ def main() -> None:
     test_len = len(val_data)
     train_len = len(train_data)
 
+    out_classes = 2
     if args.model == "regression":
-        model = models.Regression(classes=2, flt_size=args.frame_size * args.scales)
-    elif args.model == "cnn":
-        model = models.CNN(n_output=2)
+        model = models.Regression(
+            classes=out_classes, flt_size=args.frame_size * args.scales
+        )
     elif args.model == "testnet":
-        model = models.TestNet(classes=2, batch_size=args.batch_size)
-    elif args.model == "testnet2":
-        model = models.TestNet2(classes=2)
+        model = models.TestNet(classes=out_classes, batch_size=args.batch_size)
+    elif args.model == "resnet18":
+        model = tv_models.resnet18(weights="IMAGENET1K_V1")
+        model.fc = torch.nn.Linear(in_features=512, out_features=out_classes, bias=True)
+        model.get_name = lambda: "ResNet18"
     else:
-        model = models.Net(n_classes=2)
+        model = tv_models.resnet34(weights="IMAGENET1K_V1")
+        model.fc = torch.nn.Linear(in_features=512, out_features=out_classes, bias=True)
+        model.get_name = lambda: "ResNet34"
+
     model_str = model.get_name()
 
     if torch.cuda.device_count() > 1:
@@ -380,7 +396,7 @@ def main() -> None:
     reduce_lr_each = args.epochs // 4
     # reduce the learning after reduce_lr_each epochs by a factor of 2
     scheduler = optim.lr_scheduler.StepLR(
-        optimizer, step_size=reduce_lr_each, gamma=0.5
+        optimizer, step_size=reduce_lr_each, gamma=0.4
     )
 
     LOGGER.info("Loading data...")
@@ -409,6 +425,7 @@ def main() -> None:
         to_path=(amount + 2 * (test_size + 5)) // 2,
         mean=mean,
         std=std,
+        channels=input_channels,
     )
     test_data_real = util.TransformDataset(
         real_data_folder,
@@ -426,6 +443,7 @@ def main() -> None:
         to_path=(amount + 2 * (test_size + 5)) // 2,
         mean=mean,
         std=std,
+        channels=input_channels,
     )
     test_data = torch.utils.data.ConcatDataset([test_data_real, test_data_fake])
 
@@ -436,7 +454,7 @@ def main() -> None:
     val_losses, val_accuracies = [], []
     steps = 0
 
-    LOGGER.info(summary(model, (audio_channels, args.scales, args.frame_size)))
+    LOGGER.info(summary(model, (input_channels, args.scales, args.frame_size)))
     if args.m:
         LOGGER.info(args.m)
     LOGGER.info("-------------------------------")
@@ -541,8 +559,12 @@ def main() -> None:
         LOGGER.info(f"Training Accuracy: {train_epoch_accuracy}")
         LOGGER.info(f"Validation Accuracy: {val_acc}")
 
-        if val_acc == 1.0 and val_accuracies[-2] == 1.0:
-            LOGGER.info("Validation accuracy ideal, stopping training.")
+        if (
+            train_epoch_accuracy == 1.0
+            and train_accuracies[-2] == 1.0
+            and train_accuracies[-3] == 1.0
+        ):
+            LOGGER.info("Training accuracy ideal, stopping training.")
             break
 
     if args.tensorboard:
@@ -561,7 +583,6 @@ def main() -> None:
     if plotting:
         plt.clf()
         # Plotting
-        # summary(model, (audio_channels, resol, length))
         epochs_scala = np.arange(args.epochs) + 1
         print("train losses: ", train_losses)
         print("val losses: ", val_losses)

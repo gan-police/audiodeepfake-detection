@@ -26,7 +26,7 @@ class CWT(torch.nn.Module):
         n_lin: int = 60,
         f_min: float = 80.0,
         f_max: float = 2000.0,
-        wavelet: str = "cmor0.5-1.0",
+        wavelet: str = "cmor4.6-0.97",
     ) -> None:
         """Calculate scales for cwt, set object params."""
         super().__init__()

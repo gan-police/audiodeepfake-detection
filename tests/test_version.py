@@ -2,9 +2,9 @@
 
 """Trivial version test."""
 
-import unittest
 import os
 import sys
+import unittest
 
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_PATH)

@@ -151,6 +151,7 @@ class TransformDataset(torch.utils.data.Dataset):
         wavelet: str = "cmor0.5-1.0",
         from_path: int = 0,
         to_path: int = 10,
+        channels: int = 1,
     ) -> None:
         """Initialize Audioloader.
 
@@ -192,6 +193,8 @@ class TransformDataset(torch.utils.data.Dataset):
         self.std = std
         self.frame_size = frame_size
         self.frames_per_file = self.max_length // self.frame_size
+
+        self.channels = channels
 
         if transform == "lfcc":
             n_fft = frame_size
@@ -322,6 +325,13 @@ class TransformDataset(torch.utils.data.Dataset):
         if self.mean is not None:
             waveform = (waveform - self.mean) / self.std
 
+        shape = waveform.shape
+        if self.channels > shape[0]:
+            padding = torch.zeros(self.channels - shape[0], shape[1], shape[2])
+            for i in range(self.channels - shape[0]):
+                padding[i] = waveform  # all channels have the same data
+            waveform = torch.cat((waveform, padding), 0)
+
         # a bit hardcoded sorry
         path_str = str(path)
         if "generated" in path_str or "gen" in path_str:
@@ -353,6 +363,35 @@ def find_wav_files(path_to_dir: Union[Path, str]) -> list[Path]:
     paths = list(sorted(Path(path_to_dir).glob("**/*.wav")))
 
     return paths
+
+
+def get_frames_list(
+    path_to_dir: Union[Path, str], amount: Optional[int] = None, frame_size: int = 224
+) -> tuple[list, list]:
+    """Return list of all paths in given directory with frame offset list.
+
+    Raises:
+        ValueError: If frame_size is to low.
+    """
+    paths = find_wav_files(path_to_dir)
+    if amount:
+        paths = paths[:amount]
+
+    if frame_size <= 0:
+        raise ValueError("Frame_size must be positive.")
+
+    path_num_frames = []
+    path_offsets = []
+    path_list = []
+    for i in range(len(paths)):
+        frames = torchaudio.info(paths[i]).num_frames
+        path_num_frames.append(frames)
+        for j in range(frames // frame_size):
+            # assuming every audio file has max. max_length samples
+            path_list.append(paths[i])
+            path_offsets.append(j * frame_size)
+
+    return path_list, path_offsets
 
 
 class WelfordEstimator:

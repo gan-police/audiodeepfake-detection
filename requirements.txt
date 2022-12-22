@@ -1,6 +1,6 @@
 ssqueezepy
 librosa
-torch
+torch==1.13.0
 numpy
 ptwt
 pywavelets
@@ -8,3 +8,4 @@ matplotlib
 torchaudio
 tikzplotlib
 torch-summary
+torchvision==0.14.0
