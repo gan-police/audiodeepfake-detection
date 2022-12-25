@@ -9,3 +9,4 @@ torchaudio
 tikzplotlib
 torch-summary
 torchvision==0.14.0
+tensorboard

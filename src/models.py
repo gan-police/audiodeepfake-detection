@@ -11,28 +11,18 @@ class TestNet(nn.Module):
         super(TestNet, self).__init__()
         self.cnn = nn.Sequential(
             nn.Conv2d(1, 16, kernel_size=3, stride=2),
-            # nn.MaxPool2d(2),
             nn.ReLU(),
             nn.Conv2d(16, 32, kernel_size=3, stride=2),
-            # nn.MaxPool2d(2),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=2),
-            # nn.MaxPool2d(2),
             nn.ReLU(),
             nn.Conv2d(64, 128, kernel_size=3, stride=2),
-            # nn.MaxPool2d(2),
             nn.ReLU(),
-            # nn.Conv2d(64, 128, kernel_size=3),
-            # nn.MaxPool2d(2),
-            # nn.ReLU(),
-            # nn.AdaptiveAvgPool2d((8, 8)),
         )
         self.fc = nn.Sequential(
             nn.Flatten(),
-            # nn.Linear(8 * 8 * batch_size, classes, bias=False),
-            nn.Linear(4224, classes, bias=False),
+            nn.Linear(4224, classes, bias=True),
         )
-        self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
 
     def forward(self, input) -> torch.Tensor:
         """Forward pass."""
@@ -59,14 +49,11 @@ class Regression(torch.nn.Module):
         self.linear = nn.Sequential(
             nn.Flatten(),
             nn.Linear(flt_size, 1024),
-            nn.ReLU(),
+            # nn.ReLU(),
             nn.Linear(1024, 256),
-            nn.ReLU(),
+            # nn.ReLU(),
             nn.Linear(256, classes),
         )
-
-        # self.activation = torch.nn.Sigmoid()
-        self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Compute the regression forward pass.

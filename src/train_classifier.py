@@ -17,7 +17,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchsummary import summary
 from torchvision import models as tv_models
@@ -25,8 +24,8 @@ from torchvision import models as tv_models
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_PATH)
 
-import src.models as models
-import src.util as util
+import src.data_loader as data_util
+from src.models import Regression, TestNet, save_model
 
 LOGGER = logging.getLogger()
 
@@ -133,7 +132,30 @@ def _parse_args():
         type=str,
         help="Message that will be logged.",
     )
-
+    parser.add_argument(
+        "--fakedir",
+        type=str,
+        nargs="+",
+        help="Directory containing fake audios. To classify between more than two different GANs chain the \
+            folders in this argument, e.g. --fakedir 'gan_folder_one' 'gan_folder_two' 'gan_folder_three'.",
+    )
+    parser.add_argument(
+        "--out-classes",
+        type=int,
+        default=2,
+        help="Number of classes to differentiate.",
+    )
+    parser.add_argument(
+        "--realdir",
+        type=str,
+        help="Directory containing real audios. To classify between two different GANs put second GAN folder here.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Manual seed to be used.",
+    )
     parser.add_argument(
         "--tensorboard",
         action="store_true",
@@ -141,24 +163,6 @@ def _parse_args():
     )
 
     return parser.parse_args()
-
-
-def get_dataloaders(train, val, batch_size) -> tuple[DataLoader, DataLoader]:
-    """Get Dataloaders for training and validation dataset."""
-    trn_dl = DataLoader(train, batch_size=batch_size, shuffle=True)
-    val_dl = DataLoader(val, batch_size=batch_size, shuffle=False)
-    return trn_dl, val_dl
-
-
-def get_mean_std_welford(train_data_set) -> tuple[float, float]:
-    """Calculate mean and standard deviation of dataset."""
-    LOGGER.info("Calculating mean and standard deviation...")
-    welford = util.WelfordEstimator()
-    for aud_no in range(train_data_set.__len__()):
-        welford.update(train_data_set.__getitem__(aud_no)[0])
-    mean, std = welford.finalize()
-
-    return mean.mean().item(), std.mean().item()
 
 
 def train_batch(x, y, model, opt, loss_fn) -> torch.Tensor:
@@ -216,16 +220,8 @@ def val_performance(
     return val_acc, val_loss
 
 
-# transformation params
-lfcc_filter = 128
-audio_channels = 1
-
-# wavelet = "cmor4.6-0.95"
-# wavelet = "mexh"
-transform = "cwt"
-
 # training params
-lr_scheduler = True
+lr_scheduler = False
 use_mult_gpus = True
 
 plotting = False
@@ -243,7 +239,7 @@ def main() -> None:
     args = _parse_args()
     print(args)
 
-    torch.manual_seed(42)
+    torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Logs
@@ -254,21 +250,42 @@ def main() -> None:
     init_logger(f"logs/{day}/exp_{time_now}.log")
 
     # DATA LOADING
-    fake_data_folder = [
-        # "/home/s6kogase/wavefake/data/generated_audio/ljspeech_parallel_wavegan",
-        # "/home/s6kogase/wavefake/data/generated_audio/ljspeech_hifiGAN",
-        # "/home/s6kogase/wavefake/data/generated_audio/ljspeech_melgan",
-        "/home/s6kogase/wavefake/data/generated_audio/ljspeech_multi_band_melgan",
-        # "/home/s6kogase/wavefake/data/generated_audio/ljspeech_waveglow",
-    ]
-    real_data_folder = "/home/s6kogase/wavefake/data/LJspeech-1.1/wavs"
+    if args.fakedir:
+        fake_data_folder = args.fakedir
+        data_string = f"Fake: {args.fakedir}"
+    else:
+        fake_data_folder = [
+            # "/home/s6kogase/wavefake/data/generated_audio/ljspeech_parallel_wavegan",
+            # "/home/s6kogase/wavefake/data/generated_audio/ljspeech_hifiGAN",
+            "/home/s6kogase/wavefake/data/generated_audio/ljspeech_melgan",
+            # "/home/s6kogase/wavefake/data/generated_audio/ljspeech_melgan_large",
+            # "/home/s6kogase/wavefake/data/generated_audio/ljspeech_multi_band_melgan",
+            # "/home/s6kogase/wavefake/data/generated_audio/ljspeech_full_band_melgan",
+            # "/home/s6kogase/wavefake/data/generated_audio/ljspeech_waveglow",
+            # "/home/s6kogase/wavefake/data/generated_audio/jsut_parallel_wavegan",
+            # "/home/s6kogase/wavefake/data/generated_audio/jsut_multi_band_melgan",
+            # "/home/s6kogase/wavefake/data/generated_audio/common_voices_prompts_from_conformer_fastspeech2_pwg_ljspeech",
+        ]
+        data_string = "Fake: melgan"
 
-    data_string = "LJSpeech_pwg_hifiGAN_melgan_mbmelgan_waveglow"
-    data_string = "LJSpeech_mbmelgan"
+    if args.out_classes == 2 and len(args.fakedir) > 1:
+        raise ValueError(
+            "--out-classes cannot be 2 if args.realdir is set and several args.fakedirs are set. \
+                Binary classification of two GANs can be done by setting realdir to the second GAN."
+        )
+    if args.realdir:
+        real_data_folder = args.realdir
+        data_string += f", {args.realdir}"
+    else:
+        real_data_folder = "/home/s6kogase/wavefake/data/LJspeech-1.1/wavs"
 
     fake_test_data_folder = fake_data_folder
 
-    amount = args.amount * args.frame_size // args.max_length  # max train samples used
+    if args.amount % args.frame_size != 0:
+        args.amount += args.frame_size - (args.amount % args.frame_size)
+    amount = args.amount // (
+        args.max_length // args.frame_size
+    )  # max train samples used
 
     if args.model == "resnet18" or args.model == "resnet34":
         input_channels = 3
@@ -278,112 +295,50 @@ def main() -> None:
     if amount <= len(real_data_folder) + len(fake_data_folder):
         raise ValueError("To little training samples.")
 
+    f_max = args.fmax
     if args.fmax > args.sample_rate / 2:
         f_max = args.sample_rate / 2
-    else:
-        f_max = args.fmax
+    f_min = args.fmin
     if args.fmin >= f_max:
         f_min = 80.0
-    else:
-        f_min = args.fmin
 
-    train_data_real = util.TransformDataset(
-        real_data_folder,
-        device=device,
-        sample_rate=args.sample_rate,
-        max_length=args.max_length,
-        frame_size=args.frame_size,
-        f_min=f_min,
-        f_max=f_max,
-        resolution=args.scales,
-        lfcc_filter=lfcc_filter,
-        transform=transform,
-        wavelet=args.wavelet,
-        from_path=0,
-        to_path=amount // 2,
-        channels=input_channels,
-    )
-    train_data_fake = util.TransformDataset(
+    LOGGER.info("Loading data...")
+    trn_dl, val_dl, test_dl = data_util.prepare_dataloaders(
+        args,
+        device,
         fake_data_folder,
-        device=device,
-        sample_rate=args.sample_rate,
-        max_length=args.max_length,
-        frame_size=args.frame_size,
-        f_min=f_min,
-        f_max=f_max,
-        resolution=args.scales,
-        lfcc_filter=lfcc_filter,
-        transform=transform,
-        wavelet=args.wavelet,
-        from_path=0,
-        to_path=amount // 2,
-        channels=input_channels,
-    )
-
-    train_data = torch.utils.data.ConcatDataset([train_data_real, train_data_fake])
-
-    test_size = int(amount * 0.2)  # 30% of total training samples
-
-    val_data_real = util.TransformDataset(
         real_data_folder,
-        device=device,
-        sample_rate=args.sample_rate,
-        max_length=args.max_length,
-        frame_size=args.frame_size,
-        f_min=f_min,
-        f_max=f_max,
-        resolution=args.scales,
-        lfcc_filter=lfcc_filter,
-        transform=transform,
-        wavelet=args.wavelet,
-        from_path=(amount + 5) // 2,
-        to_path=(amount + test_size + 1) // 2,
-        channels=input_channels,
+        fake_test_data_folder,
+        amount,
+        input_channels,
+        f_max,
+        f_min,
     )
 
-    val_data_fake = util.TransformDataset(
-        fake_data_folder,
-        device=device,
-        sample_rate=args.sample_rate,
-        max_length=args.max_length,
-        frame_size=args.frame_size,
-        f_min=f_min,
-        f_max=f_max,
-        resolution=args.scales,
-        lfcc_filter=lfcc_filter,
-        transform=transform,
-        wavelet=args.wavelet,
-        from_path=(amount + 5) // 2,
-        to_path=(amount + test_size + 5) // 2,
-        channels=input_channels,
-    )
+    train_len = len(trn_dl) * args.batch_size
 
-    val_data = torch.utils.data.ConcatDataset([val_data_real, val_data_fake])
-
-    test_len = len(val_data)
-    train_len = len(train_data)
-
-    out_classes = 2
     if args.model == "regression":
-        model = models.Regression(
-            classes=out_classes, flt_size=args.frame_size * args.scales
-        )
+        model = Regression(args.out_classes, args.frame_size * args.scales)  # type: ignore
     elif args.model == "testnet":
-        model = models.TestNet(classes=out_classes, batch_size=args.batch_size)
+        model = TestNet(classes=args.out_classes, batch_size=args.batch_size)  # type: ignore
     elif args.model == "resnet18":
-        model = tv_models.resnet18(weights="IMAGENET1K_V1")
-        model.fc = torch.nn.Linear(in_features=512, out_features=out_classes, bias=True)
-        model.get_name = lambda: "ResNet18"
+        model = tv_models.resnet18(weights="IMAGENET1K_V1")  # type: ignore
+        model.fc = torch.nn.Linear(
+            in_features=512, out_features=args.out_classes, bias=True
+        )
+        model.get_name = lambda: "ResNet18"  # type: ignore
     else:
-        model = tv_models.resnet34(weights="IMAGENET1K_V1")
-        model.fc = torch.nn.Linear(in_features=512, out_features=out_classes, bias=True)
-        model.get_name = lambda: "ResNet34"
+        model = tv_models.resnet34(weights="IMAGENET1K_V1")  # type: ignore
+        model.fc = torch.nn.Linear(
+            in_features=512, out_features=args.out_classes, bias=True
+        )
+        model.get_name = lambda: "ResNet34"  # type: ignore
 
     model_str = model.get_name()
 
     if torch.cuda.device_count() > 1:
         if use_mult_gpus:
-            model = nn.DataParallel(model)
+            model = nn.DataParallel(model)  # type: ignore
         else:
             LOGGER.info("Recommended to use multiple gpus.")
 
@@ -399,57 +354,6 @@ def main() -> None:
         optimizer, step_size=reduce_lr_each, gamma=0.4
     )
 
-    LOGGER.info("Loading data...")
-    trn_dl, val_dl = get_dataloaders(train_data, val_data, args.batch_size)
-    mean, std = get_mean_std_welford(
-        train_data
-    )  # calculate mean, std only on train data
-    train_data_real.set_mean_std(mean, std)
-    train_data_fake.set_mean_std(mean, std)
-    val_data_real.set_mean_std(mean, std)
-    val_data_fake.set_mean_std(mean, std)
-
-    test_data_fake = util.TransformDataset(
-        fake_test_data_folder,
-        device=device,
-        sample_rate=args.sample_rate,
-        max_length=args.max_length,
-        frame_size=args.frame_size,
-        f_min=f_min,
-        f_max=f_max,
-        resolution=args.scales,
-        lfcc_filter=lfcc_filter,
-        transform=transform,
-        wavelet=args.wavelet,
-        from_path=(amount + test_size + 5) // 2,
-        to_path=(amount + 2 * (test_size + 5)) // 2,
-        mean=mean,
-        std=std,
-        channels=input_channels,
-    )
-    test_data_real = util.TransformDataset(
-        real_data_folder,
-        device=device,
-        sample_rate=args.sample_rate,
-        max_length=args.max_length,
-        frame_size=args.frame_size,
-        f_min=f_min,
-        f_max=f_max,
-        resolution=args.scales,
-        lfcc_filter=lfcc_filter,
-        transform=transform,
-        wavelet=args.wavelet,
-        from_path=(amount + test_size + 5) // 2,
-        to_path=(amount + 2 * (test_size + 5)) // 2,
-        mean=mean,
-        std=std,
-        channels=input_channels,
-    )
-    test_data = torch.utils.data.ConcatDataset([test_data_real, test_data_fake])
-
-    test_dl = DataLoader(test_data, batch_size=args.batch_size, shuffle=False)
-    LOGGER.info(f"Test dataset length: {len(test_dl) * args.batch_size}")
-
     train_losses, train_accuracies = [], []
     val_losses, val_accuracies = [], []
     steps = 0
@@ -459,22 +363,20 @@ def main() -> None:
         LOGGER.info(args.m)
     LOGGER.info("-------------------------------")
     LOGGER.info("New Experiment")
-    LOGGER.info(f"mean: {mean}, std: {std}")
     LOGGER.info("Parameters:")
-    LOGGER.info(f"Trainset length: {train_len}")
-    LOGGER.info(f"Valset length: {test_len}")
+    LOGGER.info(f"Batch Size: {args.batch_size}")
+    LOGGER.info(f"Using Arch: {model_str}")
+    LOGGER.info(f"data: {data_string}")
     LOGGER.info(f"Learning Rate: {args.learning_rate}")
     LOGGER.info(f"Weight decay: {args.weight_decay}")
     LOGGER.info(f"Number of scales: {args.scales}")
-    LOGGER.info(f"LFCCs: {lfcc_filter}")
     LOGGER.info(f"[f_min, f_max]: {f_min, f_max}")
     LOGGER.info(f"Sample rate: {args.sample_rate}")
-    LOGGER.info(f"Batch Size: {args.batch_size}")
-    LOGGER.info(f"Using Arch: {model_str}")
-    LOGGER.info(f"Transform: {transform}")
-    LOGGER.info(f"data: {data_string}")
     LOGGER.info(f"Frame size: {args.frame_size}")
     LOGGER.info(f"Samples per file: {args.max_length}")
+    LOGGER.info(
+        f"Using {train_len // (args.max_length // args.frame_size)} different files."
+    )
     LOGGER.info(f"Wavelet: {args.wavelet}")
 
     if args.tensorboard:
@@ -510,6 +412,19 @@ def main() -> None:
             )
             fig.colorbar(im, ax=axes)
             plt.savefig(f"plots/test-{i}.png")
+
+    """ones = 0
+    twos = 0
+    threes = 0
+    fours = 0
+    zeros = 0
+    for val_batch in iter(trn_dl):
+        ones += torch.sum(val_batch[-1] == 1)
+        twos += torch.sum(val_batch[-1] == 2)
+        threes += torch.sum(val_batch[-1] == 3)
+        fours += torch.sum(val_batch[-1] == 4)
+        zeros += torch.sum(val_batch[-1] == 0)
+    import pdb; pdb.set_trace()"""
 
     # TRAINER
     for epoch in range(args.epochs):
@@ -577,38 +492,12 @@ def main() -> None:
     test_acc, test_loss = val_performance(test_dl, model, loss_fn)
     LOGGER.info(f"Test loss: {test_loss.item()}")
     LOGGER.info(f"Test Accuracy: {test_acc}")
+    print(f"Test loss: {test_loss.item()}")
+    print(f"Test Accuracy: {test_acc}")
+    LOGGER.info("-------------------- End of Experiment --------------------")
+    LOGGER.info("")
 
-    models.save_model(model, f"./saved_models/{model_str}_{time_now}.pth")
-
-    if plotting:
-        plt.clf()
-        # Plotting
-        epochs_scala = np.arange(args.epochs) + 1
-        print("train losses: ", train_losses)
-        print("val losses: ", val_losses)
-        print("train accuracies: ", train_accuracies)
-        print("val accuracies: ", val_accuracies)
-        plt.subplot(211)
-        plt.plot(epochs_scala, train_losses, "bo", label="Training loss")
-        plt.plot(epochs_scala, val_losses, "r", label="Validation loss")
-        plt.title("Training and validation loss with CNN")
-        plt.xlabel("Epochs")
-        plt.ylabel("Loss")
-        plt.legend()
-        plt.grid("off")
-        plt.subplot(212)
-        plt.plot(epochs_scala, train_accuracies, "bo", label="Training accuracy")
-        plt.plot(epochs_scala, val_accuracies, "r", label="Validation accuracy")
-        plt.title("Training and validation accuracy with CNN")
-        plt.xlabel("Epochs")
-        plt.ylabel("Accuracy")
-        plt.gca().set_yticklabels(
-            ["{:.0f}%".format(x * 100) for x in plt.gca().get_yticks()]
-        )
-        plt.legend()
-        plt.grid("off")
-        # plt.show()
-        plt.savefig("test-run.png")
+    save_model(model, f"./saved_models/{model_str}_{time_now}.pth")
 
 
 if __name__ == "__main__":
