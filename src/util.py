@@ -488,3 +488,24 @@ def get_np_signal(path: str, start_frame: int, to_frame: int) -> np.ndarray:
     sig_np: np.ndarray = sig.numpy()
     # t: np.ndarray = np.linspace(0, sig.shape[0] / SAMPLE_RATE, 20, False)
     return sig_np
+
+
+def print_max_length():
+    """Print length of shortest audio file in folder in samples."""
+    folder = Path("/home/kons/uni/bachelor_thesis/git/data/binary/A_ljspeech")
+    file_list = list(folder.glob("./*.wav"))
+
+    print(len(file_list))
+    res = 16000
+
+    min_length = torchaudio.info(file_list[0]).num_frames
+    min_path = file_list[0]
+    for file in file_list:
+        length = torchaudio.info(file).num_frames
+        if length < min_length:
+            min_length = length
+            min_path = file
+
+    print("Min length: ", min_length)
+    print("Min length res: ", min_length * (res / 22050))
+    print("Min path: ", min_path)

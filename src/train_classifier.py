@@ -116,6 +116,16 @@ def _parse_args():
         help="Maximum frequency to be analyzed in Hz. Default: 8000.",
     )
     parser.add_argument(
+        "--mean",
+        type=float,
+        help="Mean of dataset if known.",
+    )
+    parser.add_argument(
+        "--std",
+        type=float,
+        help="std of dataset if known.",
+    )
+    parser.add_argument(
         "--max-length",
         type=int,
         default=15000,
@@ -151,6 +161,12 @@ def _parse_args():
         help="Directory containing real audios. To classify between two different GANs put second GAN folder here.",
     )
     parser.add_argument(
+        "--usemodel",
+        type=str,
+        help="Path of pre-trained model to be used in further training. For correct initialization the file name \
+            should be of style '*_epoch_(int)_seed_(float).pth'.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -160,6 +176,18 @@ def _parse_args():
         "--tensorboard",
         action="store_true",
         help="enables a tensorboard visualization.",
+    )
+    parser.add_argument(
+        "--lrscheduler",
+        type=float,
+        default=None,
+        help="Use Learning Rate scheduler with given factor.",
+    )
+    parser.add_argument(
+        "--evalfirst",
+        "--evalfirst",
+        action="store_true",
+        help="Set if given model shall only be evaluated.",
     )
 
     return parser.parse_args()
@@ -220,10 +248,7 @@ def val_performance(
     return val_acc, val_loss
 
 
-# training params
-lr_scheduler = False
 use_mult_gpus = True
-
 plotting = False
 
 
@@ -239,8 +264,14 @@ def main() -> None:
     args = _parse_args()
     print(args)
 
+    epoch_start = 0
+    if args.usemodel:
+        path = args.usemodel
+        epoch_start = int(path.split("_")[-3])  # extract epoch from file name
+
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    torch.multiprocessing.set_start_method("spawn")
 
     # Logs
     time_now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -281,6 +312,7 @@ def main() -> None:
 
     fake_test_data_folder = fake_data_folder
 
+    # TODO: amount into used files
     if args.amount % args.frame_size != 0:
         args.amount += args.frame_size - (args.amount % args.frame_size)
     amount = args.amount // (
@@ -296,11 +328,11 @@ def main() -> None:
         raise ValueError("To little training samples.")
 
     f_max = args.fmax
-    if args.fmax > args.sample_rate / 2:
-        f_max = args.sample_rate / 2
+    # if args.fmax > args.sample_rate / 2:
+    #    f_max = args.sample_rate / 2
     f_min = args.fmin
-    if args.fmin >= f_max:
-        f_min = 80.0
+    # if args.fmin > f_max:
+    #    f_min = 80.0
 
     LOGGER.info("Loading data...")
     trn_dl, val_dl, test_dl = data_util.prepare_dataloaders(
@@ -334,7 +366,12 @@ def main() -> None:
         )
         model.get_name = lambda: "ResNet34"  # type: ignore
 
-    model_str = model.get_name()
+    if args.usemodel:
+        old_state_dict = torch.load(args.usemodel)
+        model.load_state_dict(old_state_dict)
+        model_str = args.usemodel.split("/")[-1].split("_")[0]
+    else:
+        model_str = model.get_name()
 
     if torch.cuda.device_count() > 1:
         if use_mult_gpus:
@@ -348,11 +385,13 @@ def main() -> None:
         model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
     )
 
-    reduce_lr_each = args.epochs // 4
-    # reduce the learning after reduce_lr_each epochs by a factor of 2
-    scheduler = optim.lr_scheduler.StepLR(
-        optimizer, step_size=reduce_lr_each, gamma=0.4
-    )
+    gamma = 0.001
+    change_lr = False
+    if args.lrscheduler is not None:
+        change_lr = True
+        gamma = args.lrscheduler
+    # reduce the learning after 1 epochs by a factor of args.lrscheduler
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=gamma)
 
     train_losses, train_accuracies = [], []
     val_losses, val_accuracies = [], []
@@ -364,6 +403,7 @@ def main() -> None:
     LOGGER.info("-------------------------------")
     LOGGER.info("New Experiment")
     LOGGER.info("Parameters:")
+    LOGGER.info(f"Seed: {args.seed}")
     LOGGER.info(f"Batch Size: {args.batch_size}")
     LOGGER.info(f"Using Arch: {model_str}")
     LOGGER.info(f"data: {data_string}")
@@ -426,8 +466,13 @@ def main() -> None:
         zeros += torch.sum(val_batch[-1] == 0)
     import pdb; pdb.set_trace()"""
 
+    if args.evalfirst:
+        test_dataset(test_dl, model, loss_fn)
+
     # TRAINER
     for epoch in range(args.epochs):
+        if epoch == 0:
+            epoch += epoch_start + 1
         LOGGER.info("+------+")
         LOGGER.info(f"Training data in epoch {epoch+1} of {args.epochs}.")
         LOGGER.info(f"Learning rate: {scheduler.get_last_lr()}")
@@ -442,7 +487,7 @@ def main() -> None:
             acc = accuracy(data, target, model)
             train_epoch_accuracies.append(acc.item())
 
-            if batch_idx % 2 == 0:
+            if batch_idx % 5 == 0:
                 LOGGER.info(
                     f"Train Epoch: {epoch+1} [{batch_idx * len(data)}/{train_len} \
                     ({100. * (batch_idx * len(data)) / train_len:.0f}%)]\tLoss: {batch_loss:.6f}"
@@ -459,7 +504,7 @@ def main() -> None:
         val_losses.append(val_loss.item())
         val_accuracies.append(val_acc)
 
-        if lr_scheduler:
+        if change_lr and epoch == 1:
             scheduler.step()
 
         if args.tensorboard:
@@ -473,6 +518,11 @@ def main() -> None:
         LOGGER.info(f"Training loss: {train_epoch_loss}")
         LOGGER.info(f"Training Accuracy: {train_epoch_accuracy}")
         LOGGER.info(f"Validation Accuracy: {val_acc}")
+        time_now_cur = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+        save_model(
+            model,
+            f"./saved_models/{model_str}_{time_now_cur}_epoch_{epoch}_seed_{args.seed}.pth",
+        )
 
         if (
             train_epoch_accuracy == 1.0
@@ -486,6 +536,15 @@ def main() -> None:
         writer.flush()
         writer.close()
 
+    test_dataset(test_dl, model, loss_fn)
+    LOGGER.info("-------------------- End of Experiment --------------------")
+    LOGGER.info("")
+
+    save_model(model, f"./saved_models/{model_str}_{time_now}.pth")
+
+
+def test_dataset(test_dl, model, loss_fn):
+    """Test classifier with test dataset."""
     LOGGER.info("-----------------")
     LOGGER.info("Testing")
 
@@ -494,10 +553,6 @@ def main() -> None:
     LOGGER.info(f"Test Accuracy: {test_acc}")
     print(f"Test loss: {test_loss.item()}")
     print(f"Test Accuracy: {test_acc}")
-    LOGGER.info("-------------------- End of Experiment --------------------")
-    LOGGER.info("")
-
-    save_model(model, f"./saved_models/{model_str}_{time_now}.pth")
 
 
 if __name__ == "__main__":

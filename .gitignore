@@ -319,5 +319,6 @@ $RECYCLE.BIN/
 plots/
 runs/
 logs/
+log/
 saved_models/
 experiments/

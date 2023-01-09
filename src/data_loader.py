@@ -10,7 +10,7 @@ from typing import Optional, Tuple, Union
 import numpy as np
 import torch
 import torchaudio
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 from src.cwt import CWT
 from src.train_classifier import LOGGER
@@ -171,6 +171,10 @@ class TransformDataset(torch.utils.data.Dataset):
                 path_offsets.append(i * self.frame_size)
         self._path_list = path_list
         self._path_offsets = path_offsets
+        LOGGER.info(f"Set with Label: {self.label}")
+        # LOGGER.info(self._path_list)
+        # LOGGER.info(self._path_offsets)
+        LOGGER.info(f"length of set: {len(self._path_list)}")
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """Load signal from .wav.
@@ -198,9 +202,6 @@ class TransformDataset(torch.utils.data.Dataset):
 
             if self.device == "cuda":
                 waveform = waveform.cuda()
-
-            if waveform.shape[0] < offset + self.frame_size:
-                offset = 0  # if audio file is smaller than max_length samples
             waveform = waveform[:, offset : offset + self.frame_size]
         else:
             # only load small window of audio -> faster than slicing afterwards and more convenient
@@ -404,7 +405,7 @@ def prepare_dataloaders(
         to_path=amount,
     )
 
-    test_size = int(amount * 0.3)  # 30% of total training samples
+    test_size = int(amount * 0.2)  # 20% of total training samples
     from_idx = amount + 1
     to_idx = from_idx + test_size
 
@@ -429,16 +430,20 @@ def prepare_dataloaders(
         f_max,
         f_min,
         from_path=to_idx + 1,
-        to_path=to_idx + 1 + (2 * test_size),
+        to_path=to_idx + 1 + test_size,
     )
 
     LOGGER.info(f"Train set length: {len(train_data)}")
     LOGGER.info(f"Val set length: {len(val_data)}")
     LOGGER.info(f"Test set length: {len(test_data)}")
 
-    mean, std = get_mean_std_welford(
-        train_data
-    )  # calculate mean, std only on train data
+    if args.mean and args.std:
+        mean, std = args.mean, args.std
+    else:
+        mean, std = get_mean_std_welford(
+            train_data
+        )  # calculate mean, std only on train data
+    LOGGER.info(f"Mean: {mean}, Std: {std}")
     train_data_real.set_mean_std(mean, std)
     train_data_fake.set_mean_std(mean, std)
     val_data_real.set_mean_std(mean, std)
@@ -447,10 +452,24 @@ def prepare_dataloaders(
     test_data_fake.set_mean_std(mean, std)
 
     trn_dl = DataLoader(
-        train_data, batch_size=args.batch_size, shuffle=True, drop_last=True
+        train_data,
+        batch_size=args.batch_size,
+        shuffle=True,
+        drop_last=True,
+        num_workers=4,
     )
-    val_dl = DataLoader(val_data, batch_size=args.batch_size, shuffle=False)
-    test_dl = DataLoader(test_data, batch_size=args.batch_size, shuffle=False)
+    val_dl = DataLoader(
+        val_data,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=4,
+    )
+    test_dl = DataLoader(
+        test_data,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=4,
+    )
 
     return trn_dl, val_dl, test_dl
 
@@ -502,9 +521,10 @@ def load_dist_data(
         lengths.append(len(data_real))
     LOGGER.info(f"Lengths of gan-datasets: {lengths}")
 
-    return lengths
+    import pbd; pdb.set_trace()
+    return lengths, train_data
     """
-    # TODO: cut per class
+
     if args.out_classes == 2:
         from_path = from_path // 2
         to_path = to_path // 2
@@ -551,3 +571,111 @@ def load_dist_data(
         return data_real, data_fake, train_data
     else:
         return data_fake, data_fake, data_fake
+
+
+class NumpyDataset(Dataset):
+    """Create a data loader to load pre-processed numpy arrays into memory."""
+
+    def __init__(
+        self,
+        data_dir: str,
+        mean: Optional[float] = None,
+        std: Optional[float] = None,
+        key: Optional[str] = "audio",
+    ):
+        """Create a Numpy-dataset object.
+
+        Args:
+            data_dir: A path to a pre-processed folder with numpy files.
+            mean: Pre-computed mean to normalize with. Defaults to None.
+            std: Pre-computed standard deviation to normalize with. Defaults to None.
+            key: The key for the input or 'x' component of the dataset.
+                Defaults to "audio".
+
+        Raises:
+            ValueError: If an unexpected file name is given or directory is empty.
+
+        # noqa: DAR401
+        """
+        self.data_dir = data_dir
+        self.file_lst = sorted(Path(data_dir).glob("./*.npy"))
+        print("Loading ", data_dir)
+        if len(self.file_lst) == 0:
+            raise ValueError("empty directory")
+        if self.file_lst[-1].name != "labels.npy":
+            raise ValueError("unexpected file name")
+        self.labels = np.load(self.file_lst[-1])
+        self.audios = self.file_lst[:-1]
+        # self.labels = self.labels.repeat(len(self.audios) // self.labels.shape[0])
+        self.mean = mean
+        self.std = std
+        self.key = key
+
+    def __len__(self) -> int:
+        """Return the data set length."""
+        return len(self.labels)
+
+    def __getitem__(self, idx: int) -> dict:
+        """Get a dataset element.
+
+        Args:
+            idx (int): The element index of the data pair to return.
+
+        Returns:
+            sample (dict): Returns a dictionary with the self.key
+                    default ("audio") and "label" keys.
+        """
+        audio_path = self.audios[idx]
+        audio = np.load(audio_path)
+        audio = torch.from_numpy(audio.astype(np.float32))
+
+        # normalize the data.
+        if self.mean is not None:
+            audio = (audio - self.mean) / self.std
+
+        label = self.labels[idx]
+        label = torch.tensor(int(label))
+        sample = {self.key: audio, "label": label}
+        return sample
+
+
+class CombinedDataset(Dataset):
+    """Load data from multiple Numpy-Data sets using a singe object."""
+
+    def __init__(self, sets: list):
+        """Create an merged dataset, combining many numpy datasets.
+
+        Args:
+            sets (list): A list of NumpyDataset objects.
+        """
+        self.sets = sets
+        self.len = len(sets[0])
+        # assert not any(self.len != len(s) for s in sets)
+
+    @property
+    def key(self) -> list:
+        """Return the keys for all features in this dataset."""
+        return [d.key for d in self.sets]
+
+    def __len__(self) -> int:
+        """Return the data set length."""
+        return self.len
+
+    def __getitem__(self, idx: int) -> dict:
+        """Get a dataset element.
+
+        Args:
+            idx (int): The element index of the data pair to return.
+
+        Returns:
+            sample (dict): Returns a dictionary with the self.key
+                           default ("audio") and "label" keys.
+                           The key property will return a keylist.
+        """
+        label_list = [s.__getitem__(idx)["label"] for s in self.sets]
+        # the labels should all be the same
+        # assert not any([label_list[0] != l for l in label_list])
+        label = label_list[0]
+        dict = {set.key: set.__getitem__(idx)[set.key] for set in self.sets}
+        dict["label"] = label
+        return dict

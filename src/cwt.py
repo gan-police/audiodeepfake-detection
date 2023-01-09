@@ -35,7 +35,7 @@ class CWT(torch.nn.Module):
         self.sample_period = 1.0 / self.sample_rate
         self.n_lin = n_lin
         self.wavelet = wavelet
-        self.transform = AmplitudeToDB(stype="power", top_db=80.0)
+        self.transform = AmplitudeToDB(stype="power", top_db=90.0)
 
         nyquist_freq = self.sample_rate / 2.0  # maximum frequency that can be analyzed
 
@@ -58,9 +58,7 @@ class CWT(torch.nn.Module):
         Returns:
             torch.Tensor: scaleogram, dims (1, number of scales, number of audio samples).
         """
-        sig, _freqs = ptwt.cwt(
-            waveform, self.scales, self.wavelet, sampling_period=self.sample_period
-        )
+        sig, _freqs = ptwt.cwt(waveform, self.scales, self.wavelet)
 
         scaleogram = sig.squeeze(1)
         scaleogram = torch.abs(scaleogram) ** 2
