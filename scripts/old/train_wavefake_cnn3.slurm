@@ -18,18 +18,19 @@ echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)"
 
 conda activate py310
 
+echo "Training with different weight decay."
 
-for i in 0 1 2 3 4
+for i in 0.05 0.001 0.0001
 do
   echo "Wavefake experiment no: $i "
   python -m src.train_classifier \
-	  --seed $i \
+	  --seed 0 \
       --realdir "/home/s6kogase/wavefake/data/LJspeech-1.1/wavs" \
       --fakedir "/home/s6kogase/wavefake/data/generated_audio/ljspeech_melgan" \
       --batch-size 512 \
       --epochs 30 \
-      --learning-rate 0.0005 \
-      --weight-decay 0.001 \
+      --learning-rate 0.001 \
+      --weight-decay $i \
       --model "testnet" \
       --frame-size 200 \
       --scales 64 \
@@ -37,7 +38,7 @@ do
       --sample-rate 5000 \
       --max-length 1000 \
       --wavelet "cmor4.6-0.87" \
-      --m "With db scaling. Less scales. 3791" \
+      --m "With db scaling. Less scales. Diff weight decay. without cutting silences " \
       --fmin 500 \
       --fmax 2500 \
       --tensorboard

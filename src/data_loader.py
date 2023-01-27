@@ -4,6 +4,7 @@ Holds a custom torch Dataset class implementation that prepares the audio
 and cuts it to frames and transforms it with CWT. Dataloader methods
 can be found here to.
 """
+import functools
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
@@ -12,8 +13,15 @@ import torch
 import torchaudio
 from torch.utils.data import DataLoader, Dataset
 
-from src.cwt import CWT
-from src.train_classifier import LOGGER
+from src.old.cwt import CWT
+from src.old.old_train_classifier import LOGGER
+
+from .ptwt_continuous_transform import (
+    _ComplexMorletWavelet,
+    _DifferentiableContinuousWavelet,
+    _frequency2scale,
+)
+from .wavelet_math import wavelet_direct
 
 SOX_SILENCE = [
     # trim all silence that is longer than 0.2s and louder than 1% volume (relative to the file)
@@ -345,15 +353,15 @@ class WelfordEstimator:
         """
         if not self.collapsed_axis:
             self.collapsed_axis = tuple(np.arange(len(batch_vals.shape[:-1])))
-            self.count = torch.zeros(1, device=batch_vals.device, dtype=torch.float64)
+            self.count = torch.zeros(1, device=batch_vals.device, dtype=torch.float32)
             self.mean = torch.zeros(
-                batch_vals.shape[-1], device=batch_vals.device, dtype=torch.float64
+                batch_vals.shape[-1], device=batch_vals.device, dtype=torch.float32
             )
             self.std = torch.zeros(
-                batch_vals.shape[-1], device=batch_vals.device, dtype=torch.float64
+                batch_vals.shape[-1], device=batch_vals.device, dtype=torch.float32
             )
             self.m2 = torch.zeros(
-                batch_vals.shape[-1], device=batch_vals.device, dtype=torch.float64
+                batch_vals.shape[-1], device=batch_vals.device, dtype=torch.float32
             )
         self.count += torch.prod(torch.tensor(batch_vals.shape[:-1]))
         delta = torch.sub(batch_vals, self.mean)
@@ -679,3 +687,247 @@ class CombinedDataset(Dataset):
         dict = {set.key: set.__getitem__(idx)[set.key] for set in self.sets}
         dict["label"] = label
         return dict
+
+
+class WavefakeDataset(Dataset):
+    """Create a data loader to load pre-processed numpy arrays into memory."""
+
+    def __init__(
+        self,
+        data_dir: str,
+        wavelet: Optional[_DifferentiableContinuousWavelet],
+        mean: Optional[float] = None,
+        std: Optional[float] = None,
+        key: Optional[str] = "audio",
+        sample_rate: int = 8000,
+        f_min: float = 2000,
+        f_max: float = 4000,
+        num_of_scales: int = 224,
+    ):
+        """Create a Wavefake-dataset object.
+
+        Dataset with additional transforming in cwt space.
+
+        Args:
+            data_dir: A path to a pre-processed folder with numpy files.
+            mean: Pre-computed mean to normalize with. Defaults to None.
+            std: Pre-computed standard deviation to normalize with. Defaults to None.
+            key: The key for the input or 'x' component of the dataset.
+                Defaults to "audio".
+
+        Raises:
+            ValueError: If an unexpected file name is given or directory is empty.
+
+        # noqa: DAR401
+        """
+        self.data_dir = data_dir
+        self.file_lst = sorted(Path(data_dir).glob("./*.npy"))
+        print("Loading ", data_dir)
+        if len(self.file_lst) == 0:
+            raise ValueError("empty directory")
+        if self.file_lst[-1].name != "labels.npy":
+            raise ValueError("unexpected file name")
+        self.labels = np.load(self.file_lst[-1])
+        self.audios = np.array(self.file_lst[:-1])
+        self.mean = mean
+        self.std = std
+        self.key = key
+
+        freqs = torch.linspace(f_max, f_min, num_of_scales, device="cuda") / sample_rate
+        scales = _frequency2scale(wavelet, freqs).detach()
+        # scales = pywt.frequency2scale("cmor4.6-0.87", freqs)
+        self.transform = functools.partial(
+            wavelet_direct,
+            wavelet=wavelet,
+            scales=scales,
+            cuda=True,
+            log_scale=True,
+        )
+
+    def __len__(self) -> int:
+        """Return the data set length."""
+        return len(self.labels)
+
+    def __getitem__(self, idx: int) -> dict:
+        """Get a dataset element.
+
+        Args:
+            idx (int): The element index of the data pair to return.
+
+        Returns:
+            sample (dict): Returns a dictionary with the self.key
+                    default ("audio") and "label" keys.
+        """
+        audio_path = self.audios[idx]
+        audio = np.load(audio_path)
+        audio = torch.from_numpy(audio.astype(np.float32))
+
+        # jit_cwt = torch.jit.trace(_to_jit_cwt, (audio), strict=False)
+        audio = self.transform(audio)
+
+        # normalize the data.
+        if self.mean is not None:
+            audio = (audio - self.mean) / self.std
+
+        label = self.labels[idx]
+        label = torch.tensor(int(label))
+        sample = {self.key: audio, "label": label}
+        return sample
+
+
+class LearnWavefakeDataset(Dataset):
+    """Create a data loader to load pre-processed numpy arrays into memory."""
+
+    def __init__(
+        self,
+        data_dir: str,
+        mean: Optional[float] = None,
+        std: Optional[float] = None,
+        key: Optional[str] = "audio",
+    ):
+        """Create a Wavefake-dataset object.
+
+        Dataset with additional transforming in cwt space.
+
+        Args:
+            data_dir: A path to a pre-processed folder with numpy files.
+            mean: Pre-computed mean to normalize with. Defaults to None.
+            std: Pre-computed standard deviation to normalize with. Defaults to None.
+            key: The key for the input or 'x' component of the dataset.
+                Defaults to "audio".
+
+        Raises:
+            ValueError: If an unexpected file name is given or directory is empty.
+
+        # noqa: DAR401
+        """
+        self.data_dir = data_dir
+        self.file_lst = sorted(Path(data_dir).glob("./*.npy"))
+        print("Loading ", data_dir)
+        if len(self.file_lst) == 0:
+            raise ValueError("empty directory")
+        if self.file_lst[-1].name != "labels.npy":
+            raise ValueError("unexpected file name")
+        self.labels = np.load(self.file_lst[-1])
+        self.audios = np.array(self.file_lst[:-1])
+        self.mean = mean
+        self.std = std
+        self.key = key
+
+    def __len__(self) -> int:
+        """Return the data set length."""
+        return len(self.labels)
+
+    def __getitem__(self, idx: int) -> dict:
+        """Get a dataset element.
+
+        Args:
+            idx (int): The element index of the data pair to return.
+
+        Returns:
+            sample (dict): Returns a dictionary with the self.key
+                    default ("audio") and "label" keys.
+        """
+        audio_path = self.audios[idx]
+        audio = np.load(audio_path)
+        audio = torch.from_numpy(audio.astype(np.float32))
+
+        # normalize the data.
+        if self.mean is not None:
+            audio = (audio - self.mean) / self.std
+
+        label = self.labels[idx]
+        label = torch.tensor(int(label))
+        sample = {self.key: audio, "label": label}
+        return sample
+
+
+class LearnDirectDataset(Dataset):
+    """Create a data loader to load pre-processed numpy arrays into memory."""
+
+    def __init__(
+        self,
+        data_set: np.ndarray,
+        labels: np.ndarray,
+        window_size: int = 11025,
+        sample_rate: int = 22050,
+        mean: Optional[float] = None,
+        std: Optional[float] = None,
+        key: Optional[str] = "audio",
+    ):
+        """Create a Wavefake-dataset object.
+
+        Dataset with additional transforming in cwt space.
+
+        Args:
+            data_set: np.ndarray paths to wav files.
+            labels: np.ndarray labels corresponding to these paths.
+            window_size (int): Size of window that audios are cute to.
+            sample_rate (int): Sample rate of output audio for get_item in Hz.
+            mean: Pre-computed mean to normalize with. Defaults to None.
+            std: Pre-computed standard deviation to normalize with. Defaults to None.
+            key: The key for the input or 'x' component of the dataset. Defaults to "audio".
+        """
+        self.labels = labels
+        self.audios = data_set[0]
+        self.audio_frames = data_set[1]
+        self.window_size = int(window_size)
+        self.sample_rate = int(sample_rate)
+        self.mean = mean
+        self.std = std
+        self.key = key
+
+    def __len__(self) -> int:
+        """Return the data set length."""
+        return len(self.labels)
+
+    def __getitem__(self, idx: int) -> dict:
+        """Get a dataset element.
+
+        Args:
+            idx (int): The element index of the data pair to return.
+
+        Returns:
+            sample (dict): Returns a dictionary with the self.key
+                    default ("audio") and "label" keys.
+        """
+        audio_path = self.audios[idx]
+
+        audio, sample_rate = torchaudio.load(
+            audio_path,
+            normalize=True,
+            num_frames=self.window_size,
+            frame_offset=self.audio_frames[idx],
+        )
+        # resample with better window (a bit slower than default hann window)
+        if int(sample_rate) != self.sample_rate:
+            audio = torchaudio.functional.resample(
+                audio, sample_rate, self.sample_rate, resampling_method="kaiser_window"
+            )
+        import pdb
+
+        pdb.set_trace()
+        # normalize the data.
+        if self.mean is not None:
+            audio = (audio - self.mean) / self.std
+
+        label = self.labels[idx]
+        label = torch.tensor(int(label))
+        sample = {self.key: audio, "label": label}
+        return sample
+
+
+def _to_jit_cwt(sig):
+    sample_rate = 8000
+    f_max = 4000
+    f_min = 2000
+    num_of_scales = 224
+    wavelet = "cmor4.6-0.87"
+    if not isinstance(wavelet, _DifferentiableContinuousWavelet):
+        wavelet = _ComplexMorletWavelet(wavelet)
+    freqs = torch.linspace(f_max, f_min, num_of_scales, device="cuda") / sample_rate
+    scales = _frequency2scale(wavelet, freqs).detach()
+    # scales = pywt.frequency2scale("cmor4.6-0.87", freqs)
+    return wavelet_direct(
+        sig, scales=scales, wavelet=wavelet, log_scale=True, cuda=True
+    )

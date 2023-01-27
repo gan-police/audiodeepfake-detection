@@ -14,6 +14,7 @@ sys.path.append(BASE_PATH)
 
 import src.data_loader as dl
 
+
 class TestDataLoader(unittest.TestCase):
     """Testing different classes and functions of Dataloading."""
 
@@ -33,7 +34,7 @@ class TestDataLoader(unittest.TestCase):
         frame_size = 30
         scales = 20
         waveform = torch.randn(frame_size)
-        from src.cwt import CWT
+        from src.old.cwt import CWT
         transform = CWT(n_lin=scales)
         waveform_t = transform(waveform)
         self.assertEqual(waveform_t.shape, torch.Size([1, scales, frame_size]))

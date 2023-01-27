@@ -6,7 +6,7 @@ See also: https://nox.thea.codes/en/stable/
 import nox
 
 
-@nox.session(name="test")
+@nox.session(name="test", python=["3.10"])
 def run_test(session) -> None:
     """Run tests."""
     session.install("-r", "requirements.txt")
@@ -14,27 +14,23 @@ def run_test(session) -> None:
     session.run("pytest", "tests")
 
 
-@nox.session(name="lint")
+@nox.session(name="lint", python=["3.10"])
 def lint(session) -> None:
     """Check code conventions."""
     session.install("flake8==6.0.0")
     session.install(
-        "flake8-colors",
-        "flake8-black",
         "flake8-docstrings",
         "flake8-bugbear",
         "flake8-broken-line",
         "flake8-bandit",
-        "bandit",
         "pep8-naming",
         "pydocstyle",
         "darglint",
     )
-    # session.install("bandit==1.7.2")
     session.run("flake8", "src", "scripts", "noxfile.py")
 
 
-@nox.session(name="typing")
+@nox.session(name="typing", python=["3.10"])
 def mypy(session) -> None:
     """Check type hints."""
     session.install("-r", "requirements.txt")
@@ -52,7 +48,7 @@ def mypy(session) -> None:
     )
 
 
-@nox.session(name="format")
+@nox.session(name="format", python=["3.10"])
 def format(session) -> None:
     """Fix common convention problems automatically."""
     session.install("black")

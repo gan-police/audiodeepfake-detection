@@ -86,9 +86,7 @@ class AudioDataset(torch.utils.data.Dataset):
                 if not directory.exists():
                     raise IOError(f"Directory does not exists: {directory}")
 
-                paths.append(find_wav_files(directory))
-                if path_list is None:
-                    raise IOError(f"Directory did not contain wav files: {directory}")
+                paths = find_wav_files(directory)  # type: ignore
         else:
             raise TypeError(
                 f"Supplied unsupported type for argument directory_or_path_list {type(directory_or_path_list)}!"

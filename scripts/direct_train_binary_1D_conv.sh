@@ -2,13 +2,13 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=train_cnn
-#SBATCH --output=/home/s6kogase/code/out/train_melgan_deeptestnet-256_%A_%a.out
-#SBATCH --error=/home/s6kogase/code/out/train_melgan_deeptestnet-256_%A_%a.err
+#SBATCH --output=/home/s6kogase/code/out/train_melgan_onednet_256-%A_%a.out
+#SBATCH --error=/home/s6kogase/code/out/train_melgan_onednet_256-%A_%a.err
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH --time=06:00:00
+#SBATCH --time=23:59:59
 #SBATCH --partition=A40short
-#SBATCH --array=0-6
+#SBATCH --array=0
 
 source ${HOME}/.bashrc
 
@@ -20,13 +20,14 @@ python -m src.new_train_classifier \
     --batch-size 256 \
     --learning-rate 0.001 \
     --weight-decay 0.000001   \
-    --epochs 5 \
+    --epochs 10 \
     --validation-interval 50    \
-    --data-prefix "${HOME}/data/binary_cmor4.6-0.87_8000_8736_4368_224_2000-4000_1_10000_melgan" \
+    --data-prefix "${HOME}/data/fake_cmor4.6-0.87_8000_8736_4368_224_2000-4000_1_10000_melgan" \
     --nclasses 2 \
     --seed $SLURM_ARRAY_TASK_ID \
+    --model "onednet"  \
+    --num-of-scales 224 \
     --tensorboard \
-    --model "deeptestnet"  \
-    --num-workers 5
+    --num-workers 2
 
 echo "Goodbye at $(date)."

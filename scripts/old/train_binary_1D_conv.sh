@@ -8,7 +8,6 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --time=23:59:59
 #SBATCH --partition=A40short
-#SBATCH --array=0-6
 
 source ${HOME}/.bashrc
 
@@ -17,14 +16,14 @@ echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
 conda activate py310
 
 python -m src.new_train_classifier \
-    --batch-size 512 \
+    --batch-size 200 \
     --learning-rate 0.001 \
     --weight-decay 0.000001   \
     --epochs 20 \
     --validation-interval 50    \
-    --data-prefix "${HOME}/data/binary_cmor4.6-0.87_8000_8736_4368_224_2000-4000_1_10000_melgan" \
+    --data-prefix "${HOME}/data/binary_cmor4.6-0.87_8000_8736_4368_224_2000-4000_1_10000_hifigan" \
     --nclasses 2 \
-    --seed $SLURM_ARRAY_TASK_ID \
+    --seed 0 \
     --model "onednet"  \
     --num-of-scales 224 \
     --tensorboard \

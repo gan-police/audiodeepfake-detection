@@ -13,6 +13,7 @@ import ptwt
 import pywt
 import tikzplotlib as tikz
 import torch
+from torchaudio.transforms import AmplitudeToDB
 
 DEBUG = True
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -23,7 +24,7 @@ if DEBUG:
 
 import src.util as util
 
-RES = 129
+RES = 300
 
 
 def _compute_average_frequency_for_directory(
@@ -37,25 +38,30 @@ def _compute_average_frequency_for_directory(
     average_per_file = []
 
     sampling_period = 1.0 / util.SAMPLE_RATE
-    center_freq = 0.87
-    bandwith = 0.001
+    center_freq = 12.6
+    bandwith = 1.0
 
-    wavelet = f"shan{bandwith}-{center_freq}"
+    wavelet = f"cmor{bandwith}-{center_freq}"
     # wavelet = "fbsp3-0.01-1.0"
-    nyquist_freq = util.SAMPLE_RATE / 2.0  # maximum frequency that can be analyzed
+    # nyquist_freq = util.SAMPLE_RATE / 2.0  # maximum frequency that can be analyzed
 
     # equally spaced normalized frequencies to be analyzed
-    freqs = np.linspace(nyquist_freq, 1, RES) / util.SAMPLE_RATE
+    freqs = np.linspace(8000, 1, RES) / util.SAMPLE_RATE
 
     scales = pywt.frequency2scale(wavelet, freqs)
 
     for i, (clip, _fs) in enumerate(dataset):
+        clip = clip.cuda()
+
         sig, freq = ptwt.cwt(clip, scales, wavelet, sampling_period=sampling_period)
         specgram = sig.squeeze(1)
 
-        avg = torch.mean(torch.abs(specgram) ** 2, dim=1)
+        specgram = torch.abs(specgram) ** 2
 
+        avg = torch.mean(specgram, dim=1)
+        avg = avg.to(torch.float32)
         avg_db = 10.0 * torch.log(avg + 10e-13)
+        avg_db = AmplitudeToDB(stype="power", top_db=80.0)(avg)
         average_per_file.append(avg_db)
 
         if i % 10 == 0:
@@ -71,7 +77,7 @@ def _compute_average_frequency_for_directory(
     average_per_file = torch.flip(average_per_file, dims=(-1,))
     freq = np.flipud(freq)
 
-    return average_per_file, freq
+    return average_per_file.cpu(), freq
 
 
 def _apply_ax_styling(
@@ -142,7 +148,7 @@ if __name__ == "__main__":
     reference_name = None
     Path(f"{BASE_PATH}/plots/energy/cwt").mkdir(parents=True, exist_ok=True)
 
-    amount = 5000
+    amount = 100
 
     data_base_dir = f"{BASE_PATH}/tests/data"
     paths = [
@@ -151,10 +157,10 @@ if __name__ == "__main__":
     ]
 
     # Important: Put corresponding data directories here!
-    data_base_dir = "/home/kons/uni/bachelor_thesis/git/data/"
-    paths = ["LJSpeech-1.1/wavs/", "generated_audio/ljspeech_waveglow/"]
+    data_base_dir = "/home/s6kogase/data/fake"
+    paths = ["A_ljspeech/", "C_hifigan/"]
 
-    fig_names = ["Original", "WaveGlow"]
+    fig_names = ["Original", "Hifigan"]
 
     for i in range(len(paths)):
         print("\n======================================")

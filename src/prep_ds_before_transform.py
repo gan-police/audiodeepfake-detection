@@ -1,8 +1,16 @@
-"""Speedy preprocessing using batched PyTorch code."""
+"""Prepare desired files of on GAN architecture and the real audio dataset.
 
+The resulting files are resampled but not transformed yet to make
+gradient flow through wavelets possible.
+All files that have less than the desired amount of samples for each file
+are discarded. These preprocessing routines help with varying window size
+and number of files used in total dynamically. Even though not all files
+will be used, at least the same amount of samples are used per audio.
+
+Note: currently only for binary classification.
+"""
 import argparse
 import functools
-import os
 import pickle
 import random
 from concurrent.futures import ThreadPoolExecutor
@@ -10,104 +18,19 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-import pywt
 import torch
 import torchaudio
 
-from .data_loader import NumpyDataset, WelfordEstimator
-from .ptwt_continuous_transform import _ComplexMorletWavelet, _frequency2scale
-from .wavelet_math import wavelet_direct, wavelet_preprocessing
-
-
-def get_label_of_folder(
-    path_of_folder: Path, binary_classification: bool = False
-) -> int:
-    """Get the label of the audios in a folder based on the folder path.
-
-        We assume:
-            A: Orignal data, B: First gan,
-            C: Second gan, D-G: more gans.
-        A working folder structure could look like:
-            A_ljspeech B_melgan C_hifigan D_mbmelgan ...
-        With each folder containing the audios from the corresponding
-        source.
-
-    Args:
-        path_of_folder (Path):  Path string containing only a single
-            underscore directly after the label letter.
-        binary_classification (bool): If flag is set, we only classify binarily, i.e. whether an audio is real or fake.
-            In this case, the prefix 'A' indicates real, \
-            which is encoded with the label 0. All other folders are considered
-            fake data, encoded with the label 1.
-
-    Raises:
-       NotImplementedError: Raised if the label letter is unkown.
-
-    Returns:
-        int: The label encoded as integer.
-
-    # noqa: DAR401
-    """
-    label_str = path_of_folder.name.split("_")[0]
-    if binary_classification:
-        # differentiate original and generated data
-        if label_str == "A":
-            return 0
-        else:
-            return 1
-    else:
-        # the the label based on the path, As are 0s, Bs are 1, etc.
-        if label_str == "A":
-            label = 0
-        elif label_str == "B":
-            label = 1
-        elif label_str == "C":
-            label = 2
-        elif label_str == "D":
-            label = 3
-        elif label_str == "E":
-            label = 4
-        elif label_str == "F":
-            label = 5
-        elif label_str == "G":
-            label = 6
-        elif label_str == "H":
-            label = 7
-        else:
-            raise NotImplementedError(label_str)
-        return label
-
-
-def get_label(path_to_audio: Path, binary_classification: bool) -> int:
-    """Get the label based on the audio path.
-
-       We assume:
-            A: Orignal data, B: First gan,
-            C: Second gan, D-G: more gans.
-        A working folder structure could look like:
-            A_ljspeech B_melgan C_hifigan D_mbmelgan ...
-       With each folder containing the audios from the corresponding source.
-
-    Args:
-        path_to_audio (Path): audio path string containing only a single
-            underscore directly after the label letter.
-        binary_classification (bool): If flag is set, we only classify binarily, i.e. whether an audio is real or fake.
-            In this case, the prefix 'A' indicates real, which is encoded with the label 0.
-            All other folders are considered fake data, encoded with the label 1.
-
-    Returns:
-        int: The label encoded as integer.
-    """
-    return get_label_of_folder(path_to_audio.parent, binary_classification)
+from .data_loader import LearnWavefakeDataset, WelfordEstimator
+from .prepare_dataset import get_label, get_label_of_folder, save_to_disk
+from .ptwt_continuous_transform import get_diff_wavelet
 
 
 def load_transform_and_stack(
     path_list: np.ndarray,
-    process,
     samples: int,
     window_size: int,
     resample_rate: int,
-    channels: int = 1,
     binary_classification: bool = False,
 ) -> tuple:
     """Transform a lists of paths into a batches of numpy arrays and record their labels.
@@ -121,8 +44,8 @@ def load_transform_and_stack(
 
     Returns:
         tuple: A numpy array of size
-            (preprocessing_batch_size * (samples / window_size), number of scales, window_size)
-            and a list of length preprocessing_batch_size.
+            (preprocessing_batch_size * (samples / window_size), number of channels, window_size)
+            and a label list of length preprocessing_batch_size.
     """
     audio_list: list[np.ndarray] = []
     label_list = []
@@ -134,7 +57,7 @@ def load_transform_and_stack(
     for path_to_audio in path_list:
         audio_meta = torchaudio.info(path_to_audio)
         # check if cut loading is possible: True if resampled audio has more samples than $samples
-        if audio_meta.num_frames > int(rate_factor * audio_meta.num_frames):
+        if audio_meta.num_frames >= int(rate_factor * audio_meta.num_frames):
             if sox:
                 # slower
                 # audio should be much greater than rate_factor * num_frames
@@ -156,77 +79,32 @@ def load_transform_and_stack(
             )
             audio, sample_rate = torchaudio.load(path_to_audio, normalize=True)
 
-        audio = audio.cuda()
         # resample with better window (a bit slower than default hann window)
         audio_res = torchaudio.functional.resample(
             audio, sample_rate, resample_rate, resampling_method="kaiser_window"
         )
 
-        processed_audio = process(audio_res[:, :samples])  # transform
-        processed_audio = processed_audio.transpose(2, 1)
+        audio_res = audio_res[:, :samples]  # transform
         # cut to non-overlapping equal-sized windows
-        framed_audio = processed_audio[0].unfold(0, window_size, window_size)
+        framed_audio = audio_res[0].unfold(0, window_size, window_size)
 
         framed_audio = framed_audio.unsqueeze(1)
         shape = framed_audio.shape
-        if channels > shape[1]:
-            padding = torch.zeros(
-                shape[0],
-                channels - shape[1],
-                shape[2],
-                shape[3],
-            )
-            for i in range(channels - shape[1]):
-                padding[:, i] = framed_audio[:, 0]  # all channels have the same data
-            framed_audio = torch.cat((framed_audio, padding), 1)
 
-        audio_list.extend(np.array(framed_audio.detach()))
+        audio_list.extend(np.array(framed_audio))
         label = np.array(get_label(path_to_audio, binary_classification))
         label_list.extend([label] * shape[0])
     return np.stack(audio_list), label_list
 
 
-def save_to_disk(
-    data_batch: np.ndarray,
-    directory: str,
-    previous_file_count: int = 0,
-    dir_suffix: str = "",
-) -> int:
-    """Save audios to disk using their position on the dataset as filename.
-
-    Args:
-        data_batch (np.ndarray): The audio batch to store.
-        directory (str): The place to store the audios at.
-        previous_file_count (int): The number of previously stored audios.
-            Defaults to 0.
-        dir_suffix (str): A comment which is attatched to the output directory.
-
-    Returns:
-        int: The new total of storage audios.
-    """
-    # loop over the batch dimension
-    if not os.path.exists(f"{directory}{dir_suffix}"):
-        print("creating", f"{directory}{dir_suffix}", flush=True)
-        os.mkdir(f"{directory}{dir_suffix}")
-    file_count = previous_file_count
-    for pre_processed_audio in data_batch:
-        with open(f"{directory}{dir_suffix}/{file_count:06}.npy", "wb") as numpy_file:
-            np.save(numpy_file, pre_processed_audio)
-        file_count += 1
-
-    return file_count
-
-
 def load_process_store(
     file_list,
     preprocessing_batch_size,
-    process,
     target_dir,
     label_string,
     window_size,
     samples,
     sample_rate,
-    channels,
     dir_suffix="",
     binary_classification: bool = False,
 ):
@@ -235,8 +113,6 @@ def load_process_store(
     Args:
         file_list (list): PosixPath objects leading to source audios.
         preprocessing_batch_size (int): The number of files processed at once.
-        process (function): The function to use for the preprocessing.
-            I.e. a wavelet packet encoding.
         target_dir (string): A directory where to save the processed files.
         label_string (string): A label we add to the target folder.
     """
@@ -250,12 +126,10 @@ def load_process_store(
         # Also cut to max-sample size $samples and resample
         audio_batch, labels = load_transform_and_stack(
             current_file_batch,
-            process,
             samples=samples,
             window_size=window_size,
             resample_rate=sample_rate,
             binary_classification=binary_classification,
-            channels=channels,
         )
         all_labels.extend(labels)
         file_count = save_to_disk(audio_batch, directory, file_count, dir_suffix)
@@ -267,7 +141,13 @@ def load_process_store(
 
 
 def load_folder(
-    folder: Path, train_size: int, val_size: int, test_size: int
+    folder: Path,
+    train_size: int,
+    val_size: int,
+    test_size: int,
+    min_length: int,
+    win_size: int,
+    max_allowed_samples: int,
 ) -> np.ndarray:
     """Create posix-path lists for png files in a folder.
 
@@ -276,7 +156,7 @@ def load_folder(
     validation set list is created.
 
     Args:
-        folder: Path to a folder with audios from the same source, i.e. A_ffhq .
+        folder: Path to a folder with images from the same source, i.e. A_ffhq .
         train_size: Desired size of the training set.
         val_size: Desired size of the validation set.
         test_size: Desired size of the test set.
@@ -285,20 +165,71 @@ def load_folder(
         Numpy array with the train, validation and test lists, in this order.
 
     Raises:
-        ValueError: if the requested set sizes are not smaller or equal to the number of audios available
+        ValueError: if the requested set sizes are not smaller or equal to the number of images available
 
     # noqa: DAR401
     """
     file_list = list(folder.glob("./*.wav"))
+
+    file_list = remove_small_audios(file_list, min_length, max_allowed_samples)
     if len(file_list) < train_size + val_size + test_size:
+        poss_tr_size = int(len(file_list) * 0.7)
+        poss_val_size = int(len(file_list) * 0.1)
+        poss_te_size = len(file_list) - poss_tr_size - poss_val_size
         raise ValueError(
-            "Requested set sizes must be smaller or equal to the number of audios available."
+            f"Requested set sizes must be smaller or equal to the number of \
+            audios with set min_length available. Use maximum {len(file_list)} \
+            samples per folder. For example a train_size of {poss_tr_size}, a \
+            validation size of {poss_val_size} and test size if {poss_te_size}."
         )
     # split the list into training, validation and test sub-lists.
     train_list = file_list[:train_size]
     validation_list = file_list[train_size : (train_size + val_size)]
     test_list = file_list[(train_size + val_size) : (train_size + val_size + test_size)]
     return np.asarray([train_list, validation_list, test_list], dtype=object)
+
+
+def remove_small_audios(file_list, min_length, max_allowed_samples):
+    """Remove audios with shorter length than min_length."""
+    result_list = []
+    lost_samples = 0
+    max_samples = 0
+    for i in range(len(file_list)):
+        length = torchaudio.info(file_list[i]).num_frames
+        if length >= min_length + 10:
+            result_list.append(file_list[i])
+            max_samples += min_length
+        else:
+            lost_samples += length
+        if max_samples > max_allowed_samples:
+            break
+    print(f"Lost samples while loading folder due to audio lengths: {lost_samples}.")
+    print(f"Maximum files to be used from this folder: {len(result_list)}")
+    print(f"Maximum samples available in this folder: {max_samples}")
+    return result_list
+
+
+def get_max_files(folder_list, min_length, window_size):
+    """Get maximum available files per folder that adhere to specifications.
+
+    Used to guarantee that from each folder only the audios of min_length size
+    are used and that each folder uses the same amount of files, adding up to
+    the same amount of frames when cut with window_size.
+    """
+    minimal_length = 0
+    max_samples = 0
+    for folder in folder_list:
+        file_list = list(folder.glob("./*.wav"))
+        for i in range(len(file_list)):
+            length = torchaudio.info(file_list[i]).num_frames
+            if length >= min_length + 10:
+                max_samples += min_length
+
+        if minimal_length == 0:
+            minimal_length = max_samples - (max_samples % window_size)
+        minimal_length = min(minimal_length, max_samples - (max_samples % window_size))
+
+    return minimal_length
 
 
 def pre_process_folder(
@@ -319,7 +250,6 @@ def pre_process_folder(
     f_min: float = 80,
     f_max: float = 4_000,
     channels: int = 1,
-    direct_loading: bool = False,
 ) -> None:
     """Preprocess a folder containing sub-directories with audios from different sources.
 
@@ -348,9 +278,13 @@ def pre_process_folder(
     if f_min >= f_max:
         f_min = 80.0
 
+    samples -= samples % window_size  # make samples dividable by window_size
+    frames_per_file = samples // window_size
+    out_files_count = (train_size + val_size + test_size) * frames_per_file
+
     data_dir = Path(data_folder)
     folder_name = f"{data_dir.name}_{wavelet}_{int(sample_rate)}_{samples}"
-    folder_name += f"_{window_size}_{num_of_scales}_{int(f_min)}-{int(f_max)}_{channels}_{train_size}"
+    folder_name += f"_{window_size}_{num_of_scales}_{int(f_min)}-{int(f_max)}_{channels}_{out_files_count}"
 
     binary_classification = missing_label is not None
     if real is not None:
@@ -367,38 +301,25 @@ def pre_process_folder(
 
     target_dir = data_dir.parent / folder_name
 
-    samples -= samples % window_size  # make samples dividable by window_size
+    initial_sample_rate = 22050
     if preprocessing_batch_size > samples / window_size:
         preprocessing_batch_size //= (
             samples // window_size
         )  # batch size will be near given batch size
         preprocessing_batch_size = int(preprocessing_batch_size)
 
-    if direct_loading:
-        if isinstance(wavelet, str):
-            wavelet = _ComplexMorletWavelet(wavelet)
-        freqs = torch.linspace(f_max, f_min, num_of_scales, device="cuda") / sample_rate  # type: ignore
-        scales = _frequency2scale(wavelet, freqs).detach()
-        # scales = pywt.frequency2scale("cmor4.6-0.87", freqs)
-        process = wavelet_direct
-    else:
-        # equally spaced normalized frequencies to be analyzed
-        freqs = np.linspace(f_max, f_min, num_of_scales) / sample_rate  # type: ignore
-        scales = pywt.frequency2scale(wavelet, freqs)
-        process = wavelet_preprocessing  # type: ignore
-
-    processing_function = functools.partial(
-        process,
-        wavelet=wavelet,
-        scales=scales,
-        cuda=True,
-        log_scale=True,
-    )
-
+    downsampling_factor = initial_sample_rate / sample_rate
+    des_length = int(samples * downsampling_factor)
+    max_samples_per_folder = get_max_files(folder_list, des_length, window_size)
     if missing_label is not None:
         # split files in folders into training/validation/test
         func_load_folder = functools.partial(
-            load_folder, train_size=train_size, val_size=val_size, test_size=test_size
+            load_folder,
+            train_size=train_size,
+            val_size=val_size,
+            test_size=test_size,
+            min_length=des_length,
+            win_size=window_size,
         )
 
         train_list = []
@@ -408,9 +329,15 @@ def pre_process_folder(
         for folder in folder_list:
             if get_label_of_folder(folder) == missing_label:
                 test_list.extend(
-                    load_folder(folder, train_size=0, val_size=0, test_size=test_size)[
-                        2
-                    ]
+                    load_folder(
+                        folder,
+                        train_size=0,
+                        val_size=0,
+                        test_size=test_size,
+                        min_length=des_length,
+                        win_size=window_size,
+                        max_allowed_samples=max_samples_per_folder,
+                    )[2]
                 )
             else:
                 # real data
@@ -420,6 +347,9 @@ def pre_process_folder(
                         train_size=train_size,
                         val_size=val_size,
                         test_size=test_size,
+                        min_length=des_length,
+                        win_size=window_size,
+                        max_allowed_samples=max_samples_per_folder,
                     )
                 # generated data
                 else:
@@ -428,6 +358,11 @@ def pre_process_folder(
                         train_size=int(train_size * gan_split_factor),
                         val_size=int(val_size * gan_split_factor),
                         test_size=test_size,
+                        min_length=des_length,
+                        win_size=window_size,
+                        max_allowed_samples=int(
+                            max_samples_per_folder * gan_split_factor
+                        ),
                     )
                 train_list.extend(train_result)
                 validation_list.extend(val_result)
@@ -436,7 +371,13 @@ def pre_process_folder(
     else:
         # split files in folders into training/validation/test
         func_load_folder = functools.partial(
-            load_folder, train_size=train_size, val_size=val_size, test_size=test_size
+            load_folder,
+            train_size=train_size,
+            val_size=val_size,
+            test_size=test_size,
+            min_length=des_length,
+            win_size=window_size,
+            max_allowed_samples=max_samples_per_folder,
         )
         with ThreadPoolExecutor(max_workers=len(folder_list)) as pool:
             result_lst = list(pool.map(func_load_folder, folder_list))
@@ -447,6 +388,13 @@ def pre_process_folder(
             aud for folder in results[:, 1] for aud in folder  # type: ignore
         ]
         test_list = [aud for folder in results[:, 2] for aud in folder]  # type: ignore
+
+    print(f"Using {len(train_list) + len(test_list) + len(validation_list)} files.")
+    print(
+        f"training samples: {len(train_list) * frames_per_file}, \
+            validation samples: {len(validation_list) * frames_per_file}, \
+                test_samples: {len(test_list) * frames_per_file}"
+    )
 
     # fix the seed to make results reproducible.
     random.seed(42)
@@ -464,7 +412,6 @@ def pre_process_folder(
     load_process_store(
         validation_list,
         preprocessing_batch_size,
-        processing_function,
         target_dir,
         "val",
         dir_suffix=dir_suffix,
@@ -472,7 +419,6 @@ def pre_process_folder(
         samples=samples,
         sample_rate=sample_rate,
         binary_classification=binary_classification,
-        channels=channels,
     )
     print("validation set stored")
 
@@ -481,7 +427,6 @@ def pre_process_folder(
     load_process_store(
         test_list,
         preprocessing_batch_size,
-        processing_function,
         target_dir,
         "test",
         dir_suffix=dir_suffix,
@@ -489,7 +434,6 @@ def pre_process_folder(
         samples=samples,
         sample_rate=sample_rate,
         binary_classification=False,
-        channels=channels,
     )
     print("test set stored")
 
@@ -497,7 +441,6 @@ def pre_process_folder(
     load_process_store(
         train_list,
         preprocessing_batch_size,
-        processing_function,
         target_dir,
         "train",
         dir_suffix=dir_suffix,
@@ -505,21 +448,25 @@ def pre_process_folder(
         samples=samples,
         sample_rate=sample_rate,
         binary_classification=binary_classification,
-        channels=channels,
     )
     print("training set stored.", flush=True)
 
     # compute training normalization.
     # load train data and compute mean and std
-    print("computing mean and std values.")
-    train_data_set = NumpyDataset(f"{target_dir}_train{dir_suffix}")
+    print("computing mean and std values.", flush=True)
+    wavelet = get_diff_wavelet(wavelet)
+
+    train_data_set = LearnWavefakeDataset(
+        f"{target_dir}_train{dir_suffix}",
+    )
     welford = WelfordEstimator()
-    for aud_no in range(train_data_set.__len__()):
-        welford.update(train_data_set.__getitem__(aud_no)["audio"])
-    mean, std = welford.finalize()
+    with torch.no_grad():
+        for aud_no in range(train_data_set.__len__()):
+            welford.update(train_data_set.__getitem__(aud_no)["audio"])
+        mean, std = welford.finalize()
     print("mean", mean, "std:", std)
     with open(f"{target_dir}_train{dir_suffix}/mean_std.pkl", "wb") as f:
-        pickle.dump([mean.numpy(), std.numpy()], f)
+        pickle.dump([mean.cpu().numpy(), std.cpu().numpy()], f)
 
 
 def parse_args():
@@ -573,21 +520,21 @@ def parse_args():
         type=int,
         default=10_000,
         help="Desired size of the training subset of each folder. Real size is"
-        " (train_size * 2 * floor(scale_number / window_size)). (default: 10_000).",
+        " (train_size * 2 * floor(sample_number / window_size)). (default: 10_000).",
     )
     parser.add_argument(
         "--test-size",
         type=int,
         default=2_000,
         help="Desired size of the test subset of each folder. Real size is"
-        " (trest_size * 2 * floor(scale_number / window_size)). (default: 2_000).",
+        " (trest_size * 2 * floor(sample_number / window_size)). (default: 2_000).",
     )
     parser.add_argument(
         "--val-size",
         type=int,
         default=1_100,
         help="Desired size of the validation subset of each folder. Real size is"
-        " (val_size * 2 * floor(scale_number / window_size)). (default: 1_100).",
+        " (val_size * 2 * floor(sample_number / window_size)). (default: 1_100).",
     )
     parser.add_argument(
         "--batch-size",
@@ -624,20 +571,20 @@ def parse_args():
     parser.add_argument(
         "--sample-number",
         type=int,
-        default=8_000,
-        help="Maximum number of samples that will be used from each audio file. Default: 8_000.",
+        default=44_000,
+        help="Maximum number of samples that will be used from each audio file. Default: 44_000.",
     )
     parser.add_argument(
         "--window-size",
         type=int,
-        default=200,
-        help="Size of window of audio file as number of samples. Default: 200.",
+        default=4_400,
+        help="Size of window of audio file as number of samples. Default: 4_400.",
     )
     parser.add_argument(
         "--scales",
         type=int,
-        default=128,
-        help="Number of scales for the cwt. Default: 128.",
+        default=224,
+        help="Number of scales for the cwt. Default: 224.",
     )
     parser.add_argument(
         "--channels",
@@ -654,19 +601,14 @@ def parse_args():
     parser.add_argument(
         "--f-min",
         type=float,
-        default=80,
-        help="Minimum frequency to be analyzed in Hz. Default: 80.",
+        default=2000,
+        help="Minimum frequency to be analyzed in Hz. Default: 2000.",
     )
     parser.add_argument(
         "--f-max",
         type=float,
         default=4_000,
         help="Maximum frequency to be analyzed in Hz. Default: 4_000.",
-    )
-    parser.add_argument(
-        "--direct",
-        action="store_true",
-        help="process data directly or use preprocessing",
     )
 
     return parser.parse_args()
@@ -694,5 +636,4 @@ if __name__ == "__main__":
         f_min=args.f_min,
         f_max=args.f_max,
         channels=args.channels,
-        direct_loading=args.direct,
     )
