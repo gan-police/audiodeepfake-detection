@@ -12,3 +12,4 @@ torchvision==0.14.0
 tensorboard
 torchmetrics
 captum
+tqdm

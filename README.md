@@ -30,10 +30,12 @@ specified cut length.
 
 
 Exp. Todo:
-- train single cmor3.3-4.17 0 for seeds 1; 0 for seed 2; 2,3 for seed 0; all for 3,4
+- train single cmor3.3-4.17 2 for seed 0; 0,2,5,6 for seed 4; 0,5,6 for 3
 - train single shan0.01-0.40 for seeds 1, 2, 3, 4
 - train allgans cmor4.6-0.87 on seeds 0
-- train allgans cmor3.3-4.17 on seeds 3-4
+
+- onednet as many params as LearnDeepTestNet
+- train cmor3.3-4.17 on OneDNet for all seeds
 
 - train adaptable on cmor4.6-0.87 on seeds 0-4
 

@@ -22,6 +22,7 @@ from .data_loader import (
 from .models import (
     DeepTestNet,
     LearnDeepTestNet,
+    LearnNet,
     OneDNet,
     Regression,
     TestNet,
@@ -166,6 +167,7 @@ def _parse_args():
             "deeptestnet",
             "onednet",
             "learndeepnet",
+            "learnnet",
         ],
         default="testnet",
         help="The model type chosse regression or CNN. Default: testnet.",
@@ -233,6 +235,17 @@ def get_model(
         model = DeepTestNet(classes=nclasses, batch_size=batch_size)  # type: ignore
     elif model_name == "learndeepnet":
         model = LearnDeepTestNet(
+            classes=nclasses,
+            wavelet=wavelet,
+            f_min=f_min,
+            f_max=f_max,
+            sample_rate=sample_rate,
+            num_of_scales=num_of_scales,
+            batch_size=batch_size,
+            raw_input=raw_input,
+        )  # type: ignore
+    elif model_name == "learnnet":
+        model = LearnNet(
             classes=nclasses,
             wavelet=wavelet,
             f_min=f_min,
