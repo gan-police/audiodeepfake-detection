@@ -308,8 +308,6 @@ def split_dataset_random(
     window_size,
     folder_list,
     folder_list_all,
-    real_ind: Optional[str],
-    fake_ind: Optional[str],
 ):
     """Split dataset in equal sized halfes.
 
@@ -335,9 +333,7 @@ def split_dataset_random(
     max_len = min(lengths)  # max length of folder
     max_len -= max_len % window_size
     max_len = int(max_len)
-    import pdb
 
-    pdb.set_trace()
     result_list = []
     frames_list = []
 

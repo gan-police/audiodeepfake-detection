@@ -41,7 +41,7 @@ def main() -> None:
             data_args = model_path[0].split("/")[-1].split(".pt")[0].split("_")
             model_name = data_args[-3]
             nclasses = int(data_args[-5])
-            batch_size = 2  # int(data_args[-6])
+            batch_size = 10  # int(data_args[-6])
             wavelet = get_diff_wavelet(data_args[1])
             f_min = float(data_args[5].split("-")[0])
             f_max = float(data_args[5].split("-")[1])

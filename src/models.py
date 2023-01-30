@@ -81,9 +81,13 @@ class LearnDeepTestNet(nn.Module):
             ),
             nn.ReLU(),
         )
+        if sample_rate == 16000:
+            out = 11392
+        else:
+            out = 21888
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(21888, classes, bias=True),
+            nn.Linear(out, classes, bias=True),
         )
 
     def forward(self, x) -> torch.Tensor:
@@ -123,7 +127,9 @@ class LearnNet(nn.Module):
 
         self.raw_input = raw_input
         self.cwt = CWTLayer(wavelet=wavelet, freqs=freqs, batch_size=batch_size)
+        import pdb
 
+        pdb.set_trace()
         self.cnn = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, stride=2),
             nn.BatchNorm2d(

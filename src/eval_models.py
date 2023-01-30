@@ -117,11 +117,18 @@ def main() -> None:
 
     plot_path = "/home/s6kogase/code/plots/cwt/eval/"
     num_workers = 0
-    gans = ["melgan", "lmelgan", "mbmelgan", "fbmelgan", "hifigan", "waveglow", "pwg"]
+    gans = [
+        "melgan",
+        "lmelgan",
+        "mbmelgan",
+        "fbmelgan",
+        "hifigan",
+        "waveglow",
+        "pwg",
+        "all",
+    ]
     seeds = [0, 1, 2, 3, 4]
-    gans = ["lmelgan"]
-    seeds = [0]
-    wavelets = ["cmor4.6-0.87", "shan0.01-0.4"]
+    wavelets = ["cmor3.3-4.17", "cmor4.6-0.87", "shan0.01-0.4"]
     cu_wv = wavelets[0]
     gan_acc_dict = {}
     for gan in gans:
@@ -136,9 +143,7 @@ def main() -> None:
             model_path = [f"/home/s6kogase/code/log/fake_{cu_wv}_22050_11025_"]
             model_path[
                 0
-            ] += (
-                "150_\1000-9500_0.7_{gan}_0.0001_128_2_10e_learndeepnet_False_{seed}.pt"
-            )
+            ] += "150_1000-9500_0.7_{gan}_0.0001_128_2_10e_learndeepnet_False_{seed}.pt"
             data_args = model_path[0].split("/")[-1].split(".pt")[0].split("_")
             model_name = data_args[-3]
             nclasses = int(data_args[-5])
@@ -230,7 +235,10 @@ def main() -> None:
     time_now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
     pickle.dump(
         gan_acc_dict,
-        open(f"results_all_{data_args[1]}_{model_name}_{time_now}.pkl", "wb"),
+        open(
+            f"/home/s6kogase/code/log/results/results_all_{data_args[1]}_{model_name}_{time_now}.pkl",
+            "wb",
+        ),
     )
 
     print(wavelet)
