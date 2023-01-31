@@ -127,9 +127,7 @@ class LearnNet(nn.Module):
 
         self.raw_input = raw_input
         self.cwt = CWTLayer(wavelet=wavelet, freqs=freqs, batch_size=batch_size)
-        import pdb
 
-        pdb.set_trace()
         self.cnn = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, stride=2),
             nn.BatchNorm2d(
@@ -146,16 +144,20 @@ class LearnNet(nn.Module):
                 64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True
             ),
             nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=3),
+            nn.Conv2d(64, 128, kernel_size=3, stride=3),
             nn.BatchNorm2d(
-                64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True
+                128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True
             ),
             nn.ReLU(),
             nn.AvgPool2d(2, 2),
         )
+        if sample_rate == 16000:
+            out = 20480
+        else:
+            out = 39168
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(19584, classes, bias=True),
+            nn.Linear(out, classes, bias=True),
         )
 
     def forward(self, x) -> torch.Tensor:
@@ -213,9 +215,13 @@ class OneDNet(nn.Module):
             nn.ReLU(),
             nn.AvgPool1d(2),
         )
+        if sample_rate == 16000:
+            out = 2816
+        else:
+            out = 5440
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(5440, classes),  # 1184, 128, 4992, 9984
+            nn.Linear(out, classes),  # 1184, 128, 4992, 9984
         )
 
     def forward(self, x) -> torch.Tensor:

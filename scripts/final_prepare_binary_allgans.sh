@@ -21,8 +21,8 @@ python -m src.prep_all \
     --val-size 0.1   \
     --batch-size 1000 \
     --wavelet "cmor4.6-0.87"     \
-    --window-size 11025 \
-    --sample-rate 22050 \
+    --window-size 8000 \
+    --sample-rate 16000 \
     "${HOME}/data/fake"
 
 echo "Goodbye at $(date)."

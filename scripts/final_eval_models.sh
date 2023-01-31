@@ -8,6 +8,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --time=12:00:00
 #SBATCH --partition=A40short
+#SBATCH --nodelist=node-03
 
 source ${HOME}/.bashrc
 

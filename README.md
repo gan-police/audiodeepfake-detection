@@ -30,7 +30,6 @@ specified cut length.
 
 
 Exp. Todo:
-- train single cmor3.3-4.17 2 for seed 0; 0,2,5,6 for seed 4; 0,5,6 for 3
 - train single shan0.01-0.40 for seeds 1, 2, 3, 4
 - train allgans cmor4.6-0.87 on seeds 0
 

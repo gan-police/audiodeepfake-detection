@@ -143,7 +143,9 @@ def main() -> None:
             model_path = [f"/home/s6kogase/code/log/fake_{cu_wv}_22050_11025_"]
             model_path[
                 0
-            ] += "150_1000-9500_0.7_{gan}_0.0001_128_2_10e_learndeepnet_False_{seed}.pt"
+            ] += (
+                f"150_1000-9500_0.7_{gan}_0.0001_128_2_10e_learndeepnet_False_{seed}.pt"
+            )
             data_args = model_path[0].split("/")[-1].split(".pt")[0].split("_")
             model_name = data_args[-3]
             nclasses = int(data_args[-5])

@@ -14,9 +14,11 @@ class TestModels(unittest.TestCase):
 
     def test_dimensions(self) -> None:
         wavelet = get_diff_wavelet("cmor4.6-0.87")
+        sample_rate = 16000
+        window_size = 5804
 
         models = ["learndeepnet", "onednet", "learnnet"]
         for model_name in models:
-            model = get_model(wavelet, model_name)
+            model = get_model(wavelet, model_name, sample_rate=sample_rate)
 
-            summary(model, (1, 11025), verbose=0)
+            summary(model, (1, window_size), verbose=0)

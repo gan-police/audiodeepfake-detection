@@ -529,7 +529,11 @@ def main():
     wavelet.bandwidth_par.requires_grad = args.adapt_wavelet
     wavelet.center_par.requires_grad = args.adapt_wavelet
 
-    if args.model == "learndeepnet" or args.model == "onednet":
+    if (
+        args.model == "learndeepnet"
+        or args.model == "onednet"
+        or args.model == "learnnet"
+    ):
         train_data_loader, val_data_loader, test_data_set = create_data_loaders_learn(
             args.data_prefix,
             args.batch_size,
@@ -591,7 +595,11 @@ def main():
     else:
         loss_fun = torch.nn.CrossEntropyLoss()
 
-    if args.model == "learndeepnet" or args.model == "onednet":
+    if (
+        args.model == "learndeepnet"
+        or args.model == "onednet"
+        or args.model == "learnnet"
+    ):
         optimizer = AdamCWT(
             model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
         )
