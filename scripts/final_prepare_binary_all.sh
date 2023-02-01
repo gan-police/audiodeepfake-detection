@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --time=06:00:00
 #SBATCH --partition=A40short
-#SBATCH --array=1-6
+#SBATCH --array=0-6
 #SBATCH --nodelist=node-03
 
 # Prepare all files of all GAN architectures in combination with the real audio
@@ -29,10 +29,10 @@ python -m src.prep_all \
     --test-size 0.2 \
     --val-size 0.1   \
     --batch-size 2048 \
-    --window-size 8000 \
+    --window-size 11025 \
     --sample-rate 16000 \
     --realdir "${HOME}/data/real/$real" \
     --fakedir "${HOME}/data/fake/${datasets[$SLURM_ARRAY_TASK_ID]}" \
-    "${HOME}/data/fake"
+    --directory "${HOME}/data/fake"
 
 echo "Goodbye at $(date)."

@@ -224,6 +224,7 @@ def get_model(
     f_max: float = 9500,
     sample_rate: int = 22050,
     num_of_scales: int = 150,
+    flattend_size: int = 21888,
     raw_input: Optional[bool] = True,
 ) -> Regression | TestNet | DeepTestNet | LearnDeepTestNet | OneDNet | tv_models.ResNet:
     """Get torch module model with given parameters."""
@@ -243,6 +244,7 @@ def get_model(
             num_of_scales=num_of_scales,
             batch_size=batch_size,
             raw_input=raw_input,
+            flattend_size=flattend_size,
         )  # type: ignore
     elif model_name == "learnnet":
         model = LearnNet(
@@ -254,6 +256,7 @@ def get_model(
             num_of_scales=num_of_scales,
             batch_size=batch_size,
             raw_input=raw_input,
+            flattend_size=flattend_size,
         )  # type: ignore
     elif model_name == "onednet":
         model = OneDNet(
@@ -264,6 +267,7 @@ def get_model(
             sample_rate=sample_rate,
             num_of_scales=num_of_scales,
             batch_size=batch_size,
+            flattend_size=flattend_size,
         )  # type: ignore
     elif model_name == "resnet18":
         model = tv_models.resnet18(weights="IMAGENET1K_V1")  # type: ignore

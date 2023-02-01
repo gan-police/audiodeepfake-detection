@@ -19,10 +19,11 @@ python -m src.prep_all \
     --train-size 0.7 \
     --test-size 0.2 \
     --val-size 0.1   \
-    --batch-size 1000 \
+    --batch-size 2048 \
     --wavelet "cmor4.6-0.87"     \
-    --window-size 8000 \
+    --window-size 5512 \
     --sample-rate 16000 \
-    "${HOME}/data/fake"
+    --realdir "${HOME}/data/real/A_ljspeech" \
+    --directory "${HOME}/data/fake"
 
 echo "Goodbye at $(date)."

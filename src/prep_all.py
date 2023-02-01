@@ -176,6 +176,7 @@ def pre_process_folder(
     data_folder: str,
     real: Optional[str],
     fake: Optional[str],
+    leave_out: Optional[list],
     preprocessing_batch_size: int,
     train_size: float,
     val_size: float,
@@ -223,15 +224,21 @@ def pre_process_folder(
 
     binary_classification = True
     folder_list_all = sorted(data_dir.glob("./*"))
+
+    if leave_out is not None and isinstance(leave_out, list):
+        for folder in leave_out:
+            if Path(folder) in folder_list_all:
+                folder_list_all.remove(Path(folder))
+
     if real is not None:
-        # binary classification
         if fake is None:
-            raise ValueError(
-                "Fake directory is not set. If realdir is set, fakedir must be set as well."
-            )
-        binary_classification = True
-        folder_name += f"_{fake.split('_')[-1]}"
-        folder_list = [Path(real), Path(fake)]
+            folder_list_all.append(Path(real))
+            folder_list = folder_list_all
+        else:
+            # binary classification
+            binary_classification = True
+            folder_name += f"_{fake.split('_')[-1]}"
+            folder_list = [Path(real), Path(fake)]
     else:
         folder_list = folder_list_all
 
@@ -482,7 +489,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "directory",
+        "--directory",
         type=str,
         help="The folder with the real and gan generated audio folders.",
     )
@@ -495,6 +502,13 @@ def parse_args():
         "--fakedir",
         type=str,
         help="The folder with the gan generated audios. If specified the directory argument will be ignored.",
+    )
+    parser.add_argument(
+        "--leave-out",
+        nargs="+",
+        default=[],
+        type=str,
+        help="Wich gans to ignore in folder.",
     )
     parser.add_argument(
         "--train-size",
@@ -567,6 +581,7 @@ if __name__ == "__main__":
         data_folder=args.directory,
         real=args.realdir,
         fake=args.fakedir,
+        leave_out=args.leave_out,
         preprocessing_batch_size=args.batch_size,
         train_size=args.train_size,
         val_size=args.val_size,

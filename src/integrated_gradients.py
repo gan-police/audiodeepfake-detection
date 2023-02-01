@@ -2,8 +2,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from captum.attr import IntegratedGradients, NoiseTunnel, Occlusion, Saliency
-from captum.attr import visualization as viz
+from captum.attr import IntegratedGradients, NoiseTunnel, Saliency
 from torch.utils.data import DataLoader
 
 from .learn_direct_train_classifier import (
@@ -33,7 +32,7 @@ def main() -> None:
             print(f"seed: {seed}")
             torch.manual_seed(seed)
             model_path = [
-                f"/home/s6kogase/code/log/fake_{cu_wv}_16000_8000_150_1000-9500"
+                f"/home/s6kogase/code/log/fake_{cu_wv}_22050_11025_150_1000-9500"
             ]
             model_path[0] += f"_0.7_{gan}_0.0001_128_2_10e_learndeepnet_False_{seed}.pt"
             data_args = model_path[0].split("/")[-1].split(".pt")[0].split("_")
@@ -48,7 +47,7 @@ def main() -> None:
 
             data_dir = "/home/s6kogase/data"
             test_data_dir = [
-                f"/home/s6kogase/data/fake_cmor4.6-0.87_16000_8000_8000_224_80-4000_1_0.7_{gan}"
+                f"/home/s6kogase/data/fake_cmor4.6-0.87_22050_8000_11025_224_80-4000_1_0.7_{gan}"
             ]
 
             if test_data_dir is None:
@@ -64,13 +63,18 @@ def main() -> None:
                 sample_rate,
                 num_of_scales,
                 raw_input=False,
+                flattend_size=21888,
             )
             old_state_dict = torch.load(model_path[0])
             model.load_state_dict(old_state_dict)
             # model = initialize_model(model, model_path)
 
             model.to(device)
-            if model_name == "learndeepnet":
+            if (
+                model_name == "learndeepnet"
+                or model_name == "learnnet"
+                or model_name == "onednet"
+            ):
                 _, _, test_data_set = create_data_loaders_learn(
                     test_data_dir,
                     batch_size,
@@ -96,15 +100,24 @@ def main() -> None:
                 shuffle=True,
                 num_workers=num_workers,
             )
-            attributions_ig = torch.zeros((1, 150, 11025), device="cuda")
-            attributions_occ = torch.zeros((1, 150, 11025), device="cuda")
-            attributions_ig_nt = torch.zeros((1, 150, 11025), device="cuda")
-            attributions_sals = torch.zeros((1, 150, 11025), device="cuda")
+            with torch.no_grad():
+                attributions_ig = torch.zeros(
+                    (batch_size, 1, 150, 11025), device="cuda"
+                )
+                attributions_occ = torch.zeros(
+                    (batch_size, 1, 150, 11025), device="cuda"
+                )
+                attributions_ig_nt = torch.zeros(
+                    (batch_size, 1, 150, 11025), device="cuda"
+                )
+                attributions_sals = torch.zeros(
+                    (batch_size, 1, 150, 11025), device="cuda"
+                )
             index = 0
+
+            times = 100
             for batch in iter(test_data_loader):
                 index += 1
-                # import pdb; pdb.set_trace()
-                # index = 0
                 batch_audios = batch[test_data_loader.dataset.key].cuda(  # type: ignore
                     non_blocking=True
                 )
@@ -117,11 +130,11 @@ def main() -> None:
 
                 nt = NoiseTunnel(integrated_gradients)
                 model.zero_grad()
-                # Ask the algorithm to attribute our output target to
+
                 attributions_ig += integrated_gradients.attribute(
                     audio_cwt, target=label, n_steps=100
                 ).squeeze(0)
-                # import pdb; pdb.set_trace()
+
                 attributions_ig_nt += nt.attribute(
                     audio_cwt,
                     target=label,
@@ -132,15 +145,15 @@ def main() -> None:
                     n_steps=10,
                 ).squeeze(0)
 
-                occlusion = Occlusion(model)
+                """occlusion = Occlusion(model)
                 model.zero_grad()
                 attributions_occ += occlusion.attribute(
                     audio_cwt,
                     target=label,
-                    strides=8,
+                    strides=30,
                     sliding_window_shapes=(1, 100, 100),
                     baselines=0,
-                ).squeeze(0)
+                ).squeeze(0)"""
                 # import pdb; pdb.set_trace()
 
                 saliency = Saliency(model)
@@ -148,8 +161,8 @@ def main() -> None:
                     audio_cwt, target=label
                 ).squeeze(0)
 
+                torch.cuda.empty_cache()
                 print(index)
-                times = 2
                 if index == times:
                     attributions_ig /= times
                     attributions_occ /= times
@@ -157,139 +170,67 @@ def main() -> None:
                     attributions_sals /= times
                     break
 
-            audio_cwt = audio_cwt.squeeze(0)
+            audio_cwt = torch.mean(audio_cwt, dim=0)
+            attributions_ig = torch.mean(attributions_ig, dim=0)
+            attributions_occ = torch.mean(attributions_occ, dim=0)
+            attributions_ig_nt = torch.mean(attributions_ig_nt, dim=0)
+            attributions_sals = torch.mean(attributions_sals, dim=0)
+            # audio_cwt = audio_cwt.squeeze(0)
 
-            inital = np.transpose(
-                audio_cwt.cpu().detach().numpy()[:, :, :1000], (1, 2, 0)
-            )
+            inital = np.transpose(audio_cwt.cpu().detach().numpy()[:, :, :], (1, 2, 0))
             attr_ig = np.transpose(
-                attributions_ig.cpu().detach().numpy()[:, :, :1000], (1, 2, 0)
+                attributions_ig.cpu().detach().numpy()[:, :, :], (1, 2, 0)
             )
             attr_ig_nt = np.transpose(
-                attributions_ig_nt.cpu().detach().numpy()[:, :, :1000], (1, 2, 0)
+                attributions_ig_nt.cpu().detach().numpy()[:, :, :], (1, 2, 0)
             )
             attr_occ = np.transpose(
-                attributions_occ.cpu().detach().numpy()[:, :, :1000], (1, 2, 0)
+                attributions_occ.cpu().detach().numpy()[:, :, :], (1, 2, 0)
             )
             attr_sal = np.transpose(
-                attributions_sals.cpu().detach().numpy()[:, :, :1000], (1, 2, 0)
+                attributions_sals.cpu().detach().numpy()[:, :, :], (1, 2, 0)
             )
 
+            # Todo: some refactoring...
+            extent = [0, 11025, 1000, 9500]
+            cmap = "PRGn"
             fig, axes = plt.subplots(1, 1)
+            im = axes.imshow(inital.squeeze(2), cmap="turbo", extent=extent)
+            fig.set_size_inches(40, 20, forward=True)
 
-            # Show the original image for comparison
-            fig, axes = viz.visualize_image_attr(
-                None,
-                np.transpose(audio_cwt.cpu().detach().numpy(), (1, 2, 0)),
-                method="original_image",
-                title="Original Image",
-                fig_size=(40, 20),
-            )
+            fig.colorbar(im, ax=axes)
             fig.set_dpi(200)
-            plt.savefig("test_cwt.png")
-
-            """default_cmap = LinearSegmentedColormap.from_list(
-                "custom blue",
-                [(0, "#ffffff"), (0.9, "#0000ff"), (1, "#0000ff")],
-                N=256,
-            )"""
+            plt.savefig(f"test_cwt_{gan}.png")
 
             fig, axes = plt.subplots(1, 1)
-            fig, axes = viz.visualize_image_attr_multiple(
-                attr_ig,
-                inital,
-                methods=[
-                    "original_image",
-                    "heat_map",
-                    "heat_map",
-                    "masked_image",
-                    "blended_heat_map",
-                ],
-                signs=["all", "positive", "negative", "positive", "positive"],
-                show_colorbar=True,
-                titles=[
-                    "Original",
-                    "Positive Attribution",
-                    "Negative Attribution",
-                    "Masked",
-                    "alpha",
-                ],
-                alpha_overlay=0.2,
-                fig_size=(40, 20),
-            )
+            im = axes.imshow(attr_ig.squeeze(2), cmap=cmap, extent=extent)
+            fig.set_size_inches(40, 20, forward=True)
+            fig.colorbar(im, ax=axes)
             fig.set_dpi(200)
-            plt.savefig("test_cwt_attr.png")
+            plt.savefig(f"test_cwt_attr_{gan}.png")
 
             fig, axes = plt.subplots(1, 1)
-            fig, axes = viz.visualize_image_attr_multiple(
-                attr_sal,
-                inital,
-                methods=["original_image", "blended_heat_map"],
-                signs=["all", "absolute_value"],
-                show_colorbar=True,
-                titles=[
-                    "Original",
-                    "alpha",
-                ],
-                alpha_overlay=0.2,
-                fig_size=(40, 20),
-            )
+            im = axes.imshow(attr_ig_nt.squeeze(2), cmap="hot", extent=extent)
+            fig.set_size_inches(40, 20, forward=True)
+            fig.colorbar(im, ax=axes)
             fig.set_dpi(200)
-            plt.savefig("test_cwt_sals.png")
+            plt.savefig(f"test_cwt_attr_nt_{gan}.png")
 
             fig, axes = plt.subplots(1, 1)
-            fig, axes = viz.visualize_image_attr_multiple(
-                attr_ig_nt,
-                inital,
-                show_colorbar=True,
-                methods=["blended_heat_map"],
-                signs=["absolute_value"],
-                outlier_perc=10,
-            )
+            im = axes.imshow(attr_occ.squeeze(2), cmap=cmap, extent=extent)
+            fig.set_size_inches(40, 20, forward=True)
+            fig.colorbar(im, ax=axes)
             fig.set_dpi(200)
-            plt.savefig("test_cwt_attr_nt.png")
+            plt.savefig(f"test_cwt_attr_occl_{gan}.png")
 
             fig, axes = plt.subplots(1, 1)
-
-            fig, axes = viz.visualize_image_attr(
-                attr_occ,
-                inital,
-                method="masked_image",
-                sign="negative",
-                show_colorbar=True,
-                title="Masked",
-                fig_size=(18, 6),
+            im = axes.imshow(
+                attr_sal.squeeze(2), cmap="hot", extent=extent, vmax=0.0012, vmin=0.0
             )
-
-            plt.savefig("test_cwt_occl_1.png")
-
-            fig, axes = plt.subplots(1, 1)
-
-            fig, axes = viz.visualize_image_attr_multiple(
-                attr_occ,
-                inital,
-                methods=[
-                    "original_image",
-                    "heat_map",
-                    "heat_map",
-                    "masked_image",
-                    "blended_heat_map",
-                ],
-                signs=["all", "positive", "negative", "positive", "all"],
-                show_colorbar=True,
-                titles=[
-                    "Original",
-                    "Positive Attribution",
-                    "Negative Attribution",
-                    "Masked",
-                    "blended Attribution",
-                ],
-                alpha_overlay=0.8,
-                fig_size=(18, 6),
-            )
-
-            fig.set_dpi(100)
-            plt.savefig("test_cwt_occl.png")
+            fig.set_size_inches(40, 20, forward=True)
+            fig.colorbar(im, ax=axes)
+            fig.set_dpi(200)
+            plt.savefig(f"test_cwt_attr_sal_{gan}.png")
 
 
 if __name__ == "__main__":

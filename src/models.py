@@ -39,13 +39,14 @@ class LearnDeepTestNet(nn.Module):
         num_of_scales: int = 150,
         sample_rate: int = 8000,
         batch_size: int = 256,
+        flattend_size: int = 21888,
         raw_input: Optional[bool] = True,
     ) -> None:
         """Define network sturcture."""
         super(LearnDeepTestNet, self).__init__()
         device = "cuda" if torch.cuda.is_available() else "cpu"
         freqs = torch.linspace(f_max, f_min, num_of_scales, device=device) / sample_rate
-
+        self.flattend_size = flattend_size
         self.raw_input = raw_input
         self.cwt = CWTLayer(wavelet=wavelet, freqs=freqs, batch_size=batch_size)
 
@@ -81,13 +82,9 @@ class LearnDeepTestNet(nn.Module):
             ),
             nn.ReLU(),
         )
-        if sample_rate == 16000:
-            out = 11392
-        else:
-            out = 21888
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(out, classes, bias=True),
+            nn.Linear(self.flattend_size, classes, bias=True),
         )
 
     def forward(self, x) -> torch.Tensor:
@@ -118,6 +115,7 @@ class LearnNet(nn.Module):
         num_of_scales: int = 150,
         sample_rate: int = 8000,
         batch_size: int = 256,
+        flattend_size: int = 39168,
         raw_input: Optional[bool] = True,
     ) -> None:
         """Define network sturcture."""
@@ -125,6 +123,7 @@ class LearnNet(nn.Module):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         freqs = torch.linspace(f_max, f_min, num_of_scales, device=device) / sample_rate
 
+        self.flattend_size = flattend_size
         self.raw_input = raw_input
         self.cwt = CWTLayer(wavelet=wavelet, freqs=freqs, batch_size=batch_size)
 
@@ -151,13 +150,9 @@ class LearnNet(nn.Module):
             nn.ReLU(),
             nn.AvgPool2d(2, 2),
         )
-        if sample_rate == 16000:
-            out = 20480
-        else:
-            out = 39168
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(out, classes, bias=True),
+            nn.Linear(self.flattend_size, classes, bias=True),
         )
 
     def forward(self, x) -> torch.Tensor:
@@ -186,12 +181,14 @@ class OneDNet(nn.Module):
         sample_rate=22050,
         batch_size=256,
         stride=2,
+        flattend_size=5440,
     ) -> None:
         """Define network structure."""
         super().__init__()
         device = "cuda" if torch.cuda.is_available() else "cpu"
         freqs = torch.linspace(f_max, f_min, num_of_scales, device=device) / sample_rate
 
+        self.flattend_size = flattend_size
         self.cwt = CWTLayer(wavelet=wavelet, freqs=freqs, batch_size=batch_size)
 
         self.cnn = nn.Sequential(
@@ -215,13 +212,9 @@ class OneDNet(nn.Module):
             nn.ReLU(),
             nn.AvgPool1d(2),
         )
-        if sample_rate == 16000:
-            out = 2816
-        else:
-            out = 5440
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(out, classes),  # 1184, 128, 4992, 9984
+            nn.Linear(self.flattend_size, classes),  # 1184, 128, 4992, 9984
         )
 
     def forward(self, x) -> torch.Tensor:
@@ -229,7 +222,6 @@ class OneDNet(nn.Module):
         x = self.cwt(x)
         x = x.squeeze(1)
         x = self.cnn(x)
-        # import pdb; pdb.set_trace()
         x = self.fc(x)
         return x
 

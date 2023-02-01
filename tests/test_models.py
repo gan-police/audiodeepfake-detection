@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-"""Different dataloader tests."""
+"""Different model tests."""
 import unittest
 
 from src.learn_direct_train_classifier import get_model
@@ -14,11 +14,12 @@ class TestModels(unittest.TestCase):
 
     def test_dimensions(self) -> None:
         wavelet = get_diff_wavelet("cmor4.6-0.87")
-        sample_rate = 16000
-        window_size = 5804
+        sample_rate = 22050
+        window_size = 11025
 
         models = ["learndeepnet", "onednet", "learnnet"]
-        for model_name in models:
-            model = get_model(wavelet, model_name, sample_rate=sample_rate)
-
+        f_sizes = [21888, 5440, 39168]
+        # Todo: make this test a bit more universal...
+        for i in range(len(models)):
+            model = get_model(wavelet, models[i], sample_rate=sample_rate, flattend_size=f_sizes[i])
             summary(model, (1, window_size), verbose=0)
