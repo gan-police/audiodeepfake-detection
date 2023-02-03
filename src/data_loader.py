@@ -502,37 +502,6 @@ def load_dist_data(
     Raises:
         Warning: If length of real dataset is uneqal to length of fake dataset.
     """
-    """per_amount = args.amount + args.out_classes - (args.amount % args.out_classes)
-    lengths = []
-    for i in range(args.out_classes):
-        data_real = AudioDataset(
-            fake_data_folder,
-            device=device,
-            sample_rate=args.sample_rate,
-            max_length=args.max_length,
-            frame_size=args.frame_size,
-            f_min=f_min,
-            f_max=f_max,
-            resolution=args.scales,
-            wavelet=args.wavelet,
-            from_path=from_path,
-            to_path=to_path,
-            channels=input_channels,
-            out_classes=args.out_classes,
-            label=i,
-        )
-        data_real_old = data_real
-        if i >= 2:
-            train_data = torch.utils.data.ConcatDataset(
-                [data_real_old, data_real]
-            )
-        lengths.append(len(data_real))
-    LOGGER.info(f"Lengths of gan-datasets: {lengths}")
-
-    import pbd; pdb.set_trace()
-    return lengths, train_data
-    """
-
     if args.out_classes == 2:
         from_path = from_path // 2
         to_path = to_path // 2

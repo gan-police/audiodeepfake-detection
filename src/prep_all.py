@@ -6,6 +6,7 @@ gradient flow through wavelets possible.
 Note: currently only for binary classification.
 """
 import argparse
+import os
 import pickle
 from pathlib import Path
 from typing import Optional
@@ -15,7 +16,6 @@ import torch
 import torchaudio
 
 from .data_loader import LearnWavefakeDataset, WelfordEstimator
-from .prepare_dataset import get_label, get_label_of_folder, save_to_disk
 from .ptwt_continuous_transform import get_diff_wavelet
 
 
@@ -27,6 +27,119 @@ def shuffle_random(a, b) -> tuple[list, list]:
     np.random.shuffle(c)
 
     return a2.tolist(), b2.tolist()
+
+
+def save_to_disk(
+    data_batch: np.ndarray,
+    directory: str,
+    previous_file_count: int = 0,
+    dir_suffix: str = "",
+) -> int:
+    """Save audios to disk using their position on the dataset as filename.
+
+    Args:
+        data_batch (np.ndarray): The audio batch to store.
+        directory (str): The place to store the audios at.
+        previous_file_count (int): The number of previously stored audios.
+            Defaults to 0.
+        dir_suffix (str): A comment which is attatched to the output directory.
+
+    Returns:
+        int: The new total of storage audios.
+    """
+    # loop over the batch dimension
+    if not os.path.exists(f"{directory}{dir_suffix}"):
+        print("creating", f"{directory}{dir_suffix}", flush=True)
+        os.mkdir(f"{directory}{dir_suffix}")
+    file_count = previous_file_count
+    for pre_processed_audio in data_batch:
+        with open(f"{directory}{dir_suffix}/{file_count:06}.npy", "wb") as numpy_file:
+            np.save(numpy_file, pre_processed_audio)
+        file_count += 1
+
+    return file_count
+
+
+def get_label_of_folder(
+    path_of_folder: Path, binary_classification: bool = False
+) -> int:
+    """Get the label of the audios in a folder based on the folder path.
+
+        We assume:
+            A: Orignal data, B: First gan,
+            C: Second gan, D-G: more gans.
+        A working folder structure could look like:
+            A_ljspeech B_melgan C_hifigan D_mbmelgan ...
+        With each folder containing the audios from the corresponding
+        source.
+
+    Args:
+        path_of_folder (Path):  Path string containing only a single
+            underscore directly after the label letter.
+        binary_classification (bool): If flag is set, we only classify binarily, i.e. whether an audio is real or fake.
+            In this case, the prefix 'A' indicates real, \
+            which is encoded with the label 0. All other folders are considered
+            fake data, encoded with the label 1.
+
+    Raises:
+       NotImplementedError: Raised if the label letter is unkown.
+
+    Returns:
+        int: The label encoded as integer.
+
+    # noqa: DAR401
+    """
+    label_str = path_of_folder.name.split("_")[0]
+    if binary_classification:
+        # differentiate original and generated data
+        if label_str == "A":
+            return 0
+        else:
+            return 1
+    else:
+        # the the label based on the path, As are 0s, Bs are 1, etc.
+        if label_str == "A":
+            label = 0
+        elif label_str == "B":
+            label = 1
+        elif label_str == "C":
+            label = 2
+        elif label_str == "D":
+            label = 3
+        elif label_str == "E":
+            label = 4
+        elif label_str == "F":
+            label = 5
+        elif label_str == "G":
+            label = 6
+        elif label_str == "H":
+            label = 7
+        else:
+            raise NotImplementedError(label_str)
+        return label
+
+
+def get_label(path_to_audio: Path, binary_classification: bool) -> int:
+    """Get the label based on the audio path.
+
+       We assume:
+            A: Orignal data, B: First gan,
+            C: Second gan, D-G: more gans.
+        A working folder structure could look like:
+            A_ljspeech B_melgan C_hifigan D_mbmelgan ...
+       With each folder containing the audios from the corresponding source.
+
+    Args:
+        path_to_audio (Path): audio path string containing only a single
+            underscore directly after the label letter.
+        binary_classification (bool): If flag is set, we only classify binarily, i.e. whether an audio is real or fake.
+            In this case, the prefix 'A' indicates real, which is encoded with the label 0.
+            All other folders are considered fake data, encoded with the label 1.
+
+    Returns:
+        int: The label encoded as integer.
+    """
+    return get_label_of_folder(path_to_audio.parent, binary_classification)
 
 
 def load_transform_and_stack(
@@ -235,15 +348,13 @@ def pre_process_folder(
             folder_list_all.append(Path(real))
             folder_list = folder_list_all
         else:
-            # binary classification
-            binary_classification = True
             folder_name += f"_{fake.split('_')[-1]}"
             folder_list = [Path(real), Path(fake)]
+            folder_list_all.append(Path(real))
     else:
         folder_list = folder_list_all
 
     target_dir = data_dir.parent / folder_name
-
     train_list, val_list, test_list = split_dataset_random(
         train_size,
         val_size,
@@ -327,15 +438,27 @@ def split_dataset_random(
         file_list = list(folder.glob("./*.wav"))
         sizes.append(len(file_list))
         for i in range(len(file_list)):
-            if i % 5000 == 0:
-                print(i)
             leng = torchaudio.info(file_list[i]).num_frames
             length += leng - (leng % window_size)
         lengths.append(length)
+
+    single_lengths = []
+    if folder_list != folder_list_all:
+        # Todo: make this nicer
+        for folder in folder_list:
+            length = 0
+            file_list = list(folder.glob("./*.wav"))
+            for i in range(len(file_list)):
+                leng = torchaudio.info(file_list[i]).num_frames
+                length += leng - (leng % window_size)
+            single_lengths.append(length)
+    else:
+        single_lengths = lengths
+
     print("got lengths...")
 
     # sort in length ascending
-    folder_list = [x for _, x in sorted(zip(lengths, folder_list))]
+    folder_list = [x for _, x in sorted(zip(single_lengths, folder_list))]
 
     max_len = min(lengths)  # max length of folder
     max_len -= max_len % window_size

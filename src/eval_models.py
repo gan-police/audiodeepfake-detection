@@ -117,7 +117,7 @@ def main() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     # torch.multiprocessing.set_start_method("spawn")
 
-    plot_path = "/home/gasenzer/code/plots/cwt/eval/"
+    plot_path = "/home/s6kogase/code/plots/cwt/eval/"
     num_workers = 0
     gans = [
         "melgan",
@@ -127,7 +127,6 @@ def main() -> None:
         "hifigan",
         "waveglow",
         "pwg",
-        "all",
     ]
     c_gans = [
         "melgan",
@@ -137,16 +136,18 @@ def main() -> None:
         "hifigan",
         "waveglow",
         "pwg",
+        "all",
     ]
-    seeds = [0, 1, 2, 3, 4]
-    wavelets = ["cmor3.3-4.17", "cmor4.6-0.87", "shan0.01-0.4"]
+    seeds = [0, 1]
+    wavelets = ["cmor3.3-4.17", "cmor4.6-0.87"]
     cu_wv = wavelets[0]
+    print("current wavelet: ", cu_wv)
     sample_rate = 22050
     window_size = 11025
     model_name = "learndeepnet"
     batch_size = 128
-    seeds = [0]
-    gans = ["melgan"]
+    # seeds = [0]
+    # gans = ["all"]
     gan_acc_dict = {}
     for gan in gans:
         for c_gan in c_gans:
@@ -158,13 +159,11 @@ def main() -> None:
                 print(f"seed: {seed}")
 
                 torch.manual_seed(seed)
-                model_path = [
+                model_path = (
                     f"/home/s6kogase/code/log/fake_{cu_wv}_{sample_rate}_{window_size}_"
-                ]
-                model_path[
-                    0
-                ] += f"150_1000-9500_0.7_{gan}_0.0001_{batch_size}_2_10e_{model_name}_False_{seed}.pt"
-                data_args = model_path[0].split("/")[-1].split(".pt")[0].split("_")
+                )
+                model_path += f"150_1000-9500_0.7_{gan}_0.0001_{batch_size}_2_10e_{model_name}_False_{seed}.pt"
+                data_args = model_path.split("/")[-1].split(".pt")[0].split("_")
                 nclasses = int(data_args[-5])
                 batch_size = int(data_args[-6])
                 wavelet = get_diff_wavelet(data_args[1])
@@ -191,9 +190,8 @@ def main() -> None:
                     sample_rate=sample_rate,
                     num_of_scales=num_of_scales,
                 )
-                old_state_dict = torch.load(model_path[0])
+                old_state_dict = torch.load(model_path)
                 model.load_state_dict(old_state_dict)
-                # model = initialize_model(model, model_path)
 
                 model.to(device)
                 if (

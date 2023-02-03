@@ -1,5 +1,19 @@
 # wavelet-audiodeepfake-detection_code
 
+PREPARE
+- Download LJspeech ds and untar
+- download wavefake ds and unzip
+- put all in ./data/
+- rename LJspeech/wavs in real/A_ljspeech
+- rename generated_audio in fake/[B_melgan, C_hifigan, ...]
+- install miniconda
+- conda create -n py310 python=3.10
+- clone repo
+- conda activate py310
+- pip install -r requirements.txt
+- get started!
+
+
 CURRENT:
 src/learn_direct_train_classifier.py current trainer, uses LearnWavefakeDataset() and transforms
 data with cwt in the corresponding first layer of the chosen model (LearnDeepTestNet, OneDNet).
@@ -27,6 +41,7 @@ folders. The audios are loaded one by one, cut to the a specified length and the
 with the cwt in wavelet_math.py. Currently all audios need to have a minimum length of the
 specified cut length.
 -> buggy
+
 
 
 Exp. Todo:

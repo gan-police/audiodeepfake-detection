@@ -46,6 +46,7 @@ class LearnDeepTestNet(nn.Module):
         super(LearnDeepTestNet, self).__init__()
         device = "cuda" if torch.cuda.is_available() else "cpu"
         freqs = torch.linspace(f_max, f_min, num_of_scales, device=device) / sample_rate
+
         self.flattend_size = flattend_size
         self.raw_input = raw_input
         self.cwt = CWTLayer(wavelet=wavelet, freqs=freqs, batch_size=batch_size)
@@ -122,7 +123,6 @@ class LearnNet(nn.Module):
         super(LearnNet, self).__init__()
         device = "cuda" if torch.cuda.is_available() else "cpu"
         freqs = torch.linspace(f_max, f_min, num_of_scales, device=device) / sample_rate
-
         self.flattend_size = flattend_size
         self.raw_input = raw_input
         self.cwt = CWTLayer(wavelet=wavelet, freqs=freqs, batch_size=batch_size)
