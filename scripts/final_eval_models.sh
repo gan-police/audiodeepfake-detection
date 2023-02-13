@@ -2,8 +2,8 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=eval
-#SBATCH --output=/home/s6kogase/code/out/eval_cross_%j.out
-#SBATCH --error=/home/s6kogase/code/out/eval_corss_%j.err
+#SBATCH --output=/home/s6kogase/code/out/eval_cross_onednet_%j.out
+#SBATCH --error=/home/s6kogase/code/out/eval_cross_onednet_%j.err
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=24:00:00

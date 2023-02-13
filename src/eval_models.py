@@ -1,7 +1,6 @@
 """Evaluate models with accuracy and eer metric."""
 import datetime
 import pickle
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -115,9 +114,8 @@ def classify_dataset(
 def main() -> None:
     """Evaluate all models with different seeds."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    # torch.multiprocessing.set_start_method("spawn")
 
-    plot_path = "/home/s6kogase/code/plots/cwt/eval/"
+    # plot_path = "/home/s6kogase/code/plots/cwt/eval/"
     num_workers = 0
     gans = [
         "melgan",
@@ -127,6 +125,7 @@ def main() -> None:
         "hifigan",
         "waveglow",
         "pwg",
+        "all",
     ]
     c_gans = [
         "melgan",
@@ -138,7 +137,8 @@ def main() -> None:
         "pwg",
         "all",
     ]
-    seeds = [0, 1]
+
+    seeds = [0, 1, 2, 3, 4]
     wavelets = ["cmor3.3-4.17", "cmor4.6-0.87"]
     cu_wv = wavelets[0]
     print("current wavelet: ", cu_wv)
@@ -146,8 +146,15 @@ def main() -> None:
     window_size = 11025
     model_name = "learndeepnet"
     batch_size = 128
-    # seeds = [0]
-    # gans = ["all"]
+    flattend_size = 21888
+    adapt_wav = False
+    nclasses = 2
+    wavelet = get_diff_wavelet(cu_wv)
+    f_min = 1000.0
+    f_max = 9500.0
+    num_of_scales = 150
+    loss_fun = torch.nn.CrossEntropyLoss()
+    cut = False
     gan_acc_dict = {}
     for gan in gans:
         for c_gan in c_gans:
@@ -155,6 +162,40 @@ def main() -> None:
             res_acc = []
             res_eer = []
             res_eer_thresh = []
+
+            test_data_dir = [
+                f"/home/s6kogase/data/fake_cmor4.6-0.87_{sample_rate}_8000_{window_size}_224_80-4000_1_0.7_{c_gan}"
+            ]
+            if (
+                model_name == "learndeepnet"
+                or model_name == "learnnet"
+                or model_name == "onednet"
+            ):
+                _, _, test_data_set = create_data_loaders_learn(
+                    test_data_dir,
+                    batch_size,
+                    False,
+                    num_workers,
+                )
+            else:
+                _, _, test_data_set = create_data_loaders(
+                    test_data_dir,
+                    batch_size,
+                    False,
+                    num_workers,
+                    wavelet,
+                    sample_rate,
+                    num_of_scales,
+                    f_min,
+                    f_max,
+                )
+
+            test_data_loader = DataLoader(
+                test_data_set,
+                batch_size,
+                shuffle=False,
+                num_workers=num_workers,
+            )
             for seed in seeds:
                 print(f"seed: {seed}")
 
@@ -162,23 +203,8 @@ def main() -> None:
                 model_path = (
                     f"/home/s6kogase/code/log/fake_{cu_wv}_{sample_rate}_{window_size}_"
                 )
-                model_path += f"150_1000-9500_0.7_{gan}_0.0001_{batch_size}_2_10e_{model_name}_False_{seed}.pt"
-                data_args = model_path.split("/")[-1].split(".pt")[0].split("_")
-                nclasses = int(data_args[-5])
-                batch_size = int(data_args[-6])
-                wavelet = get_diff_wavelet(data_args[1])
-                f_min = float(data_args[5].split("-")[0])
-                f_max = float(data_args[5].split("-")[1])
-                num_of_scales = int(data_args[4])
-                loss_fun = torch.nn.CrossEntropyLoss()
-
-                data_dir = "/home/s6kogase/data"
-                test_data_dir = [
-                    f"/home/s6kogase/data/fake_cmor4.6-0.87_{sample_rate}_8000_{window_size}_224_80-4000_1_0.7_{c_gan}"
-                ]
-
-                if test_data_dir is None:
-                    test_data_dir = [data_dir + "/" + "_".join(data_args[:10])]
+                model_path += f"150_1000-9500_0.7_{gan}_0.0001_{batch_size}_2_10e_{model_name}_{adapt_wav}_{seed}.pt"
+                print(model_path)
 
                 model = get_model(
                     wavelet=wavelet,
@@ -189,41 +215,13 @@ def main() -> None:
                     f_max=f_max,
                     sample_rate=sample_rate,
                     num_of_scales=num_of_scales,
+                    flattend_size=flattend_size,
+                    cut=cut,
                 )
                 old_state_dict = torch.load(model_path)
                 model.load_state_dict(old_state_dict)
 
                 model.to(device)
-                if (
-                    model_name == "learndeepnet"
-                    or model_name == "learnnet"
-                    or model_name == "onednet"
-                ):
-                    _, _, test_data_set = create_data_loaders_learn(
-                        test_data_dir,
-                        batch_size,
-                        False,
-                        num_workers,
-                    )
-                else:
-                    _, _, test_data_set = create_data_loaders(
-                        test_data_dir,
-                        batch_size,
-                        False,
-                        num_workers,
-                        wavelet,
-                        sample_rate,
-                        num_of_scales,
-                        f_min,
-                        f_max,
-                    )
-
-                test_data_loader = DataLoader(
-                    test_data_set,
-                    batch_size,
-                    shuffle=False,
-                    num_workers=num_workers,
-                )
 
                 acc, fpr, tpr, eer, eer_threshold = classify_dataset(
                     test_data_loader,
@@ -233,8 +231,8 @@ def main() -> None:
                 )
 
                 # plotting
-                Path(plot_path).mkdir(parents=True, exist_ok=True)
-                plot_roc(fpr, tpr, data_args[7], data_args[7], plot_path)
+                # Path(plot_path).mkdir(parents=True, exist_ok=True)
+                # plot_roc(fpr, tpr, gan, c_gan, plot_path)
 
                 res_acc.append(acc)
                 res_eer.append(eer.item())
@@ -271,7 +269,7 @@ def main() -> None:
     pickle.dump(
         gan_acc_dict,
         open(
-            f"/home/s6kogase/code/log/results/results_all_{data_args[1]}_{model_name}_{time_now}.pkl",
+            f"/home/s6kogase/code/log/results/results_all_{cu_wv}_{model_name}_{cut}_{sample_rate}_{time_now}.pkl",
             "wb",
         ),
     )

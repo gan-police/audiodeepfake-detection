@@ -197,6 +197,11 @@ def _parse_args():
         action="store_true",
         help="calculate normalization for debugging purposes.",
     )
+    parser.add_argument(
+        "--cut",
+        action="store_true",
+        help="Cut sides of audios.",
+    )
 
     parser.add_argument(
         "--num-workers",
@@ -229,6 +234,7 @@ def get_model(
     sample_rate: int = 22050,
     num_of_scales: int = 150,
     flattend_size: int = 21888,
+    cut: bool = False,
     raw_input: Optional[bool] = True,
 ) -> Regression | TestNet | DeepTestNet | LearnDeepTestNet | OneDNet | tv_models.ResNet:
     """Get torch module model with given parameters."""
@@ -249,6 +255,7 @@ def get_model(
             batch_size=batch_size,
             raw_input=raw_input,
             flattend_size=flattend_size,
+            cut=cut,
         )  # type: ignore
     elif model_name == "learnnet":
         model = LearnNet(
@@ -271,6 +278,7 @@ def get_model(
             sample_rate=sample_rate,
             num_of_scales=num_of_scales,
             batch_size=batch_size,
+            raw_input=raw_input,
             flattend_size=flattend_size,
         )  # type: ignore
     elif model_name == "resnet18":
@@ -490,6 +498,9 @@ def main():
     if not os.path.exists("./log/"):
         os.makedirs("./log/")
 
+    if args.f_max > args.sample_rate / 2:
+        print("Warning: maximum analyzed frequency is above nyquist rate.")
+
     path_name = args.data_prefix[0].split("/")[-1].split("_")
     model_file = (
         "./log/"
@@ -523,6 +534,8 @@ def main():
         + "_"
         + str(args.adapt_wavelet)
         + "_"
+        + str(args.cut)
+        + "_"
         + str(args.seed)
     )
 
@@ -534,7 +547,7 @@ def main():
     make_binary_labels = args.nclasses == 2
 
     wavelet = get_diff_wavelet(args.wavelet, args.adapt_wavelet)
-    wavelet.bandwidth_par.requires_grad = args.adapt_wavelet
+    wavelet.bandwidth_par.requires_grad = False
     wavelet.center_par.requires_grad = args.adapt_wavelet
 
     if (
@@ -576,6 +589,7 @@ def main():
         args.sample_rate,
         args.num_of_scales,
         args.flattend_size,
+        args.cut,
     )
 
     model.to(device)
@@ -662,7 +676,6 @@ def main():
                     round(model.state_dict()["cwt.wavelet.center_par"].item() ** 2, 5),
                     flush=True,
                 )
-                # GPUtil.showUtilization()
                 torch.cuda.empty_cache()
             loss.backward()
             optimizer.step()
@@ -777,7 +790,7 @@ def _save_stats(
     args,
     iterations_per_epoch: int,
 ):
-    stats_file = model_file + "_" + str(args.seed) + ".pkl"
+    stats_file = model_file + ".pkl"
     try:
         res = pickle.load(open(stats_file, "rb"))
     except OSError as e:

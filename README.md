@@ -45,6 +45,12 @@ specified cut length.
 
 
 Exp. Todo:
+- multi jobs on one gpu
+- debug prep all
+- prep all on 16 kHz, win 5512 (0.25s)
+- train all on 16 KHz on seeds 0-4
+- eval all
+
 - train single shan0.01-0.40 for seeds 1, 2, 3, 4
 - train allgans cmor4.6-0.87 on seeds 0
 

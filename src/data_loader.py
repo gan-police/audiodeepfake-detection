@@ -772,7 +772,7 @@ class LearnWavefakeDataset(Dataset):
         """
         self.data_dir = data_dir
         self.file_lst = sorted(Path(data_dir).glob("./*.npy"))
-        print("Loading ", data_dir)
+        print("Loading ", data_dir, flush=True)
         if len(self.file_lst) == 0:
             raise ValueError("empty directory")
         if self.file_lst[-1].name != "labels.npy":

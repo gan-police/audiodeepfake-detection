@@ -40,6 +40,7 @@ class LearnDeepTestNet(nn.Module):
         sample_rate: int = 8000,
         batch_size: int = 256,
         flattend_size: int = 21888,
+        cut: bool = False,
         raw_input: Optional[bool] = True,
     ) -> None:
         """Define network sturcture."""
@@ -49,6 +50,7 @@ class LearnDeepTestNet(nn.Module):
 
         self.flattend_size = flattend_size
         self.raw_input = raw_input
+        self.cut = cut
         self.cwt = CWTLayer(wavelet=wavelet, freqs=freqs, batch_size=batch_size)
 
         self.cnn = nn.Sequential(
@@ -92,6 +94,8 @@ class LearnDeepTestNet(nn.Module):
         """Forward pass."""
         if self.raw_input:
             x = self.cwt(x)
+            if self.cut:
+                x = x[:, :, :, x.shape[-1] // 10 : -x.shape[-1] // 10]
         x = self.cnn(x)
         x = self.fc(x)
         return x
@@ -182,13 +186,15 @@ class OneDNet(nn.Module):
         batch_size=256,
         stride=2,
         flattend_size=5440,
+        raw_input: Optional[bool] = True,
     ) -> None:
         """Define network structure."""
         super().__init__()
         device = "cuda" if torch.cuda.is_available() else "cpu"
         freqs = torch.linspace(f_max, f_min, num_of_scales, device=device) / sample_rate
-
+        print(freqs * sample_rate)
         self.flattend_size = flattend_size
+        self.raw_input = raw_input
         self.cwt = CWTLayer(wavelet=wavelet, freqs=freqs, batch_size=batch_size)
 
         self.cnn = nn.Sequential(
@@ -219,7 +225,8 @@ class OneDNet(nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        x = self.cwt(x)
+        if self.raw_input:
+            x = self.cwt(x)
         x = x.squeeze(1)
         x = self.cnn(x)
         x = self.fc(x)

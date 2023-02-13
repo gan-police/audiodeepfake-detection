@@ -4,11 +4,10 @@
 #SBATCH --job-name=prep_ds
 #SBATCH --output=/home/s6kogase/code/out/prep-single-%A_%a.out
 #SBATCH --error=/home/s6kogase/code/out/prep-single-%A_%a.err
-#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=06:00:00
 #SBATCH --partition=A40short
-#SBATCH --array=0-6
+#SBATCH --array=1-6
 #SBATCH --nodelist=node-03
 
 # Prepare all files of all GAN architectures in combination with the real audio

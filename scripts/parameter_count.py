@@ -11,7 +11,7 @@ def main() -> None:
     wavelet = get_diff_wavelet("cmor4.6-0.87")
 
     models = ["learndeepnet", "onednet", "learnnet"]
-    sample_rate = 22050
+    sample_rate = 16000
     window_size = 11025
 
     f_sizes = [21888, 5440, 39168]

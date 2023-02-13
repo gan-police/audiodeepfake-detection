@@ -238,7 +238,7 @@ def load_process_store(
         one_len = 0
         print(f"{label_string}")
         for label in all_labels:
-            if label.item() == 1:
+            if label.item() >= 1:
                 one_len += 1
             else:
                 zero_len += 1
@@ -342,11 +342,13 @@ def pre_process_folder(
         for folder in leave_out:
             if Path(folder) in folder_list_all:
                 folder_list_all.remove(Path(folder))
+                folder_name += f"_x{folder.split('_')[-1]}"
 
     if real is not None:
         if fake is None:
             folder_list_all.append(Path(real))
             folder_list = folder_list_all
+            folder_name += "_all"
         else:
             folder_name += f"_{fake.split('_')[-1]}"
             folder_list = [Path(real), Path(fake)]
@@ -355,6 +357,7 @@ def pre_process_folder(
         folder_list = folder_list_all
 
     target_dir = data_dir.parent / folder_name
+
     train_list, val_list, test_list = split_dataset_random(
         train_size,
         val_size,
@@ -440,6 +443,8 @@ def split_dataset_random(
         for i in range(len(file_list)):
             leng = torchaudio.info(file_list[i]).num_frames
             length += leng - (leng % window_size)
+            if i % 5000 == 0:
+                print(i)
         lengths.append(length)
 
     single_lengths = []
@@ -699,6 +704,8 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     print(args)
+
+    torch.set_num_threads(8)
 
     pre_process_folder(
         data_folder=args.directory,
