@@ -1,4 +1,4 @@
-"""Audio File and Spectrogramm utility.
+"""Audio File and Spectrogramm utility for plotting.
 
 Means to reproduce plots of Frank, Schönherr (2021): WaveFake: A Data Set to Facilitate
 Audio Deepfake Detection [FS21].
@@ -6,10 +6,6 @@ Audio Deepfake Detection [FS21].
 Src that reproduces spectrograms in the paper that show apperent differences between
 original audio files and the corresponding audio samples that [FS21] generated with different
 Deep Learning methods and architectures that already exist, e.g. MelGAN, Waveglow, Hifi-GAN.
-
-This script is mainly inspired by:
-https://github.com/pytorch/tutorials/blob/master/beginner_source/audio_feature_extractions_tutorial.py
-
 """
 
 import os
@@ -168,10 +164,6 @@ def load_from_wav(
     )
     if not is_correct_format:
         raise IOError("Audio file is not in the same format as LJSpeech-1.1 Dataset.")
-
-    # framerate_in_sec = meta.num_frames / meta.sample_rate
-    # print("Total length in seconds: ", framerate_in_sec)
-    # print("Frames: ", meta.num_frames)
 
     waveform, sample_rate = torchaudio.load(
         path, normalize=normalize
@@ -486,24 +478,3 @@ def get_np_signal(path: str, start_frame: int, to_frame: int) -> np.ndarray:
     sig_np: np.ndarray = sig.numpy()
     # t: np.ndarray = np.linspace(0, sig.shape[0] / SAMPLE_RATE, 20, False)
     return sig_np
-
-
-def print_max_length():
-    """Print length of shortest audio file in folder in samples."""
-    folder = Path("/home/kons/uni/bachelor_thesis/git/data/binary/A_ljspeech")
-    file_list = list(folder.glob("./*.wav"))
-
-    print(len(file_list))
-    res = 16000
-
-    min_length = torchaudio.info(file_list[0]).num_frames
-    min_path = file_list[0]
-    for file in file_list:
-        length = torchaudio.info(file).num_frames
-        if length < min_length:
-            min_length = length
-            min_path = file
-
-    print("Min length: ", min_length)
-    print("Min length res: ", min_length * (res / 22050))
-    print("Min path: ", min_path)

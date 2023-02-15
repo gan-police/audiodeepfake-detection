@@ -19,7 +19,7 @@ BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if DEBUG:
     # Set python path automatically to base directory
     sys.path.append(BASE_PATH)
-import src.util as util
+import src.plot_util as plot_util
 
 if __name__ == "__main__":
     wav_label = "LJ008-0217"
@@ -69,10 +69,10 @@ if __name__ == "__main__":
     wavelet = f"shan{bandwith}-{center_freq}"
 
     # The highest frequency that will not be aliased is equal to half the sampling frequency, f/2
-    nyquist_freq = util.SAMPLE_RATE / 2.0  # maximum frequency that can be analyzed
+    nyquist_freq = plot_util.SAMPLE_RATE / 2.0  # maximum frequency that can be analyzed
     resolution = 1024
     freqs = (
-        np.linspace(nyquist_freq, 1, resolution) / util.SAMPLE_RATE
+        np.linspace(nyquist_freq, 1, resolution) / plot_util.SAMPLE_RATE
     )  # equally spaced normalized frequencies to be analyzed
 
     scales = pywt.frequency2scale(
@@ -83,8 +83,8 @@ if __name__ == "__main__":
     print("Plotting Scaleogram of LJ008 0217.wav")
     for i in range(2):
         path = f"{data_base_dir}/{audios[i]}"
-        scal = util.compute_cwt(path, wavelet, scales, from_frame, to_frame)
-        util.plot_scalogram(
+        scal = plot_util.compute_cwt(path, wavelet, scales, from_frame, to_frame)
+        plot_util.plot_scalogram(
             scal,
             from_frame,
             to_frame,

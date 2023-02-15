@@ -2,11 +2,12 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=prep_ds
-#SBATCH --output=/home/s6kogase/code/out/prep-all-gans-final-%j.out
-#SBATCH --error=/home/s6kogase/code/out/prep-all-gans-final-%j.err
+#SBATCH --output=/home/s6kogase/code/out/prep_all_%j.out
+#SBATCH --error=/home/s6kogase/code/out/prep_all_%j.err
 #SBATCH --cpus-per-task=8
 #SBATCH --time=04:00:00
-#SBATCH --partition=A40devel
+#SBATCH --partition=A40short
+#SBATCH --nodelist=node-01
 
 source ${HOME}/.bashrc
 
@@ -14,15 +15,13 @@ echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
 echo "Preparing allgans binary classification dataset."
 conda activate py310
 
-python -m src.prep_all \
+python -m src.prepare_datasets \
     --train-size 0.7 \
     --test-size 0.2 \
     --val-size 0.1   \
     --batch-size 2048 \
-    --wavelet "cmor4.6-0.87"     \
     --window-size 11025 \
     --sample-rate 22050 \
-    --leave-out "${HOME}/data/fake/B_melgan" \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --directory "${HOME}/data/fake"
 

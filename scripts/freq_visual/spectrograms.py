@@ -17,7 +17,7 @@ if DEBUG:
     # Set python path automatically to base directory
     sys.path.append(BASE_PATH)
 
-import src.util as util
+import src.plot_util as plot_util
 
 if __name__ == "__main__":
     wav_label = "LJ008-0217"
@@ -66,8 +66,8 @@ if __name__ == "__main__":
     print("Plotting Spectrograms of LJ008 0217.wav")
     for i in range(2):
         path = f"{data_base_dir}/{audios[i]}"
-        spec, frames = util.compute_spectogram(path, from_frame, to_frame, n_fft)
-        util.plot_spectrogram(
+        spec, frames = plot_util.compute_spectogram(path, from_frame, to_frame, n_fft)
+        plot_util.plot_spectrogram(
             spec,
             frames,
             from_frame,

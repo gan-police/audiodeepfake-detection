@@ -1,6 +1,7 @@
 """PyTorch compatible cwt code.
 
 Based on https://github.com/PyWavelets/pywt/blob/master/pywt/_cwt.py
+Port of ptwt.continuous_transform.
 """
 from typing import Tuple, Union
 
@@ -28,15 +29,13 @@ def cwt(
             ``f = pywt.scale2frequency(wavelet, scale)/sampling_period`` to determine
             what physical frequency, ``f``. Here, ``f`` is in hertz when the
             ``sampling_period`` is given in seconds.
-            wavelet (str or Wavelet of ContinuousWavelet): The wavelet to work with.
         wavelet (ContinuousWavelet or str): The continuous wavelet to work with.
 
     Raises:
         ValueError: If a scale is too small for the input signal.
 
     Returns:
-        out_tensor (torch.Tensor): A tuple with the transformation matrix
-            and frequencies in this order.
+        out_tensor (torch.Tensor): A tensor with the transformation matrix.
 
     Example:
         >>> import torch, ptwt
@@ -245,13 +244,12 @@ class _ComplexMorletWavelet(_DifferentiableContinuousWavelet):
 
 def get_diff_wavelet(
     wavelet: str,
-    adapt_wavelet: bool = False,
 ) -> _ComplexMorletWavelet | _ShannonWavelet:
     """Get differentiable wavelet from given string.
 
     Raises:
-        ValueError: if Wavelet is not a str or pywt Continuous Wavelet.
-        NotImplementedError: if requested wavelet is not implemented yet.
+        ValueError: If wavelet is not a str or pywt Continuous Wavelet.
+        NotImplementedError: If requested wavelet is not implemented yet.
     """
     if not isinstance(wavelet, (str, ContinuousWavelet)):
         raise ValueError(

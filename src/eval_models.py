@@ -1,6 +1,8 @@
 """Evaluate models with accuracy and eer metric."""
+import argparse
 import datetime
 import pickle
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,12 +11,8 @@ from sklearn.metrics import auc
 from torch.utils.data import DataLoader
 from torchmetrics.classification import BinaryAccuracy, MulticlassROC
 
-from .learn_direct_train_classifier import (
-    create_data_loaders,
-    create_data_loaders_learn,
-    get_model,
-)
 from .ptwt_continuous_transform import get_diff_wavelet
+from .train_classifier import create_data_loaders, get_model
 
 
 def plot_roc(
@@ -25,7 +23,7 @@ def plot_roc(
     path: str,
     lw: int = 2,
 ):
-    """Plot roc of given fpr and tpr."""
+    """Plot roc of given false positive rate and true positive rate."""
     roc_auc = auc(fpr, tpr)
     fig, ax = plt.subplots()
     ax.plot(
@@ -40,14 +38,13 @@ def plot_roc(
     ax.legend(loc="lower right")
 
     fig.tight_layout()
-    fig.savefig(f"{path}/{training_dataset_name}.pdf")
+    fig.savefig(f"{path}/{training_dataset_name}_on_{fake_dataset_name}.pdf")
     plt.close(fig)
 
 
 def classify_dataset(
     data_loader,
     model: torch.nn.Module,
-    loss_fun,
     make_binary_labels,
 ):
     """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
@@ -56,7 +53,6 @@ def classify_dataset(
         data_loader (DataLoader): A DataLoader loading the data set on which the performance should be measured,
             e.g. a test or validation set in a data split.
         model (torch.nn.Module): The model to evaluate.
-        loss_fun: The loss function, which is used to measure the loss of the model on the data set
         make_binary_labels (bool): If flag is set, we only classify binarily, i.e. whether an audio is real or fake.
             In this case, the label 0 encodes 'real'. All other labels are cosidered fake data, and are set to 1.
 
@@ -112,83 +108,51 @@ def classify_dataset(
 
 
 def main() -> None:
-    """Evaluate all models with different seeds."""
+    """Evaluate all models with different seeds on given gans."""
+    args = _parse_args()
+    print(args)
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # plot_path = "/home/s6kogase/code/plots/cwt/eval/"
-    num_workers = 0
-    gans = [
-        "melgan",
-        "lmelgan",
-        "mbmelgan",
-        "fbmelgan",
-        "hifigan",
-        "waveglow",
-        "pwg",
-        "all",
-    ]
-    c_gans = [
-        "melgan",
-        "lmelgan",
-        "mbmelgan",
-        "fbmelgan",
-        "hifigan",
-        "waveglow",
-        "pwg",
-        "all",
-    ]
+    plot_path = args.plot_path
+    num_workers = args.num_workers
+    gans = args.train_gans
+    c_gans = args.crosseval_gans
+    seeds = args.num_workers
+    wavelet = get_diff_wavelet(args.wavelet)
+    sample_rate = args.sample_rate
+    window_size = args.window_size
+    model_name = args.model_name
+    batch_size = args.batch_size
+    flattend_size = args.flattend_size
+    adapt_wav = args.adapt_wavelet
+    nclasses = args.nclasses
+    f_min = args.f_min
+    f_max = args.f_max
+    num_of_scales = args.num_of_scales
+    cut = args.cut
+    data_prefix = args.data_prefix
 
-    seeds = [0, 1, 2, 3, 4]
-    wavelets = ["cmor3.3-4.17", "cmor4.6-0.87"]
-    cu_wv = wavelets[0]
-    print("current wavelet: ", cu_wv)
-    sample_rate = 22050
-    window_size = 11025
-    model_name = "learndeepnet"
-    batch_size = 128
-    flattend_size = 21888
-    adapt_wav = False
-    nclasses = 2
-    wavelet = get_diff_wavelet(cu_wv)
-    f_min = 1000.0
-    f_max = 9500.0
-    num_of_scales = 150
-    loss_fun = torch.nn.CrossEntropyLoss()
-    cut = False
+    Path(plot_path).mkdir(parents=True, exist_ok=True)
+
     gan_acc_dict = {}
+    mean_eers = {}
     for gan in gans:
+        aeer = []
         for c_gan in c_gans:
             print(f"Evaluating {gan} on {c_gan}...", flush=True)
             res_acc = []
             res_eer = []
             res_eer_thresh = []
 
-            test_data_dir = [
-                f"/home/s6kogase/data/fake_cmor4.6-0.87_{sample_rate}_8000_{window_size}_224_80-4000_1_0.7_{c_gan}"
-            ]
-            if (
-                model_name == "learndeepnet"
-                or model_name == "learnnet"
-                or model_name == "onednet"
-            ):
-                _, _, test_data_set = create_data_loaders_learn(
-                    test_data_dir,
-                    batch_size,
-                    False,
-                    num_workers,
-                )
-            else:
-                _, _, test_data_set = create_data_loaders(
-                    test_data_dir,
-                    batch_size,
-                    False,
-                    num_workers,
-                    wavelet,
-                    sample_rate,
-                    num_of_scales,
-                    f_min,
-                    f_max,
-                )
+            test_data_dir = f"{data_prefix}_{c_gan}"
+
+            _, _, test_data_set = create_data_loaders(
+                test_data_dir,
+                batch_size,
+                False,
+                num_workers,
+            )
 
             test_data_loader = DataLoader(
                 test_data_set,
@@ -200,10 +164,11 @@ def main() -> None:
                 print(f"seed: {seed}")
 
                 torch.manual_seed(seed)
-                model_path = (
-                    f"/home/s6kogase/code/log/fake_{cu_wv}_{sample_rate}_{window_size}_"
+                model_path = f"log/fake_{args.wavelet}_{sample_rate}_{window_size}_"
+                model_path += f"{num_of_scales}_{f_min}-{f_max}_0.7_{gan}_0.0001_"
+                model_path += (
+                    f"{batch_size}_{nclasses}_10e_{model_name}_{adapt_wav}_{seed}.pt"
                 )
-                model_path += f"150_1000-9500_0.7_{gan}_0.0001_{batch_size}_2_10e_{model_name}_{adapt_wav}_{seed}.pt"
                 print(model_path)
 
                 model = get_model(
@@ -226,13 +191,10 @@ def main() -> None:
                 acc, fpr, tpr, eer, eer_threshold = classify_dataset(
                     test_data_loader,
                     model,
-                    loss_fun,
                     make_binary_labels=True,
                 )
 
-                # plotting
-                # Path(plot_path).mkdir(parents=True, exist_ok=True)
-                # plot_roc(fpr, tpr, gan, c_gan, plot_path)
+                plot_roc(fpr, tpr, gan, c_gan, plot_path)
 
                 res_acc.append(acc)
                 res_eer.append(eer.item())
@@ -245,14 +207,17 @@ def main() -> None:
             res_dict["mean_eer"] = (np.mean(res_eer), np.mean(res_eer_thresh))
             res_dict["std_eer"] = (np.std(res_eer), np.std(res_eer_thresh))
             gan_acc_dict[f"{gan}-{c_gan}"] = res_dict
+            aeer.append(res_dict["mean_eer"][0])
+        mean_eers[gan] = (np.mean(aeer), np.std(aeer))
+    gan_acc_dict["aEER"] = mean_eers
 
     print(gan_acc_dict)
     time_now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
 
     print(wavelet)
-    for dataset in gans:
-        for val_set in c_gans:
-            ind = f"{dataset}-{val_set}"
+    for gan in gans:
+        for c_gan in c_gans:
+            ind = f"{gan}-{c_gan}"
             pr_str = f"{ind}: acc: max {100 * gan_acc_dict[ind]['max_acc']:.3f} %"
             pr_str += f", mean {100 * gan_acc_dict[ind]['mean_acc']:.3f} +- "
             pr_str += f"{100 * gan_acc_dict[ind]['std_acc']:.3f} %"
@@ -265,14 +230,142 @@ def main() -> None:
             pr_str += f" mean {gan_acc_dict[ind]['mean_eer'][1]:.5f} +- "
             pr_str += f"{gan_acc_dict[ind]['std_eer'][1]:.5f}"
             print(pr_str)
+        print(f"average eer for {gan}: {gan_acc_dict['aEER'][gan]}")
 
     pickle.dump(
         gan_acc_dict,
         open(
-            f"/home/s6kogase/code/log/results/results_all_{cu_wv}_{model_name}_{cut}_{sample_rate}_{time_now}.pkl",
+            f"log/results/results_all_{args.wavelet}_{model_name}_{cut}_{sample_rate}_{time_now}.pkl",
             "wb",
         ),
     )
+
+
+def _parse_args():
+    """Parse cmd line args for evaluating audio classification models."""
+    parser = argparse.ArgumentParser(description="Eval models.")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=128,
+        help="input batch size for testing (default: 128)",
+    )
+    parser.add_argument(
+        "--num-of-scales",
+        type=int,
+        default=150,
+        help="number of scales used in training set. (default: 150)",
+    )
+    parser.add_argument(
+        "--wavelet",
+        type=str,
+        default="cmor3.3-4.17",
+        help="Wavelet to use in cwt. (default: cmor3.3-4.17)",
+    )
+    parser.add_argument(
+        "--sample-rate",
+        type=int,
+        default=22050,
+        help="Sample rate of audio. (default: 22050)",
+    )
+    parser.add_argument(
+        "--f-min",
+        type=float,
+        default=1000,
+        help="Minimum frequency to analyze in Hz. (default: 1000)",
+    )
+    parser.add_argument(
+        "--f-max",
+        type=float,
+        default=9500,
+        help="Maximum frequency to analyze in Hz. (default: 9500)",
+    )
+    parser.add_argument(
+        "--data-prefix",
+        type=str,
+        help="shared prefix of the data paths",
+    )
+    parser.add_argument(
+        "--plot-path",
+        type=str,
+        default="plots/eval/",
+        help="path for plotting roc and auc",
+    )
+    parser.add_argument(
+        "--nclasses", type=int, default=2, help="number of classes (default: 2)"
+    )
+    parser.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        default=[0, 1, 2, 3, 4],
+        help="the random seeds that are evaluated.",
+    )
+    parser.add_argument(
+        "--train-gans",
+        type=str,
+        nargs="+",
+        default=[
+            "melgan",
+            "lmelgan",
+            "mbmelgan",
+            "fbmelgan",
+            "hifigan",
+            "waveglow",
+            "pwg",
+            "all",
+        ],
+        help="model postfix specifying the gan in the trainingset.",
+    )
+    parser.add_argument(
+        "--crosseval-gans",
+        type=str,
+        nargs="+",
+        default=[
+            "melgan",
+            "lmelgan",
+            "mbmelgan",
+            "fbmelgan",
+            "hifigan",
+            "waveglow",
+            "pwg",
+            "all",
+        ],
+        help="model postfix specifying the gan in the trainingset for cross validation.",
+    )
+    parser.add_argument(
+        "--flattend-size",
+        type=int,
+        default=21888,
+        help="dense layer input size (default: 21888)",
+    )
+    parser.add_argument(
+        "--model",
+        choices=[
+            "onednet",
+            "learndeepnet",
+            "learnnet",
+        ],
+        default="learndeepnet",
+        help="The model type. Default: learndeepnet.",
+    )
+    parser.add_argument(
+        "--adapt-wavelet",
+        action="store_true",
+        help="If differentiable wavelets shall be used.",
+    )
+    parser.add_argument(
+        "--cut",
+        action="store_true",
+        help="Cut sides of audios at input into cnn.",
+    )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=2,
+        help="Number of worker processes started by the test and validation data loaders (default: 2)",
+    )
+    return parser.parse_args()
 
 
 if __name__ == "__main__":

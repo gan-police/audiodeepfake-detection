@@ -23,7 +23,7 @@ if DEBUG:
     # Set python path automatically to base directory
     sys.path.append(BASE_PATH)
 
-import src.util as util
+import src.plot_util as plot_util
 
 N_FFT = 600
 RES = N_FFT // 2
@@ -37,9 +37,9 @@ matplotlib.rcParams["font.family"] = "STIXGeneral"
 def _compute_average_frequency_for_directory(
     directory: str, early_exit=None, compute_stats=True
 ) -> torch.Tensor:
-    dataset = dataset = util.AudioDataset(
+    dataset = dataset = plot_util.AudioDataset(
         directory,
-        sample_rate=util.SAMPLE_RATE,
+        sample_rate=plot_util.SAMPLE_RATE,
     )
     """Compute average frequency energy in dB over different frequencies."""
     average_per_file = []
@@ -113,7 +113,9 @@ def _apply_ax_styling(
     ax.set_ylim(y_min, y_max)
 
     # convert fftbins to freq.
-    freqs = np.fft.fftfreq((num_freqs - 1) * 2, 1 / util.SAMPLE_RATE)[: num_freqs - 1]
+    freqs = np.fft.fftfreq((num_freqs - 1) * 2, 1 / plot_util.SAMPLE_RATE)[
+        : num_freqs - 1
+    ]
 
     ticks = np.linspace(0, RES, 11)
     # ticks = ax.get_xticks()[1:]

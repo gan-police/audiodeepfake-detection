@@ -13,7 +13,6 @@ import ptwt
 import pywt
 import tikzplotlib as tikz
 import torch
-from torchaudio.transforms import AmplitudeToDB
 
 DEBUG = True
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -22,9 +21,12 @@ if DEBUG:
     # Set python path automatically to base directory
     sys.path.append(BASE_PATH)
 
-import src.util as util
+import src.plot_util as util
 
-RES = 300
+RES = 150
+SAMPLE_RATE = 22_050
+F_MIN = 1
+F_MAX = 11025
 
 
 def _compute_average_frequency_for_directory(
@@ -32,21 +34,19 @@ def _compute_average_frequency_for_directory(
 ) -> torch.Tensor:
     dataset = dataset = util.AudioDataset(
         directory,
-        sample_rate=util.SAMPLE_RATE,
+        sample_rate=SAMPLE_RATE,
     )
 
     average_per_file = []
 
-    sampling_period = 1.0 / util.SAMPLE_RATE
-    center_freq = 12.6
-    bandwith = 1.0
+    sampling_period = 1.0 / SAMPLE_RATE
+    center_freq = 4.17
+    bandwith = 3.3
 
     wavelet = f"cmor{bandwith}-{center_freq}"
-    # wavelet = "fbsp3-0.01-1.0"
-    # nyquist_freq = util.SAMPLE_RATE / 2.0  # maximum frequency that can be analyzed
 
     # equally spaced normalized frequencies to be analyzed
-    freqs = np.linspace(8000, 1, RES) / util.SAMPLE_RATE
+    freqs = np.linspace(F_MAX, F_MIN, RES) / SAMPLE_RATE
 
     scales = pywt.frequency2scale(wavelet, freqs)
 
@@ -61,11 +61,11 @@ def _compute_average_frequency_for_directory(
         avg = torch.mean(specgram, dim=1)
         avg = avg.to(torch.float32)
         avg_db = 10.0 * torch.log(avg + 10e-13)
-        avg_db = AmplitudeToDB(stype="power", top_db=80.0)(avg)
+        # avg_db = AmplitudeToDB(stype="power", top_db=80.0)(avg)
         average_per_file.append(avg_db)
 
-        if i % 10 == 0:
-            print(f"\rProcessed {i:06} files!\n", end="")
+        if i % 100 == 0:
+            print(f"\rProcessed {i:06} files!", end="", flush=True)
 
         if i == early_exit:
             break
@@ -133,7 +133,7 @@ def plot_difference(
             y_max=10,
         )
 
-    save_path = f"{BASE_PATH}/plots/energy/cwt/{path}.tex"
+    save_path = f"plots/energy/cwt/{path}.tex"
 
     tikz.save(
         save_path,
@@ -146,29 +146,38 @@ def plot_difference(
 if __name__ == "__main__":
     reference_data = None
     reference_name = None
-    Path(f"{BASE_PATH}/plots/energy/cwt").mkdir(parents=True, exist_ok=True)
+    Path("plots/energy/cwt").mkdir(parents=True, exist_ok=True)
 
-    amount = 100
-
-    data_base_dir = f"{BASE_PATH}/tests/data"
-    paths = [
-        "real/",
-        "ljspeech_waveglow/",
-    ]
+    amount = 13100
 
     # Important: Put corresponding data directories here!
-    data_base_dir = "/home/s6kogase/data/fake"
-    paths = ["A_ljspeech/", "C_hifigan/"]
+    paths = [
+        "/home/s6kogase/data/real/A_ljspeech/",
+        "/home/s6kogase/data/fake/B_melgan/",
+        "/home/s6kogase/data/fake/C_hifigan/",
+        "/home/s6kogase/data/fake/D_mbmelgan/",
+        "/home/s6kogase/data/fake/E_fbmelgan/",
+        "/home/s6kogase/data/fake/F_waveglow/",
+        "/home/s6kogase/data/fake/G_pwg/",
+        "/home/s6kogase/data/fake/H_lmelgan/",
+    ]
 
-    fig_names = ["Original", "Hifigan"]
+    fig_names = [
+        "Original",
+        "MelGAN",
+        "HiFi-GAN",
+        "Multi-Band-MelGAN",
+        "Full-Band-MelGAN",
+        "Waveglow",
+        "Parallel-Wavegan",
+        "Large-MelGAN",
+    ]
 
     for i in range(len(paths)):
         print("\n======================================")
         print(f"Processing {paths[i]}!")
         print("======================================")
-        average_freq, freqs = _compute_average_frequency_for_directory(
-            f"{data_base_dir}/{paths[i]}", amount
-        )
+        average_freq, freqs = _compute_average_frequency_for_directory(paths[i], amount)
 
         if reference_data is None:
             reference_data = average_freq

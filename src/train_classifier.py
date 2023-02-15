@@ -1,86 +1,20 @@
 """Source code to train audio deepfake detectors in wavelet space."""
-
 import argparse
 import os
 import pickle
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional
 
 import numpy as np
 import torch
 from pywt import ContinuousWavelet
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
-from torchvision import models as tv_models
 from tqdm import tqdm
 
-from .data_loader import (
-    CombinedDataset,
-    LearnWavefakeDataset,
-    WavefakeDataset,
-    WelfordEstimator,
-)
-from .models import (
-    DeepTestNet,
-    LearnDeepTestNet,
-    LearnNet,
-    OneDNet,
-    Regression,
-    TestNet,
-    save_model,
-)
+from .data_loader import LearnWavefakeDataset, WelfordEstimator
+from .models import LearnDeepTestNet, LearnNet, OneDNet, save_model
 from .optimizer import AdamCWT
-from .ptwt_continuous_transform import (
-    _DifferentiableContinuousWavelet,
-    get_diff_wavelet,
-)
-
-
-def val_test_loop(
-    data_loader,
-    model: torch.nn.Module,
-    loss_fun,
-    make_binary_labels: bool = False,
-    pbar: bool = False,
-) -> Tuple[float, Any]:
-    """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
-
-    Args:
-        data_loader (DataLoader): A DataLoader loading the data set on which the performance should be measured,
-            e.g. a test or validation set in a data split.
-        model (torch.nn.Module): The model to evaluate.
-        loss_fun: The loss function, which is used to measure the loss of the model on the data set
-        make_binary_labels (bool): If flag is set, we only classify binarily, i.e. whether an audio is real or fake.
-            In this case, the label 0 encodes 'real'. All other labels are cosidered fake data, and are set to 1.
-
-    Returns:
-        Tuple[float, Any]: The measured accuracy and loss of the model on the data set.
-    """
-    with torch.no_grad():
-        model.eval()
-        val_total = 0
-
-        val_ok = 0.0
-        for val_batch in iter(data_loader):
-            if type(data_loader.dataset) is CombinedDataset:
-                batch_audios = {
-                    key: val_batch[key].cuda(non_blocking=True)
-                    for key in data_loader.dataset.key
-                }
-            else:
-                batch_audios = val_batch[data_loader.dataset.key].cuda(
-                    non_blocking=True
-                )
-            batch_labels = val_batch["label"].cuda(non_blocking=True)
-            out = model(batch_audios)
-            if make_binary_labels:
-                batch_labels[batch_labels > 0] = 1
-            val_loss = loss_fun(torch.squeeze(out), batch_labels)
-            ok_mask = torch.eq(torch.max(out, dim=-1)[1], batch_labels)
-            val_ok += torch.sum(ok_mask).item()
-            val_total += batch_labels.shape[0]
-        val_acc = val_ok / val_total
-        print("acc", val_acc, "ok", val_ok, "total", val_total)
-    return val_acc, val_loss
+from .ptwt_continuous_transform import get_diff_wavelet
 
 
 def _parse_args():
@@ -122,8 +56,8 @@ def _parse_args():
     parser.add_argument(
         "--wavelet",
         type=str,
-        default="cmor4.6-0.87",
-        help="Wavelet to use in cwt. (default: cmor4.6-0.87)",
+        default="cmor3.3-4.17",
+        help="Wavelet to use in cwt. (default: cmor3.3-4.17)",
     )
     parser.add_argument(
         "--sample-rate",
@@ -135,20 +69,19 @@ def _parse_args():
         "--f-min",
         type=float,
         default=1000,
-        help="Minimum frequency to analyze. (default: 1 kHz)",
+        help="Minimum frequency to analyze in Hz. (default: 1000)",
     )
     parser.add_argument(
         "--f-max",
         type=float,
         default=9500,
-        help="Maximum frequency to analyze. (default: 9.5 kHz)",
+        help="Maximum frequency to analyze in Hz. (default: 9500)",
     )
     parser.add_argument(
         "--data-prefix",
         type=str,
-        nargs="+",
-        default=["./data/fake"],
-        help="shared prefix of the data paths (default: ./data/fake)",
+        default="../data/fake",
+        help="shared prefix of the data paths (default: ../data/fake)",
     )
     parser.add_argument(
         "--nclasses", type=int, default=2, help="number of classes (default: 2)"
@@ -156,37 +89,33 @@ def _parse_args():
     parser.add_argument(
         "--seed", type=int, default=0, help="the random seed pytorch works with."
     )
-
     parser.add_argument(
-        "--flattend-size", type=int, default=21888, help="dense layer input size."
+        "--flattend-size",
+        type=int,
+        default=21888,
+        help="dense layer input size (default: 21888)",
     )
-
     parser.add_argument(
         "--model",
         choices=[
-            "regression",
-            "testnet",
-            "resnet18",
-            "resnet34",
-            "deeptestnet",
             "onednet",
             "learndeepnet",
             "learnnet",
         ],
-        default="testnet",
-        help="The model type chosse regression or CNN. Default: testnet.",
+        default="learndeepnet",
+        help="The model type. Default: learndeepnet.",
     )
     parser.add_argument(
         "--adapt-wavelet",
         action="store_true",
         help="If differentiable wavelets shall be used.",
     )
+
     parser.add_argument(
         "--tensorboard",
         action="store_true",
         help="enables a tensorboard visualization.",
     )
-
     parser.add_argument(
         "--pbar",
         action="store_true",
@@ -200,28 +129,55 @@ def _parse_args():
     parser.add_argument(
         "--cut",
         action="store_true",
-        help="Cut sides of audios.",
+        help="Cut sides of audios at input into cnn.",
     )
-
     parser.add_argument(
         "--num-workers",
         type=int,
         default=2,
-        help="Number of worker processes started by the test and validation data loaders. The training data_loader "
-        "uses three times this argument many workers. Hence, this argument should probably be chosen below 10. "
-        "Defaults to 2.",
-    )
-
-    parser.add_argument(
-        "--class-weights",
-        type=float,
-        metavar="CLASS_WEIGHT",
-        nargs="+",
-        default=None,
-        help="If specified, training samples are weighted based on their class "
-        "in the loss calculation. Expects one weight per class.",
+        help="Number of worker processes started by the test and validation data loaders (default: 2)",
     )
     return parser.parse_args()
+
+
+def val_test_loop(
+    data_loader,
+    model: torch.nn.Module,
+    loss_fun,
+    make_binary_labels: bool = False,
+    pbar: bool = False,
+) -> tuple[float, Any]:
+    """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
+
+    Args:
+        data_loader (DataLoader): A DataLoader loading the data set on which the performance should be measured,
+            e.g. a test or validation set in a data split.
+        model (torch.nn.Module): The model to evaluate.
+        loss_fun: The loss function, which is used to measure the loss of the model on the data set
+        make_binary_labels (bool): If flag is set, we only classify binarily, i.e. whether an audio is real or fake.
+            In this case, the label 0 encodes 'real'. All other labels are cosidered fake data, and are set to 1.
+
+    Returns:
+        Tuple[float, Any]: The measured accuracy and loss of the model on the data set.
+    """
+    with torch.no_grad():
+        model.eval()
+        val_total = 0
+
+        val_ok = 0.0
+        for val_batch in iter(data_loader):
+            batch_audios = val_batch[data_loader.dataset.key].cuda(non_blocking=True)
+            batch_labels = val_batch["label"].cuda(non_blocking=True)
+            out = model(batch_audios)
+            if make_binary_labels:
+                batch_labels[batch_labels > 0] = 1
+            val_loss = loss_fun(torch.squeeze(out), batch_labels)
+            ok_mask = torch.eq(torch.max(out, dim=-1)[1], batch_labels)
+            val_ok += torch.sum(ok_mask).item()
+            val_total += batch_labels.shape[0]
+        val_acc = val_ok / val_total
+        print("acc", val_acc, "ok", val_ok, "total", val_total)
+    return val_acc, val_loss
 
 
 def get_model(
@@ -236,15 +192,9 @@ def get_model(
     flattend_size: int = 21888,
     cut: bool = False,
     raw_input: Optional[bool] = True,
-) -> Regression | TestNet | DeepTestNet | LearnDeepTestNet | OneDNet | tv_models.ResNet:
+) -> LearnDeepTestNet | OneDNet | LearnNet:
     """Get torch module model with given parameters."""
-    if model_name == "regression":
-        model = Regression(nclasses, 224 * 224)  # type: ignore
-    elif model_name == "testnet":
-        model = TestNet(classes=nclasses, batch_size=batch_size)  # type: ignore
-    elif model_name == "deeptestnet":
-        model = DeepTestNet(classes=nclasses, batch_size=batch_size)  # type: ignore
-    elif model_name == "learndeepnet":
+    if model_name == "learndeepnet":
         model = LearnDeepTestNet(
             classes=nclasses,
             wavelet=wavelet,
@@ -281,129 +231,11 @@ def get_model(
             raw_input=raw_input,
             flattend_size=flattend_size,
         )  # type: ignore
-    elif model_name == "resnet18":
-        model = tv_models.resnet18(weights="IMAGENET1K_V1")  # type: ignore
-        model.fc = torch.nn.Linear(in_features=512, out_features=nclasses, bias=True)
-        model.get_name = lambda: "ResNet18"  # type: ignore
-    else:
-        model = tv_models.resnet34(weights="IMAGENET1K_V1")  # type: ignore
-        model.fc = torch.nn.Linear(in_features=512, out_features=nclasses, bias=True)
-        model.get_name = lambda: "ResNet34"  # type: ignore
-
     return model
 
 
 def create_data_loaders(
-    data_prefix: List[str],
-    batch_size: int,
-    normal: bool,
-    num_workers: int,
-    wavelet: _DifferentiableContinuousWavelet,
-    sample_rate: int,
-    num_of_scales: int,
-    f_min: float,
-    f_max: float,
-) -> tuple:
-    """Create the data loaders needed for training.
-
-    The test set is created outside a loader.
-
-    Args:
-        data_prefix (str): Where to look for the data.
-        batch_size (int): preferred training batch size.
-        normal (bool): True if mean and std need to be calculated again.
-        num_workers (int): Number of workers for training.
-
-    Raises:
-        RuntimeError: Raised if the prefix is incorrect.
-
-    Returns:
-        dataloaders (tuple): train_data_loader, val_data_loader, test_data_set
-
-    # noqa: DAR401
-    """
-    data_set_list = []
-    data_prefix_el = data_prefix[0]
-    key = "audio"
-    if normal:
-        with torch.no_grad():
-            train_data_set = WavefakeDataset(
-                data_prefix_el + "_train",
-                key=key,
-                wavelet=wavelet,
-                num_of_scales=num_of_scales,
-                f_max=f_max,
-                f_min=f_min,
-                sample_rate=sample_rate,
-            )
-
-            welford = WelfordEstimator()
-            for aud_no in range(train_data_set.__len__()):
-                welford.update(train_data_set.__getitem__(aud_no)["audio"])
-            mean_new, std_new = welford.finalize()
-        print("mean", mean_new.mean(), "std:", std_new.mean())
-        with open(f"{data_prefix_el}_train/mean_std.pkl", "wb") as f:
-            pickle.dump([mean_new.cpu().numpy(), std_new.cpu().numpy()], f)
-
-    with open(f"{data_prefix_el}_train/mean_std.pkl", "rb") as file:
-        mean, std = pickle.load(file)
-        mean = torch.from_numpy(mean.astype(np.float32))
-        std = torch.from_numpy(std.astype(np.float32))
-
-    train_data_set = WavefakeDataset(
-        data_prefix_el + "_train",
-        mean=mean,
-        std=std,
-        key=key,
-        wavelet=wavelet,
-        num_of_scales=num_of_scales,
-        f_max=f_max,
-        f_min=f_min,
-        sample_rate=sample_rate,
-    )
-    val_data_set = WavefakeDataset(
-        data_prefix_el + "_val",
-        mean=mean,
-        std=std,
-        key=key,
-        wavelet=wavelet,
-        num_of_scales=num_of_scales,
-        f_max=f_max,
-        f_min=f_min,
-        sample_rate=sample_rate,
-    )
-    test_data_set = WavefakeDataset(
-        data_prefix_el + "_test",
-        mean=mean,
-        std=std,
-        key=key,
-        wavelet=wavelet,
-        num_of_scales=num_of_scales,
-        f_max=f_max,
-        f_min=f_min,
-        sample_rate=sample_rate,
-    )
-    data_set_list.append((train_data_set, val_data_set, test_data_set))
-
-    if len(data_set_list) == 1:
-        train_data_loader = DataLoader(
-            train_data_set, batch_size=batch_size, shuffle=True, num_workers=num_workers
-        )
-        val_data_loader = DataLoader(
-            val_data_set,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=num_workers,
-        )
-        test_data_sets: Any = test_data_set
-    else:
-        raise RuntimeError("Failed to load data from the specified prefixes.")
-
-    return train_data_loader, val_data_loader, test_data_sets
-
-
-def create_data_loaders_learn(
-    data_prefix: List[str],
+    data_prefix: str,
     batch_size: int,
     normal: bool,
     num_workers: int,
@@ -416,20 +248,17 @@ def create_data_loaders_learn(
         data_prefix (str): Where to look for the data.
         batch_size (int): preferred training batch size.
         normal (bool): True if mean and std need to be calculated again.
-        num_workers (int): Number of workers for training.
+        num_workers (int): Number of workers for validation and testing.
 
     Returns:
         dataloaders (tuple): train_data_loader, val_data_loader, test_data_set
-
-    # noqa: DAR401
     """
     data_set_list = []
-    data_prefix_el = data_prefix[0]
     key = "audio"
     if normal:
         with torch.no_grad():
             train_data_set = LearnWavefakeDataset(
-                data_prefix_el + "_train",
+                data_prefix + "_train",
                 key=key,
             )
             print("Computing mean and std...")
@@ -441,28 +270,28 @@ def create_data_loaders_learn(
                 welford.update(train_data_set.__getitem__(aud_no)["audio"])
             mean_new, std_new = welford.finalize()
         print("mean", mean_new.mean(), "std:", std_new.mean())
-        with open(f"{data_prefix_el}_train/mean_std.pkl", "wb") as f:
+        with open(f"{data_prefix}_train/mean_std.pkl", "wb") as f:
             pickle.dump([mean_new.cpu().numpy(), std_new.cpu().numpy()], f)
 
-    with open(f"{data_prefix_el}_train/mean_std.pkl", "rb") as file:
+    with open(f"{data_prefix}_train/mean_std.pkl", "rb") as file:
         mean, std = pickle.load(file)
         mean = torch.from_numpy(mean.astype(np.float32))
         std = torch.from_numpy(std.astype(np.float32))
 
     train_data_set = LearnWavefakeDataset(
-        data_prefix_el + "_train",
+        data_prefix + "_train",
         mean=mean,
         std=std,
         key=key,
     )
     val_data_set = LearnWavefakeDataset(
-        data_prefix_el + "_val",
+        data_prefix + "_val",
         mean=mean,
         std=std,
         key=key,
     )
     test_data_set = LearnWavefakeDataset(
-        data_prefix_el + "_test",
+        data_prefix + "_test",
         mean=mean,
         std=std,
         key=key,
@@ -470,7 +299,9 @@ def create_data_loaders_learn(
     data_set_list.append((train_data_set, val_data_set, test_data_set))
 
     train_data_loader = DataLoader(
-        train_data_set, batch_size=batch_size, shuffle=True, num_workers=num_workers
+        train_data_set,
+        batch_size=batch_size,
+        shuffle=True,
     )
     val_data_loader = DataLoader(
         val_data_set,
@@ -550,29 +381,12 @@ def main():
     wavelet.bandwidth_par.requires_grad = False
     wavelet.center_par.requires_grad = args.adapt_wavelet
 
-    if (
-        args.model == "learndeepnet"
-        or args.model == "onednet"
-        or args.model == "learnnet"
-    ):
-        train_data_loader, val_data_loader, test_data_set = create_data_loaders_learn(
-            args.data_prefix,
-            args.batch_size,
-            args.calc_normalization,
-            args.num_workers,
-        )
-    else:
-        train_data_loader, val_data_loader, test_data_set = create_data_loaders(
-            args.data_prefix,
-            args.batch_size,
-            args.calc_normalization,
-            args.num_workers,
-            wavelet,
-            args.sample_rate,
-            args.num_of_scales,
-            args.f_min,
-            args.f_max,
-        )
+    train_data_loader, val_data_loader, test_data_set = create_data_loaders(
+        args.data_prefix,
+        args.batch_size,
+        args.calc_normalization,
+        args.num_workers,
+    )
 
     validation_list = []
     loss_list = []
@@ -591,7 +405,6 @@ def main():
         args.flattend_size,
         args.cut,
     )
-
     model.to(device)
 
     if args.tensorboard:
@@ -611,25 +424,11 @@ def main():
         writer_str += f"{args.seed}"
         writer = SummaryWriter(writer_str, max_queue=100)
 
-    if args.class_weights:
-        loss_fun = torch.nn.CrossEntropyLoss(
-            weight=torch.tensor(args.class_weights).cuda()
-        )
-    else:
-        loss_fun = torch.nn.CrossEntropyLoss()
+    loss_fun = torch.nn.CrossEntropyLoss()
 
-    if (
-        args.model == "learndeepnet"
-        or args.model == "onednet"
-        or args.model == "learnnet"
-    ):
-        optimizer = AdamCWT(
-            model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
-        )
-    else:
-        optimizer = torch.optim.Adam(
-            model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
-        )
+    optimizer = AdamCWT(
+        model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
+    )
 
     for e in tqdm(
         range(args.epochs), desc="Epochs", unit="epochs", disable=not args.pbar
@@ -710,7 +509,7 @@ def main():
         if args.tensorboard:
             writer.add_scalar("epochs", e, step_total)
 
-        save_model_epoch(model_file, model)
+        save_model_epoch(model_file, model)  # save model every epoch
 
     print(validation_list)
 
@@ -752,33 +551,11 @@ def main():
         writer.close()
 
 
-def save_model_epoch(model_file, model):
+def save_model_epoch(model_file, model) -> str:
     """Save model each epoch, in case the script aborts for some reason."""
     save_model(model, model_file + ".pt")
     print(model_file, " saved.")
     return model_file
-
-
-def plot_some_tensors(batch, plt):
-    """Plot the first 5 tensors of the first batch."""
-    for i in range(5):
-        fig, axes = plt.subplots(1, 1)
-        labels = batch["label"]
-        x = batch["audio"]
-        y = x.cpu()
-        y = y[i]
-        y = y.squeeze()
-        y = y.numpy()
-        plt.title("Fake" if labels[i] == 1 else "Real")
-        im = axes.imshow(
-            y,
-            cmap="hot",
-            extent=[0, 224 * 10, 2000, 4000],
-            vmin=-2,
-            vmax=1,
-        )
-        fig.colorbar(im, ax=axes)
-        plt.savefig(f"plots/test-{i}.png")
 
 
 def _save_stats(
@@ -789,7 +566,7 @@ def _save_stats(
     test_acc: float,
     args,
     iterations_per_epoch: int,
-):
+) -> None:
     stats_file = model_file + ".pkl"
     try:
         res = pickle.load(open(stats_file, "rb"))
@@ -797,8 +574,7 @@ def _save_stats(
         res = []
         print(
             e,
-            "stats.pickle does not exist, \
-              creating a new file.",
+            "stats.pickle does not exist, creating a new file.",
         )
     res.append(
         {

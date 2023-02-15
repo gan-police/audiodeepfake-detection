@@ -1,13 +1,13 @@
 """Count trainable parameters of models."""
 from torchsummary import summary
 
-from src.learn_direct_train_classifier import get_model
 from src.models import compute_parameter_total
 from src.ptwt_continuous_transform import get_diff_wavelet
+from src.train_classifier import get_model
 
 
 def main() -> None:
-    """Define Wavelet, count parameters."""
+    """Define wavelet, count parameters."""
     wavelet = get_diff_wavelet("cmor4.6-0.87")
 
     models = ["learndeepnet", "onednet", "learnnet"]

@@ -234,7 +234,6 @@ def _single_tensor_adam(
     capturable: bool,
     differentiable: bool
 ):
-
     assert grad_scale is None and found_inf is None
     init_lr = lr
     for i, param in enumerate(params):
