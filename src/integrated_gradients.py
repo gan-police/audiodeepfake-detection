@@ -1,6 +1,7 @@
 """Caculate integrated gradients of trained models."""
 import argparse
 import pickle
+from pathlib import Path
 from typing import Optional
 
 import matplotlib.pyplot as plt
@@ -61,11 +62,11 @@ def main() -> None:
     plot_path = args.plot_path
     num_workers = args.num_workers
     gans = args.gans
-    seeds = args.num_workers
+    seeds = args.seeds
     wavelet = get_diff_wavelet(args.wavelet)
     sample_rate = args.sample_rate
     window_size = args.window_size
-    model_name = args.model_name
+    model_name = args.model
     batch_size = args.batch_size
     flattend_size = args.flattend_size
     adapt_wav = args.adapt_wavelet
@@ -76,7 +77,13 @@ def main() -> None:
     cut = args.cut
     data_prefix = args.data_prefix
 
-    times = args.times // batch_size
+    Path(f"{plot_path}/gfx/tikz").mkdir(parents=True, exist_ok=True)
+
+    if args.times < batch_size:
+        times = 1
+        batch_size = args.times
+    else:
+        times = args.times // batch_size
 
     target = args.target_label
 
@@ -113,11 +120,9 @@ def main() -> None:
             print(f"seed: {seed}")
             torch.manual_seed(seed)
 
-            model_path = "log/"
-            model_path += f"fake_{args.wavelet}_{sample_rate}_{window_size}_{num_of_scales}_{f_min}-{f_max}_0.7_{gan}"
-            model_path += (
-                f"_0.0001_128_{nclasses}_10e_{model_name}_{adapt_wav}_{seed}.pt"
-            )
+            model_path = f"./log/fake_{args.wavelet}_{sample_rate}_{window_size}"
+            model_path += f"_{num_of_scales}_{f_min}-{f_max}_0.7_{gan}_0.0001_128"
+            model_path += f"_{nclasses}_10e_{model_name}_{adapt_wav}_{seed}.pt"
             print(model_path)
             model = get_model(
                 wavelet,
@@ -201,8 +206,7 @@ def main() -> None:
             res = []
             print(
                 e,
-                "results.pickle does not exist, \
-                creating a new file.",
+                "results.pickle does not exist, creating a new file.",
             )
         res.append(
             {
@@ -215,19 +219,18 @@ def main() -> None:
         )
         pickle.dump(res, open(stats_file, "wb"))
 
-        extent = [0, window_size, f_min, f_max]
+        extent = [0, window_size / sample_rate, f_min / 1000, f_max / 1000]
         im_plot(
             inital.squeeze(2),
-            f"{plot_path}/cwt_{postfix}.png",
+            f"{plot_path}/cwt_{postfix}",
             cmap="turbo",
             extent=extent,
+            cb_label="dB",
         )
-        im_plot(
-            attr_ig, f"{plot_path}/attr_ig_{postfix}.png", cmap="PRGn", extent=extent
-        )
+        im_plot(attr_ig, f"{plot_path}/attr_ig_{postfix}", cmap="PRGn", extent=extent)
         im_plot(
             attr_sal,
-            f"{plot_path}/attr_sal_{postfix}.png",
+            f"{plot_path}/attr_sal_{postfix}",
             cmap="hot",
             extent=extent,
             vmax=np.max(attr_sal).item(),
@@ -235,24 +238,24 @@ def main() -> None:
         )
 
         n_bins = mean_ig_max.shape[0]
-        bar_plot(ig_max, f_min, f_max, n_bins, f"{plot_path}/attr_max_{postfix}.png")
-        bar_plot(ig_max, f_min, f_max, n_bins, f"{plot_path}/attr_min_{postfix}.png")
-        bar_plot(ig_abs, f_min, f_max, n_bins, f"{plot_path}/attr_abs_{postfix}.png")
+        bar_plot(ig_max, f_min, f_max, n_bins, f"{plot_path}/attr_max_{postfix}")
+        bar_plot(ig_max, f_min, f_max, n_bins, f"{plot_path}/attr_min_{postfix}")
+        bar_plot(ig_abs, f_min, f_max, n_bins, f"{plot_path}/attr_abs_{postfix}")
         plt.close()
 
 
 def bar_plot(ig, f_min, f_max, n_bins, path):
     """Plot histogram of model attribution."""
-    fig, axs = plt.subplots(1, 1, sharey=True, tight_layout=True)
+    _fig, axs = plt.subplots(1, 1, sharey=True, tight_layout=True)
     ticks = np.linspace(0, n_bins, 10)
-    tiks = np.linspace(f_min, f_max, len(ticks))
+    tiks = np.linspace(f_min / 1000, f_max / 1000, len(ticks))
 
-    ticklabels = [round(item) for item in tiks]
+    ticklabels = [round(item, 1) for item in tiks]
 
     axs.set_xticks(ticks)
     axs.set_xticklabels(ticklabels)
-    axs.set_xlabel("Frequenz (kHz)", fontsize=16)
-    axs.set_ylabel("Intensität", fontsize=16)
+    axs.set_xlabel("Frequenz (kHz)")
+    axs.set_ylabel("Intensität")
 
     axs.bar(
         x=list(range(n_bins)),
@@ -263,12 +266,13 @@ def bar_plot(ig, f_min, f_max, n_bins, path):
     save_plot(path)
 
 
-def im_plot(ig, path, cmap, extent, vmin=None, vmax=None):
+def im_plot(ig, path, cmap, extent, vmin=None, vmax=None, cb_label=None):
     """Plot image of model attribution."""
-    fig, axes = plt.subplots(1, 1)
-    im = axes.imshow(ig, cmap=cmap, extent=extent, vmin=vmin, vmax=vmax)
-    # fig.set_size_inches(40, 20, forward=True)
-    fig.colorbar(im, ax=axes)
+    fig, axs = plt.subplots(1, 1)
+    im = axs.imshow(ig, cmap=cmap, extent=extent, vmin=vmin, vmax=vmax)
+    axs.set_xlabel("Zeit (sek)")
+    axs.set_ylabel("Frequenz (kHz)")
+    fig.colorbar(im, ax=axs, label=cb_label)
     fig.set_dpi(200)
 
     save_plot(path)
@@ -277,9 +281,10 @@ def im_plot(ig, path, cmap, extent, vmin=None, vmax=None):
 def save_plot(path):
     """Save plt as standalone latex document."""
     tikz.save(
-        path,
+        f"{path}.tex",
         encoding="utf-8",
         standalone=True,
+        tex_relative_path_to_data="gfx/tikz",
         override_externals=True,
     )
 
@@ -304,6 +309,12 @@ def _parse_args():
         type=int,
         default=5056,
         help="number of testing samples for attribution (default: 5056)",
+    )
+    parser.add_argument(
+        "--window-size",
+        type=int,
+        default=11025,
+        help="window size of samples in dataset (default: 11025)",
     )
     parser.add_argument(
         "--num-of-scales",
@@ -339,6 +350,12 @@ def _parse_args():
         "--data-prefix",
         type=str,
         help="shared prefix of the data paths",
+    )
+    parser.add_argument(
+        "--plot-path",
+        type=str,
+        default="./plots/attribution",
+        help="path for the attribution plots and results (default: ./plots/attribution)",
     )
     parser.add_argument(
         "--nclasses", type=int, default=2, help="number of classes (default: 2)"

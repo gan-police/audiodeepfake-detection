@@ -332,7 +332,7 @@ def main():
     if args.f_max > args.sample_rate / 2:
         print("Warning: maximum analyzed frequency is above nyquist rate.")
 
-    path_name = args.data_prefix[0].split("/")[-1].split("_")
+    path_name = args.data_prefix.split("/")[-1].split("_")
     model_file = (
         "./log/"
         + path_name[0]
@@ -341,17 +341,15 @@ def main():
         + "_"
         + str(args.sample_rate)
         + "_"
-        + path_name[4]
-        + "_"
         + str(args.num_of_scales)
         + "_"
         + str(int(args.f_min))
         + "-"
         + str(int(args.f_max))
         + "_"
-        + path_name[8]
+        + path_name[3]
         + "_"
-        + path_name[9]
+        + path_name[4]
         + "_"
         + str(args.learning_rate)
         + "_"
@@ -377,8 +375,8 @@ def main():
 
     make_binary_labels = args.nclasses == 2
 
-    wavelet = get_diff_wavelet(args.wavelet, args.adapt_wavelet)
-    wavelet.bandwidth_par.requires_grad = False
+    wavelet = get_diff_wavelet(args.wavelet)
+    wavelet.bandwidth_par.requires_grad = args.adapt_wavelet
     wavelet.center_par.requires_grad = args.adapt_wavelet
 
     train_data_loader, val_data_loader, test_data_set = create_data_loaders(

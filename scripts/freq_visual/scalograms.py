@@ -80,7 +80,7 @@ if __name__ == "__main__":
     )  # generate corresponding scales to the freuqencies
     # also helpful, because then y axis ist linear
 
-    print("Plotting Scaleogram of LJ008 0217.wav")
+    print("Plotting Scalogram of LJ008 0217.wav")
     for i in range(2):
         path = f"{data_base_dir}/{audios[i]}"
         scal = plot_util.compute_cwt(path, wavelet, scales, from_frame, to_frame)

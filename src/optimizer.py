@@ -249,7 +249,7 @@ def _single_tensor_adam(
 
         # only change in Adam Optimizer
         if type(param) == _WaveletParameter:
-            lr = init_lr * 10  # * 0.1
+            lr = init_lr * 0.1
         else:
             lr = init_lr
 

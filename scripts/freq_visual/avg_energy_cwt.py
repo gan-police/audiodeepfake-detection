@@ -133,7 +133,7 @@ def plot_difference(
             y_max=10,
         )
 
-    save_path = f"plots/energy/cwt/{path}.tex"
+    save_path = f"./plots/energy/cwt/{path}.tex"
 
     tikz.save(
         save_path,
@@ -146,20 +146,20 @@ def plot_difference(
 if __name__ == "__main__":
     reference_data = None
     reference_name = None
-    Path("plots/energy/cwt").mkdir(parents=True, exist_ok=True)
+    Path("./plots/energy/cwt").mkdir(parents=True, exist_ok=True)
 
     amount = 13100
 
     # Important: Put corresponding data directories here!
     paths = [
-        "/home/s6kogase/data/real/A_ljspeech/",
-        "/home/s6kogase/data/fake/B_melgan/",
-        "/home/s6kogase/data/fake/C_hifigan/",
-        "/home/s6kogase/data/fake/D_mbmelgan/",
-        "/home/s6kogase/data/fake/E_fbmelgan/",
-        "/home/s6kogase/data/fake/F_waveglow/",
-        "/home/s6kogase/data/fake/G_pwg/",
-        "/home/s6kogase/data/fake/H_lmelgan/",
+        "../data/real/A_ljspeech/",
+        "../data/fake/B_melgan/",
+        "../data/fake/C_hifigan/",
+        "../data/fake/D_mbmelgan/",
+        "../data/fake/E_fbmelgan/",
+        "../data/fake/F_waveglow/",
+        "../data/fake/G_pwg/",
+        "../data/fake/H_lmelgan/",
     ]
 
     fig_names = [

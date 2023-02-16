@@ -5,7 +5,7 @@
 #SBATCH --output=/home/s6kogase/code/out/prep_single_%A_%a.out
 #SBATCH --error=/home/s6kogase/code/out/prep_single_%A_%a.err
 #SBATCH --cpus-per-task=8
-#SBATCH --time=04:00:00
+#SBATCH --time=02:00:00
 #SBATCH --partition=A40short
 #SBATCH --array=0-6
 #SBATCH --nodelist=node-01
@@ -29,6 +29,7 @@ python -m src.prepare_datasets \
     --batch-size 2048 \
     --window-size 11025 \
     --sample-rate 22050 \
+    --max-samples 1825177725 \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --fakedir "${HOME}/data/fake/${datasets[$SLURM_ARRAY_TASK_ID]}" \
     --directory "${HOME}/data/fake"

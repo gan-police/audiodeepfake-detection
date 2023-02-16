@@ -497,7 +497,8 @@ def pre_process_folder(
         sample_rate (int): Desired sample rate for audios that will be used to downsample all audios.
 
     Raises:
-        ValueError: Raised if train_size, val_size and test_size don't add up to 1.
+        ValueError: Raised if train_size, val_size and test_size don't add up to 1 or if directories
+                    are not set properly.
     """
     if train_size + val_size + test_size > 1.0:
         raise ValueError(
@@ -526,8 +527,12 @@ def pre_process_folder(
             folder_list = [Path(real), Path(fake)]
             folder_list_all.append(Path(real))
     else:
+        if len(folder_list_all) == 0:
+            raise ValueError("Either directory and/or realdir must be set.")
         folder_list = folder_list_all
 
+    if len(folder_list_all) <= 1:
+        print("Warning: training will contain one or less labels.")
     target_dir = data_dir.parent / folder_name
 
     train_list, val_list, test_list = split_dataset_random(
@@ -602,6 +607,7 @@ def parse_args():
     parser.add_argument(
         "--directory",
         type=str,
+        default="./data/fake",
         help="The folder with the gan generated and/or the real audio folders.",
     )
     parser.add_argument(
@@ -657,8 +663,8 @@ def parse_args():
     )
     parser.add_argument(
         "--sample-rate",
-        type=float,
-        default=8_000,
+        type=int,
+        default=22_050,
         help="Desired sample rate of audio in Hz. Default: 8_000.",
     )
     parser.add_argument(

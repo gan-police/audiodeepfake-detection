@@ -12,7 +12,7 @@ counterpart (right). In my thesis I compare the performance of cnn based classif
 The latest code can be installed in development mode in a running installation of python 3.10 with:
 
 ```shell
-git clone https://github.com/gan-police/wavelet-audiodeepfake-detection_code.git
+git clone git@github.com:gan-police/wavelet-audiodeepfake-detection_code.git
 ```
 Move to the repository with
 ```shell

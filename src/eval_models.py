@@ -118,11 +118,11 @@ def main() -> None:
     num_workers = args.num_workers
     gans = args.train_gans
     c_gans = args.crosseval_gans
-    seeds = args.num_workers
+    seeds = args.seeds
     wavelet = get_diff_wavelet(args.wavelet)
     sample_rate = args.sample_rate
     window_size = args.window_size
-    model_name = args.model_name
+    model_name = args.model
     batch_size = args.batch_size
     flattend_size = args.flattend_size
     adapt_wav = args.adapt_wavelet
@@ -164,7 +164,7 @@ def main() -> None:
                 print(f"seed: {seed}")
 
                 torch.manual_seed(seed)
-                model_path = f"log/fake_{args.wavelet}_{sample_rate}_{window_size}_"
+                model_path = f"./log/fake_{args.wavelet}_{sample_rate}_{window_size}_"
                 model_path += f"{num_of_scales}_{f_min}-{f_max}_0.7_{gan}_0.0001_"
                 model_path += (
                     f"{batch_size}_{nclasses}_10e_{model_name}_{adapt_wav}_{seed}.pt"
@@ -251,6 +251,12 @@ def _parse_args():
         help="input batch size for testing (default: 128)",
     )
     parser.add_argument(
+        "--window-size",
+        type=int,
+        default=11025,
+        help="window size of samples in dataset (default: 11025)",
+    )
+    parser.add_argument(
         "--num-of-scales",
         type=int,
         default=150,
@@ -288,7 +294,7 @@ def _parse_args():
     parser.add_argument(
         "--plot-path",
         type=str,
-        default="plots/eval/",
+        default="./plots/eval/",
         help="path for plotting roc and auc",
     )
     parser.add_argument(
