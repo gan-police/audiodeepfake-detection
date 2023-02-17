@@ -15,10 +15,10 @@ echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
 
 conda activate py310
 python -m src.integrated_gradients \
-    --data-prefix "${HOME}/data/fake_cmor4.6-0.87_22050_8000_11025_224_80-4000_1_0.7" \
+    --data-prefix "${HOME}/data/fake_22050_11025_0.7" \
     --plot-path "./plots/attribution" \
     --target-label 1 \
-    --times 5 \
+    --times 5056 \
     --model "learndeepnet"  \
     --wavelet "cmor3.3-4.17" \
     --num-of-scales 150 \
