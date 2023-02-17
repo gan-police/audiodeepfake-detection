@@ -165,7 +165,7 @@ def load_from_wav(
     if not is_correct_format:
         raise IOError("Audio file is not in the same format as LJSpeech-1.1 Dataset.")
 
-    waveform, sample_rate = torchaudio.load(
+    waveform, _sample_rate = torchaudio.load(
         path, normalize=normalize
     )  # returns torch tensor
 
@@ -188,7 +188,11 @@ def load_from_wav(
 
 
 def compute_spectogram(
-    path: str, from_frame: int = 0, to_frame: int = -1, n_fft: int = 1024
+    path: str,
+    from_frame: int = 0,
+    to_frame: int = -1,
+    n_fft: int = 1023,
+    win_length=1024,
 ) -> Tuple[torch.Tensor, int]:
     """Compute spectrogram of file given at path.
 
@@ -211,14 +215,12 @@ def compute_spectogram(
     """
     waveform = load_from_wav(path, from_frame, to_frame)
 
-    win_length = None
-    hop_length = None  # 512
     power = 2.0
 
     spec_transform = tf.Spectrogram(
         n_fft=n_fft,
-        win_length=win_length,  # default: n_fft
-        hop_length=hop_length,  # default: win_length // 2
+        win_length=win_length,
+        hop_length=1,
         power=power,
     )
 
@@ -343,7 +345,7 @@ def plot_spectrogram(
     cb = fig.colorbar(im, ax=axes, label="dB")
 
     print(f"saving {fig_name}-spectrogram.tex")
-    Path(f"{BASE_PATH}/stft/gfx/tikz").mkdir(parents=True, exist_ok=True)
+    Path("./plots/stft/gfx/tikz").mkdir(parents=True, exist_ok=True)
 
     # for rectangular plots
     if rect_plot:
@@ -352,7 +354,7 @@ def plot_spectrogram(
     else:
         fig_width, fig_height = None, None
 
-    save_path = f"{BASE_PATH}/plots/stft/{fig_name}-spectrogram-small.tex"
+    save_path = f"./plots/stft/{fig_name}-spectrogram-small.tex"
     tikz_path = "gfx/tikz"
 
     tikz.save(
@@ -366,14 +368,13 @@ def plot_spectrogram(
     )
 
     axes.set_title("")
-    # axes.set_axis_off()
+    axes.set_axis_off()
     cb.remove()  # remove colorbar
     plt.savefig(
-        f"{BASE_PATH}/plots/stft/gfx/tikz/{fig_name}-spectrogram-small-000.png",
+        f"./plots/stft/gfx/tikz/{fig_name}-spectrogram-small-000.png",
         bbox_inches="tight",
         pad_inches=0,
     )
-    # TODO: introduce parameter vmin, vmax, plot_show
 
 
 def plot_scalogram(
@@ -434,7 +435,7 @@ def plot_scalogram(
     axs.set_xlabel("Zeit (sek)")
     axs.set_ylabel("Frequenz (kHz)")
     cb = fig.colorbar(im, ax=axs, label="dB")
-    axs.set_yscale("asinh")
+    # axs.set_yscale("asinh")
 
     print(f"saving {fig_name}-scalogram.tex")
     Path("plots/cwt/gfx/tikz").mkdir(parents=True, exist_ok=True)
@@ -450,7 +451,7 @@ def plot_scalogram(
 
     # workaround for smaller images
     axs.set_title("")
-    # axs.set_axis_off()
+    axs.set_axis_off()
     cb.remove()  # remove colorbar
     plt.savefig(
         f"{BASE_PATH}/plots/cwt/gfx/tikz/{fig_name}-scalogram-000.png",

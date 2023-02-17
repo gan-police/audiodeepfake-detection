@@ -23,7 +23,7 @@ import src.plot_util as plot_util
 
 if __name__ == "__main__":
     wav_label = "LJ008-0217"
-    data_base_dir = f"{BASE_PATH}/tests/data"
+    data_base_dir = "./tests/data"
     audios = [
         f"real/{wav_label}.wav",
         f"ljspeech_melgan/{wav_label}_gen.wav",
@@ -59,18 +59,18 @@ if __name__ == "__main__":
     # 512, [0,100000], asinh, bandwith = 1.0, center_freq = 0.87, cmor [10,-80]
     # 512, [0,100000], asinh, bandwith = 0.001, center_freq = 0.87, cmor [25,-60], 1-2500 Hz, hot
 
-    # 1024 [39500, 49500], bandwith = 0.0001, center_freq = 0.87 for tikz and tex, comp. with stft [-20,-80]dB turbo
+    # 512 [39500, 49500], bandwith = 0.0001, center_freq = 0.87 for tikz and tex, comp. with stft [-20,-80]dB turbo
 
-    from_frame = 60000
-    to_frame = 70000  # -1 for last
+    from_frame = 39500
+    to_frame = 49500  # -1 for last
 
-    center_freq = 2.87
-    bandwith = 0.2
+    center_freq = 0.87
+    bandwith = 0.0001
     wavelet = f"shan{bandwith}-{center_freq}"
 
     # The highest frequency that will not be aliased is equal to half the sampling frequency, f/2
     nyquist_freq = plot_util.SAMPLE_RATE / 2.0  # maximum frequency that can be analyzed
-    resolution = 1024
+    resolution = 512
     freqs = (
         np.linspace(nyquist_freq, 1, resolution) / plot_util.SAMPLE_RATE
     )  # equally spaced normalized frequencies to be analyzed
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     # also helpful, because then y axis ist linear
 
     print("Plotting Scalogram of LJ008 0217.wav")
-    for i in range(2):
+    for i in range(len(fig_names)):
         path = f"{data_base_dir}/{audios[i]}"
         scal = plot_util.compute_cwt(path, wavelet, scales, from_frame, to_frame)
         plot_util.plot_scalogram(
