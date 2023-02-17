@@ -59,11 +59,14 @@ def main() -> None:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    wavelet_name = args.wavelet
+    wavelet = get_diff_wavelet(wavelet_name)
+    if args.stft:
+        wavelet_name = "stft"
     plot_path = args.plot_path
     num_workers = args.num_workers
     gans = args.gans
     seeds = args.seeds
-    wavelet = get_diff_wavelet(args.wavelet)
     sample_rate = args.sample_rate
     window_size = args.window_size
     model_name = args.model
@@ -74,7 +77,6 @@ def main() -> None:
     f_min = args.f_min
     f_max = args.f_max
     num_of_scales = args.num_of_scales
-    cut = args.cut
     data_prefix = args.data_prefix
 
     Path(f"{plot_path}/gfx/tikz").mkdir(parents=True, exist_ok=True)
@@ -111,17 +113,19 @@ def main() -> None:
             num_workers=num_workers,
         )
 
-        postfix = (
-            f"{gan}_{sample_rate}_{model_name}_{adapt_wav}_{target}_x{times*batch_size}"
-        )
+        postfix = f"{gan}_{wavelet_name}_{window_size}_{num_of_scales}_{int(f_min)}"
+        postfix += f"_{int(f_max)}_{sample_rate}_{model_name}_{adapt_wav}"
+        postfix += f"_{target}_x{times*batch_size}"
 
         for seed in seeds:
             index = 0
             print(f"seed: {seed}")
             torch.manual_seed(seed)
 
-            model_path = f"./log/fake_{args.wavelet}_{sample_rate}_{window_size}"
-            model_path += f"_{num_of_scales}_{f_min}-{f_max}_0.7_{gan}_0.0001_128"
+            model_path = f"./log/fake_{wavelet_name}_{sample_rate}_{window_size}"
+            model_path += (
+                f"_{num_of_scales}_{int(f_min)}-{int(f_max)}_0.7_{gan}_0.0001_128"
+            )
             model_path += f"_{nclasses}_10e_{model_name}_{adapt_wav}_{seed}.pt"
             print(model_path)
             model = get_model(
@@ -135,7 +139,6 @@ def main() -> None:
                 num_of_scales,
                 raw_input=False,
                 flattend_size=flattend_size,
-                cut=cut,
             )
             old_state_dict = torch.load(model_path, map_location=device)
             model.load_state_dict(old_state_dict)
@@ -162,7 +165,7 @@ def main() -> None:
                         break
                     continue
 
-                audio_cwt = model.cwt(audio)  # type: ignore
+                audio_cwt = model.transform(audio)  # type: ignore
 
                 attributions_ig = integrated_gradients.attribute(
                     audio_cwt,
@@ -405,9 +408,9 @@ def _parse_args():
         help="If differentiable wavelets shall be used.",
     )
     parser.add_argument(
-        "--cut",
+        "--stft",
         action="store_true",
-        help="Cut sides of audios at input into cnn.",
+        help="If differentiable wavelets shall be used.",
     )
     parser.add_argument(
         "--num-workers",

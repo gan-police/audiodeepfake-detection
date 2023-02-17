@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from .wavelet_math import CWTLayer
+from .wavelet_math import CWTLayer, STFTLayer
 
 
 def compute_parameter_total(net: torch.nn.Module) -> int:
@@ -40,7 +40,7 @@ class LearnDeepTestNet(nn.Module):
         sample_rate: int = 8000,
         batch_size: int = 256,
         flattend_size: int = 21888,
-        cut: bool = False,
+        stft: bool = False,
         raw_input: Optional[bool] = True,
     ) -> None:
         """Define network sturcture."""
@@ -50,8 +50,14 @@ class LearnDeepTestNet(nn.Module):
 
         self.flattend_size = flattend_size
         self.raw_input = raw_input
-        self.cut = cut
-        self.cwt = CWTLayer(wavelet=wavelet, freqs=freqs, batch_size=batch_size)
+        if stft:
+            self.transform = STFTLayer(  # type: ignore
+                n_fft=num_of_scales * 2 - 1, hop_length=1, log_offset=1e-6
+            )
+        else:
+            self.transform = CWTLayer(  # type: ignore
+                wavelet=wavelet, freqs=freqs, batch_size=batch_size, log_offset=1e-6
+            )
 
         self.cnn = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, stride=2),
@@ -93,9 +99,7 @@ class LearnDeepTestNet(nn.Module):
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
         if self.raw_input:
-            x = self.cwt(x)
-            if self.cut:
-                x = x[:, :, :, x.shape[-1] // 10 : -x.shape[-1] // 10]
+            x = self.transform(x)
         x = self.cnn(x)
         x = self.fc(x)
         return x
@@ -121,6 +125,7 @@ class LearnNet(nn.Module):
         sample_rate: int = 8000,
         batch_size: int = 256,
         flattend_size: int = 39168,
+        stft: bool = False,
         raw_input: Optional[bool] = True,
     ) -> None:
         """Define network sturcture."""
@@ -129,7 +134,13 @@ class LearnNet(nn.Module):
         freqs = torch.linspace(f_max, f_min, num_of_scales, device=device) / sample_rate
         self.flattend_size = flattend_size
         self.raw_input = raw_input
-        self.cwt = CWTLayer(wavelet=wavelet, freqs=freqs, batch_size=batch_size)
+
+        if stft:
+            self.transform = STFTLayer(n_fft=num_of_scales * 2 - 1, hop_length=1)  # type: ignore
+        else:
+            self.transform = CWTLayer(  # type: ignore
+                wavelet=wavelet, freqs=freqs, batch_size=batch_size
+            )
 
         self.cnn = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, stride=2),
@@ -162,7 +173,7 @@ class LearnNet(nn.Module):
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
         if self.raw_input:
-            x = self.cwt(x)
+            x = self.transform(x)
         x = self.cnn(x)
         x = self.fc(x)
         return x
@@ -178,14 +189,15 @@ class OneDNet(nn.Module):
     def __init__(
         self,
         wavelet,
-        classes=2,
-        f_min=2000,
-        f_max=4000,
-        num_of_scales=224,
-        sample_rate=22050,
-        batch_size=256,
-        stride=2,
-        flattend_size=5440,
+        classes: int = 2,
+        f_min: float = 1000,
+        f_max: float = 9500,
+        num_of_scales: int = 150,
+        sample_rate: int = 22050,
+        batch_size: int = 128,
+        stride: int = 2,
+        flattend_size: int = 5440,
+        stft: bool = False,
         raw_input: Optional[bool] = True,
     ) -> None:
         """Define network structure."""
@@ -195,7 +207,13 @@ class OneDNet(nn.Module):
         print(freqs * sample_rate)
         self.flattend_size = flattend_size
         self.raw_input = raw_input
-        self.cwt = CWTLayer(wavelet=wavelet, freqs=freqs, batch_size=batch_size)
+
+        if stft:
+            self.transform = STFTLayer(n_fft=num_of_scales * 2 - 1, hop_length=1)  # type: ignore
+        else:
+            self.transform = CWTLayer(  # type: ignore
+                wavelet=wavelet, freqs=freqs, batch_size=batch_size
+            )
 
         self.cnn = nn.Sequential(
             nn.Conv1d(num_of_scales, 32, kernel_size=53, stride=stride),
@@ -226,7 +244,7 @@ class OneDNet(nn.Module):
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
         if self.raw_input:
-            x = self.cwt(x)
+            x = self.transform(x)
         x = x.squeeze(1)
         x = self.cnn(x)
         x = self.fc(x)

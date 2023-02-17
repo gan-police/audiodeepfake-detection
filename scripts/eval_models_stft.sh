@@ -2,8 +2,8 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=eval
-#SBATCH --output=/home/s6kogase/code/out/eval_%j.out
-#SBATCH --error=/home/s6kogase/code/out/eval_%j.err
+#SBATCH --output=/home/s6kogase/wavelet-audiodeepfake-detection_code/out/eval_%j.out
+#SBATCH --error=/home/s6kogase/wavelet-audiodeepfake-detection_code/out/eval_%j.err
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=A40medium
@@ -19,9 +19,12 @@ python -m src.eval_models \
     --plot-path "./plots/eval/" \
     --model "learndeepnet"  \
     --wavelet "cmor3.3-4.17" \
+    --f-min 1 \
+    --f-max 11025 \
     --num-of-scales 150 \
     --sample-rate 22050 \
     --flattend-size 21888 \
+    --stft \
     --train-gans "melgan" "lmelgan" "mbmelgan" "fbmelgan" "hifigan" "waveglow" "pwg" "all" \
     --crosseval-gans "melgan" "lmelgan" "mbmelgan" "fbmelgan" "hifigan" "waveglow" "pwg" "all"
 

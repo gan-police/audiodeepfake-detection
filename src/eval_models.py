@@ -20,6 +20,7 @@ def plot_roc(
     tpr: np.ndarray,
     training_dataset_name: str,
     fake_dataset_name: str,
+    model_path: str,
     path: str,
     lw: int = 2,
 ):
@@ -38,7 +39,8 @@ def plot_roc(
     ax.legend(loc="lower right")
 
     fig.tight_layout()
-    fig.savefig(f"{path}/{training_dataset_name}_on_{fake_dataset_name}.pdf")
+    pt = model_path.split(".pt")[0].split("/")[-1]
+    fig.savefig(f"{path}/{pt}_on_{fake_dataset_name}.pdf")
     plt.close(fig)
 
 
@@ -114,12 +116,15 @@ def main() -> None:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    wavelet_name = args.wavelet
+    wavelet = get_diff_wavelet(wavelet_name)
+    if args.stft:
+        wavelet_name = "stft"
     plot_path = args.plot_path
     num_workers = args.num_workers
     gans = args.train_gans
     c_gans = args.crosseval_gans
     seeds = args.seeds
-    wavelet = get_diff_wavelet(args.wavelet)
     sample_rate = args.sample_rate
     window_size = args.window_size
     model_name = args.model
@@ -130,7 +135,6 @@ def main() -> None:
     f_min = args.f_min
     f_max = args.f_max
     num_of_scales = args.num_of_scales
-    cut = args.cut
     data_prefix = args.data_prefix
 
     Path(plot_path).mkdir(parents=True, exist_ok=True)
@@ -164,8 +168,10 @@ def main() -> None:
                 print(f"seed: {seed}")
 
                 torch.manual_seed(seed)
-                model_path = f"./log/fake_{args.wavelet}_{sample_rate}_{window_size}_"
-                model_path += f"{num_of_scales}_{f_min}-{f_max}_0.7_{gan}_0.0001_"
+                model_path = f"./log/fake_{wavelet_name}_{sample_rate}_{window_size}_"
+                model_path += (
+                    f"{num_of_scales}_{int(f_min)}-{int(f_max)}_0.7_{gan}_0.0001_"
+                )
                 model_path += (
                     f"{batch_size}_{nclasses}_10e_{model_name}_{adapt_wav}_{seed}.pt"
                 )
@@ -181,7 +187,6 @@ def main() -> None:
                     sample_rate=sample_rate,
                     num_of_scales=num_of_scales,
                     flattend_size=flattend_size,
-                    cut=cut,
                 )
                 old_state_dict = torch.load(model_path)
                 model.load_state_dict(old_state_dict)
@@ -194,7 +199,7 @@ def main() -> None:
                     make_binary_labels=True,
                 )
 
-                plot_roc(fpr, tpr, gan, c_gan, plot_path)
+                plot_roc(fpr, tpr, gan, c_gan, model_path, plot_path)
 
                 res_acc.append(acc)
                 res_eer.append(eer.item())
@@ -235,7 +240,7 @@ def main() -> None:
     pickle.dump(
         gan_acc_dict,
         open(
-            f"log/results/results_all_{args.wavelet}_{model_name}_{cut}_{sample_rate}_{time_now}.pkl",
+            f"log/results/results_all_{args.wavelet}_{model_name}_{sample_rate}_{time_now}.pkl",
             "wb",
         ),
     )
@@ -361,9 +366,9 @@ def _parse_args():
         help="If differentiable wavelets shall be used.",
     )
     parser.add_argument(
-        "--cut",
+        "--stft",
         action="store_true",
-        help="Cut sides of audios at input into cnn.",
+        help="If stft be used instead of cwt.",
     )
     parser.add_argument(
         "--num-workers",

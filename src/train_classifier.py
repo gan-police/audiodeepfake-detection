@@ -127,9 +127,9 @@ def _parse_args():
         help="calculate normalization for debugging purposes.",
     )
     parser.add_argument(
-        "--cut",
+        "--stft",
         action="store_true",
-        help="Cut sides of audios at input into cnn.",
+        help="Use stft instead of cwt in transformation.",
     )
     parser.add_argument(
         "--num-workers",
@@ -190,7 +190,7 @@ def get_model(
     sample_rate: int = 22050,
     num_of_scales: int = 150,
     flattend_size: int = 21888,
-    cut: bool = False,
+    stft: bool = False,
     raw_input: Optional[bool] = True,
 ) -> LearnDeepTestNet | OneDNet | LearnNet:
     """Get torch module model with given parameters."""
@@ -205,7 +205,7 @@ def get_model(
             batch_size=batch_size,
             raw_input=raw_input,
             flattend_size=flattend_size,
-            cut=cut,
+            stft=stft,
         )  # type: ignore
     elif model_name == "learnnet":
         model = LearnNet(
@@ -218,6 +218,7 @@ def get_model(
             batch_size=batch_size,
             raw_input=raw_input,
             flattend_size=flattend_size,
+            stft=stft,
         )  # type: ignore
     elif model_name == "onednet":
         model = OneDNet(
@@ -230,6 +231,7 @@ def get_model(
             batch_size=batch_size,
             raw_input=raw_input,
             flattend_size=flattend_size,
+            stft=stft,
         )  # type: ignore
     return model
 
@@ -333,12 +335,13 @@ def main():
         print("Warning: maximum analyzed frequency is above nyquist rate.")
 
     path_name = args.data_prefix.split("/")[-1].split("_")
-    model_file = (
-        "./log/"
-        + path_name[0]
-        + "_"
-        + str(args.wavelet)
-        + "_"
+    model_file = "./log/" + path_name[0] + "_"
+    if not args.stft:
+        model_file += "_" + str(args.wavelet)
+    else:
+        model_file += "_stft"
+    model_file += (
+        "_"
         + str(args.sample_rate)
         + "_"
         + str(args.num_of_scales)
@@ -362,8 +365,6 @@ def main():
         + str(args.model)
         + "_"
         + str(args.adapt_wavelet)
-        + "_"
-        + str(args.cut)
         + "_"
         + str(args.seed)
     )
@@ -392,16 +393,16 @@ def main():
     step_total = 0
 
     model = get_model(
-        wavelet,
-        args.model,
-        args.nclasses,
-        args.batch_size,
-        args.f_min,
-        args.f_max,
-        args.sample_rate,
-        args.num_of_scales,
-        args.flattend_size,
-        args.cut,
+        wavelet=wavelet,
+        model_name=args.model,
+        nclasses=args.nclasses,
+        batch_size=args.batch_size,
+        f_min=args.f_min,
+        f_max=args.f_max,
+        sample_rate=args.sample_rate,
+        num_of_scales=args.num_of_scales,
+        flattend_size=args.flattend_size,
+        stft=args.stft,
     )
     model.to(device)
 
@@ -454,25 +455,25 @@ def main():
             acc = torch.sum(ok_mask.type(torch.float32)) / len(batch_labels)
 
             if it % 10 == 0:
-                print(
-                    "e",
-                    e,
-                    "it",
-                    it,
-                    "total",
-                    step_total,
-                    "loss",
-                    loss.item(),
-                    "acc",
-                    acc.item(),
-                    "bandwidth",
-                    round(
-                        model.state_dict()["cwt.wavelet.bandwidth_par"].item() ** 2, 5
-                    ),
-                    "center freq",
-                    round(model.state_dict()["cwt.wavelet.center_par"].item() ** 2, 5),
-                    flush=True,
-                )
+                prt_str = f"e {e} it {it} total {step_total} loss {loss.item()} acc {acc.item()}"
+                if not args.stft:
+                    prt_str += " bandwidth "
+                    prt_str += str(
+                        round(
+                            model.state_dict()["transform.wavelet.bandwidth_par"].item()
+                            ** 2,
+                            5,
+                        )
+                    )
+                    prt_str += " center freq "
+                    prt_str += str(
+                        round(
+                            model.state_dict()["transform.wavelet.center_par"].item()
+                            ** 2,
+                            5,
+                        )
+                    )
+                print(prt_str, flush=True)
                 torch.cuda.empty_cache()
             loss.backward()
             optimizer.step()

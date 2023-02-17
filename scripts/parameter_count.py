@@ -11,14 +11,19 @@ def main() -> None:
     wavelet = get_diff_wavelet("cmor4.6-0.87")
 
     models = ["learndeepnet", "onednet", "learnnet"]
-    sample_rate = 16000
+    sample_rate = 22050
     window_size = 11025
+    num_of_scales = 150
 
     f_sizes = [21888, 5440, 39168]
     totals = []
     for i in range(len(models)):
         model = get_model(
-            wavelet, models[i], sample_rate=sample_rate, flattend_size=f_sizes[i]
+            wavelet,
+            models[i],
+            sample_rate=sample_rate,
+            flattend_size=f_sizes[i],
+            num_of_scales=num_of_scales,
         )
 
         totals.append(compute_parameter_total(model))
