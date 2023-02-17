@@ -7,7 +7,7 @@ This is the supplementary source code for my bachelor thesis [Erkennung von Audi
 The plot above shows the scalograms (scale-time representation) of a real audio file (left) and the melgan generated
 counterpart (right). In my thesis I compare the performance of cnn based classifiers for audio deepfake detection with the work of [Frank and Schönherr](https://github.com/RUB-SysSec/WaveFake).
 
-## Installation
+## Installation 
 
 The latest code can be installed in development mode in a running installation of python 3.10 with:
 
