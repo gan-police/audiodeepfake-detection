@@ -2,8 +2,8 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=avg_energy
-#SBATCH --output=/home/s6kogase/code/out/avg_energy_%j.out
-#SBATCH --error=/home/s6kogase/code/out/avg_energy_%j.err
+#SBATCH --output=/home/s6kogase/code/wavelet-audiodeepfake-detection_code/avg_energy_%j.out
+#SBATCH --error=/home/s6kogase/code/wavelet-audiodeepfake-detection_code/avg_energy_%j.err
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=A40short

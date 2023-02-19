@@ -23,9 +23,9 @@ if DEBUG:
     # Set python path automatically to base directory
     sys.path.append(BASE_PATH)
 
-import src.plot_util as plot_util
+import src.plot_util as util
 
-N_FFT = 600
+N_FFT = 300
 RES = N_FFT // 2
 
 # Latex font
@@ -37,9 +37,9 @@ matplotlib.rcParams["font.family"] = "STIXGeneral"
 def _compute_average_frequency_for_directory(
     directory: str, early_exit=None, compute_stats=True
 ) -> torch.Tensor:
-    dataset = dataset = plot_util.AudioDataset(
+    dataset = dataset = util.AudioDataset(
         directory,
-        sample_rate=plot_util.SAMPLE_RATE,
+        sample_rate=util.SAMPLE_RATE,
     )
     """Compute average frequency energy in dB over different frequencies."""
     average_per_file = []
@@ -48,7 +48,7 @@ def _compute_average_frequency_for_directory(
         pitches = []
         pitches_std = []
 
-    spec_transform = Spectrogram(n_fft=N_FFT)
+    spec_transform = Spectrogram(n_fft=N_FFT, hop_length=1)
 
     for i, (clip, fs) in enumerate(dataset):
         specgram = spec_transform(clip).squeeze(0)
@@ -58,7 +58,7 @@ def _compute_average_frequency_for_directory(
         average_per_file.append(avg_db)
 
         if i % 10 == 0:
-            print(f"\rProcessed {i:06} files!", end="")
+            print(f"\rProcessed {i:06} files!", end="", flush=True)
 
         if i == early_exit:
             break
@@ -85,19 +85,7 @@ def _compute_average_frequency_for_directory(
     average_per_file = torch.stack(average_per_file)
     average_per_file = torch.mean(average_per_file, dim=0)
 
-    if compute_stats:
-        pitches = torch.stack(pitches)
-        pitches_std = torch.stack(pitches_std)
-        spectral_centroids = torch.stack(spectral_centroids)
-
-        average_centroids = torch.mean(spectral_centroids)
-        average_pitch = torch.mean(pitches)
-        std_pitch = torch.mean(pitches_std)
-
-        return average_per_file, average_centroids, average_pitch, std_pitch
-
-    else:
-        return average_per_file, None, None, None
+    return average_per_file
 
 
 def _apply_ax_styling(
@@ -113,9 +101,7 @@ def _apply_ax_styling(
     ax.set_ylim(y_min, y_max)
 
     # convert fftbins to freq.
-    freqs = np.fft.fftfreq((num_freqs - 1) * 2, 1 / plot_util.SAMPLE_RATE)[
-        : num_freqs - 1
-    ]
+    freqs = np.fft.fftfreq((num_freqs - 1) * 2, 1 / util.SAMPLE_RATE)[: num_freqs - 1]
 
     ticks = np.linspace(0, RES, 11)
     # ticks = ax.get_xticks()[1:]
@@ -200,34 +186,38 @@ if __name__ == "__main__":
     reference_data = None
     reference_name = None
     stats = False
-    Path(f"{BASE_PATH}/plots/energy/stft").mkdir(parents=True, exist_ok=True)
+    Path("./plots/energy/cwt").mkdir(parents=True, exist_ok=True)
 
-    amount = 13000
-
-    data_base_dir = f"{BASE_PATH}/tests/data"
-    paths = [
-        "real/",
-        "ljspeech_melgan/",
-    ]
+    amount = 13100
 
     # Important: Put corresponding data directories here!
-    data_base_dir = "/home/kons/uni/bachelor_thesis/git/data/"
-    paths = ["LJSpeech-1.1/wavs/", "generated_audio/ljspeech_melgan/"]
+    paths = [
+        "../data/real/A_ljspeech/",
+        "../data/fake/B_melgan/",
+        "../data/fake/C_hifigan/",
+        "../data/fake/D_mbmelgan/",
+        "../data/fake/E_fbmelgan/",
+        "../data/fake/F_waveglow/",
+        "../data/fake/G_pwg/",
+        "../data/fake/H_lmelgan/",
+    ]
 
-    fig_names = ["Original", "MelGAN"]
+    fig_names = [
+        "Original",
+        "MelGAN",
+        "HiFi-GAN",
+        "Multi-Band-MelGAN",
+        "Full-Band-MelGAN",
+        "Waveglow",
+        "Parallel-Wavegan",
+        "Large-MelGAN",
+    ]
 
     for i in range(len(paths)):
         print("\n======================================")
-        print(f"Processing {paths[i]}!")
+        print(f"Processing {paths[i]}!", flush=True)
         print("======================================")
-        (
-            average_freq,
-            _average_centroid,
-            _average_pitch,
-            _std_pitch,
-        ) = _compute_average_frequency_for_directory(
-            f"{data_base_dir}/{paths[i]}", amount, compute_stats=stats
-        )
+        average_freq = _compute_average_frequency_for_directory(paths[i], amount)
 
         if reference_data is None:
             reference_data = average_freq

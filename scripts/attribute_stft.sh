@@ -2,8 +2,8 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=eval
-#SBATCH --output=/home/s6kogase/code/out/ig_%j.out
-#SBATCH --error=/home/s6kogase/code/out/ig_%j.err
+#SBATCH --output=/home/s6kogase/wavelet-audiodeepfake-detection_code/out/ig_%j.out
+#SBATCH --error=/home/s6kogase/wavelet-audiodeepfake-detection_code/out/ig_%j.err
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=A40medium

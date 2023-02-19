@@ -6,10 +6,10 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --time=8:00:00
 #SBATCH --partition=A40short
-#SBATCH --nodelist=node-01
+#SBATCH -x node-02
 #SBATCH --array=0-4
-#SBATCH --output=/home/s6kogase/wavelet-audiodeepfake-detection_code/out/train_learndeepnet_stft_melgan_%A_%a.out
-#SBATCH --error=/home/s6kogase/wavelet-audiodeepfake-detection_code/out/train_learndeepnet_stft_melgan_%A_%a.err
+#SBATCH --output=/home/s6kogase/wavelet-audiodeepfake-detection_code/out/train_learndeepnet_stft_all_%A_%a.out
+#SBATCH --error=/home/s6kogase/wavelet-audiodeepfake-detection_code/out/train_learndeepnet_stft_all_%A_%a.err
 
 source ${HOME}/.bashrc
 

@@ -213,10 +213,10 @@ def main() -> None:
             )
         res.append(
             {
-                "mean_ig": mean_ig,
-                "mean_sal": mean_sal,
-                "mean_ig_max": mean_ig_max,
-                "mean_ig_min": mean_ig_min,
+                "attr_ig": attr_ig,
+                "attr_sal": attr_sal,
+                "ig_max": ig_max,
+                "ig_min": ig_min,
                 "mean_ig_abs": ig_abs,
             }
         )
@@ -240,7 +240,7 @@ def main() -> None:
             vmin=np.min(attr_sal).item(),
         )
 
-        n_bins = mean_ig_max.shape[0]
+        n_bins = ig_max.shape[0]
         bar_plot(ig_max, f_min, f_max, n_bins, f"{plot_path}/attr_max_{postfix}")
         bar_plot(ig_max, f_min, f_max, n_bins, f"{plot_path}/attr_min_{postfix}")
         bar_plot(ig_abs, f_min, f_max, n_bins, f"{plot_path}/attr_abs_{postfix}")

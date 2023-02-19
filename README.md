@@ -1,6 +1,6 @@
 # Erkennung von Audiodeepfakes mithilfe von kontinuierlichen Wavelet-Transformationen
 
-This is the supplementary source code for my bachelor thesis [Erkennung von Audiodeepfakes mithilfe von kontinuierlichen Wavelet-Transformationen](https://github.com/gan-police/wavelet-audiodeepfake-detection_thesis).
+This is the supplementary source code for my bachelor thesis "[Erkennung von Audiodeepfakes mithilfe von kontinuierlichen Wavelet-Transformationen](https://github.com/gan-police/wavelet-audiodeepfake-detection_thesis)".
 
 ![cwt scalogram](./img/cwt_visualization.png)
 
@@ -28,12 +28,12 @@ pip install -r requirements.txt
 For continuous wavelet computations, I use the:
 - [PyTorch-Wavelet-Toolbox: ptwt](https://github.com/v0lta/PyTorch-Wavelet-Toolbox)
 
-In my thesis, I compare my approach to the DCT-LFCC/MFCC-method from:
+We compare our approach to the DCT-LFCC/MFCC-method from:
 - [WaveFake: A Data Set to Facilitate Audio DeepFake Detection](https://github.com/RUB-SysSec/WaveFake)
 
 ### Datasets
 
-I utilize two datasets that appeared in previous work:
+We utilize two datasets that appeared in previous work:
 
 - [LJSpeech 1.1](https://keithito.com/LJ-Speech-Dataset/)
 - [WaveFake](https://github.com/RUB-SysSec/WaveFake)
@@ -44,7 +44,7 @@ The following section of the README serves as a guide to reproducing the experim
 
 ### Preparation
 
-As the WaveFake dataset contains gan generated audios equivalent to the audios of LJSpeech, no further preparation needs to be done to get all audios that are needed. I work with mono-channeled audios of different sizes. Hence, the raw audio needs to be cut into equally sized frames of desired size. I mainly used frames of 0.5s and 0.25s. The sample rate can be varied as well.
+As the WaveFake dataset contains gan generated audios equivalent to the audios of LJSpeech, no further preparation needs to be done to get all audios that are needed. We work with mono-channeled audios of different sizes. Hence, the raw audio needs to be cut into equally sized frames of desired size. We mainly used frames of 0.5s and 0.25s. The sample rate can be varied as well.
 
 To do this store all images (original and GAN-generated) in separate subdirectories of one or two directories (depends if you split real and fake), i.e. the directory structure should look like this
 
@@ -163,16 +163,16 @@ This plots the saliency, the integrated gradients and the mean over all time of 
 
 
 ## Issues
-As I use a port of the Adam optimizer of the python module pytorch, I recommend to use torch 1.13.0, torchaudio 0.13.0 and cuda 11.
+As we use a port of the Adam optimizer of the python module pytorch, we recommend to use torch 1.13.0, torchaudio 0.13.0 and cuda 11.
 
 ## Citation
 This work is in the public domain. Feel free to use my material, but please cite it properly.
 ```
-@misc{GasenzerKonstantin2023cwtaudiofreqdec,
+@misc{Gasenzer2023cwtaudiofreqdec,
   publisher = {Rheinische Friedrich-Wilhelms Universität Bonn.},
        year = {2023},
       title = {Erkennung von Audiodeepfakes mithilfe von kontinuierlichen Wavelet-Transformationen},
     address = {Bonn},
-     author = {Gasenzer, Konstantin},
+     author = {Gasenzer, Konstantin and Wolter, Moritz},
 }
 ```
