@@ -240,7 +240,7 @@ def main() -> None:
     pickle.dump(
         gan_acc_dict,
         open(
-            f"log/results/results_all_{args.wavelet}_{model_name}_{sample_rate}_{time_now}.pkl",
+            f"log/results/results_all_{wavelet_name}_{model_name}_{sample_rate}_{time_now}.pkl",
             "wb",
         ),
     )

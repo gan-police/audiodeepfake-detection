@@ -8,7 +8,7 @@
 #SBATCH --time=02:00:00
 #SBATCH --partition=A40short
 #SBATCH --array=0-6
-#SBATCH --nodelist=node-01
+#SBATCH -x node-02
 
 # Prepare all files of all GAN architectures in combination with the real audio
 # dataset. The resulting files are resampled but not transformed yet to make
@@ -20,7 +20,7 @@ echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
 echo "Preparing single binary classification dataset."
 conda activate py310
 
-datasets=("B_melgan" "C_hifigan"  "D_mbmelgan"  "E_fbmelgan"  "F_waveglow" "G_pwg" "H_lmelgan")
+datasets=("C_hifigan"  "D_mbmelgan"  "E_fbmelgan"  "F_waveglow" "G_pwg" "H_lmelgan")
 
 python -m src.prepare_datasets \
     --train-size 0.7 \

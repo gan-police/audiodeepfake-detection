@@ -337,9 +337,9 @@ def main():
     path_name = args.data_prefix.split("/")[-1].split("_")
     model_file = "./log/" + path_name[0] + "_"
     if not args.stft:
-        model_file += "_" + str(args.wavelet)
+        model_file += str(args.wavelet)
     else:
-        model_file += "_stft"
+        model_file += "stft"
     model_file += (
         "_"
         + str(args.sample_rate)
