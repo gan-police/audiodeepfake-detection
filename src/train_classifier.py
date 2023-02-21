@@ -66,6 +66,12 @@ def _parse_args():
         help="Sample rate of audio. (default: 22050)",
     )
     parser.add_argument(
+        "--window-size",
+        type=int,
+        default=11025,
+        help="Sample rate of audio. (default: 11025)",
+    )
+    parser.add_argument(
         "--f-min",
         type=float,
         default=1000,
@@ -343,6 +349,8 @@ def main():
     model_file += (
         "_"
         + str(args.sample_rate)
+        + "_"
+        + str(args.window_size)
         + "_"
         + str(args.num_of_scales)
         + "_"

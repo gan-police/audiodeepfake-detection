@@ -199,7 +199,7 @@ def main() -> None:
         attr_sal = mean_sal.cpu().detach().numpy()
         ig_max = mean_ig_max.cpu().detach().numpy()
         ig_min = mean_ig_min.cpu().detach().numpy()
-        ig_abs = np.abs(ig_max - np.abs(ig_min))
+        ig_abs = np.abs(ig_max + np.abs(ig_min))
 
         # save results
         stats_file = plot_path + "/" + postfix + ".pkl"

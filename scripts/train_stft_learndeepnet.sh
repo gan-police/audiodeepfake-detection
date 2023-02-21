@@ -29,9 +29,9 @@ python -m src.train_classifier \
     --model "learndeepnet"  \
     --f-min 1 \
     --f-max 11025 \
-    --num-of-scales 257 \
+    --num-of-scales 150 \
     --sample-rate 22050 \
-    --flattend-size 65664 \
+    --flattend-size 21888 \
     --stft \
     --num-workers 2
 

@@ -328,6 +328,9 @@ def split_dataset_random(
         max_len (int): Maximum number of samples taken from each sub-datset (real or fake).
                        Can be used to make all datasets the same size. Default: None.
 
+    Raises:
+        ValueError: If file list is empty (e.g. due to a dir that is not existing).
+
     Returns:
         tuple[np.ndarray, np.ndarray, np.ndarray]: Tuple of training, validation and test arrays
                                                    with file paths at index 0 and window count at
@@ -391,6 +394,8 @@ def split_dataset_random(
 
     for folder in folder_list:
         file_list = list(folder.glob("./*.wav"))
+        if len(file_list) == 0:
+            raise ValueError("File list does not contain any files.")
         last_ind = 0
         if folder_num + 1 == 2 or get_label_of_folder(folder, True) == 0:
             # if folder holds real data or only one gan is taken into account
