@@ -187,6 +187,7 @@ def main() -> None:
                     sample_rate=sample_rate,
                     num_of_scales=num_of_scales,
                     flattend_size=flattend_size,
+                    stft=args.stft,
                 )
                 old_state_dict = torch.load(model_path)
                 model.load_state_dict(old_state_dict)

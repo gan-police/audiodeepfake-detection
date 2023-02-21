@@ -23,16 +23,16 @@ python -m src.train_classifier \
     --weight-decay 0.0001   \
     --epochs 10 \
     --validation-interval 300    \
-    --data-prefix "${HOME}/data/fake_cmor4.6-0.87_22050_8000_11025_224_80-4000_1_0.7_$1" \
+    --data-prefix "${HOME}/data/fake_22050_11025_0.7_$1" \
     --nclasses 2 \
     --seed $SLURM_ARRAY_TASK_ID \
     --model "learndeepnet"  \
-    --wavelet $2 \
     --f-min 1 \
     --f-max 11025 \
-    --num-of-scales 257 \
+    --num-of-scales 150 \
     --sample-rate 22050 \
-    --flattend-size 65664 \
+    --flattend-size 21888 \
+    --wavelet $2 \
     --num-workers 2
 
 echo "Goodbye at $(date)."
