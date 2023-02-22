@@ -36,7 +36,7 @@ We compare our approach to the DCT-LFCC/MFCC-method from:
 We utilize two datasets that appeared in previous work:
 
 - [LJSpeech 1.1](https://keithito.com/LJ-Speech-Dataset/)
-- [WaveFake](https://github.com/RUB-SysSec/WaveFake)
+- [WaveFake](https://zenodo.org/record/5642694)
 
 ## Reproduction
 
