@@ -93,24 +93,7 @@ def get_label_of_folder(
             return 1
     else:
         # the the label based on the path, As are 0s, Bs are 1, etc.
-        if label_str == "A":
-            label = 0
-        elif label_str == "B":
-            label = 1
-        elif label_str == "C":
-            label = 2
-        elif label_str == "D":
-            label = 3
-        elif label_str == "E":
-            label = 4
-        elif label_str == "F":
-            label = 5
-        elif label_str == "G":
-            label = 6
-        elif label_str == "H":
-            label = 7
-        else:
-            raise NotImplementedError(label_str)
+        label = ord(label_str) - 65
         return label
 
 
@@ -349,7 +332,7 @@ def split_dataset_random(
             for i in range(len(file_list)):
                 leng = torchaudio.info(file_list[i]).num_frames
                 length += leng - (leng % window_size)
-                if i % 10000 == 0:
+                if i % 10000 == 0 and i > 0:
                     print(i)
             lengths.append(length)
 
@@ -479,6 +462,7 @@ def pre_process_folder(
     test_size: float = 0.2,
     window_size: int = 11_025,
     sample_rate: int = 22_050,
+    binary_classification: bool = False,
 ) -> None:
     """Preprocess a folder containing sub-directories with audios from different sources.
 
@@ -500,6 +484,7 @@ def pre_process_folder(
         test_size (float): Desired size of the test subset of all files in decimal. Default: 0.2.
         window_size (int): Size of windows the audios will be cut to. Default: 11_025.
         sample_rate (int): Desired sample rate for audios that will be used to downsample all audios.
+        binary_classification (bool): If true consider this problem as a true or fake binary problem.
 
     Raises:
         ValueError: Raised if train_size, val_size and test_size don't add up to 1 or if directories
@@ -512,8 +497,6 @@ def pre_process_folder(
 
     data_dir = Path(data_folder)
     folder_name = f"{data_dir.name}_{int(sample_rate)}_{window_size}_{train_size}"
-
-    binary_classification = True
     folder_list_all = sorted(data_dir.glob("./*"))
 
     if leave_out is not None and isinstance(leave_out, list):
@@ -571,7 +554,7 @@ def pre_process_folder(
         "test",
         window_size=window_size,
         sample_rate=sample_rate,
-        binary_classification=False,
+        binary_classification=binary_classification,
     )
     print("test set stored", flush=True)
 
@@ -656,7 +639,7 @@ def parse_args():
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=2048,
+        default=512,
         help="The batch_size used for audio conversion. (default: 2048).",
     )
     parser.add_argument(
@@ -678,7 +661,11 @@ def parse_args():
         help="Maximum number of samples taken from a dataset. Only use values below"
         " or equal to the maximum number of samples available.",
     )
-
+    parser.add_argument(
+        "--binary",
+        type=bool,
+        help="Turns the problem into a fake or real binary classification problem."
+    )
     return parser.parse_args()
 
 
@@ -698,4 +685,5 @@ if __name__ == "__main__":
         window_size=args.window_size,
         sample_rate=args.sample_rate,
         max_samples=args.max_samples,
+        binary_classification=args.binary
     )
