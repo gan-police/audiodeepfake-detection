@@ -43,7 +43,7 @@ class LearnDeepTestNet(nn.Module):
         stft: bool = False,
         raw_input: Optional[bool] = True,
     ) -> None:
-        """Define network sturcture."""
+        """Define network structure."""
         super(LearnDeepTestNet, self).__init__()
         device = "cuda" if torch.cuda.is_available() else "cpu"
         freqs = torch.linspace(f_max, f_min, num_of_scales, device=device) / sample_rate

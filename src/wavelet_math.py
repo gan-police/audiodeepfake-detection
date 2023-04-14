@@ -97,3 +97,7 @@ class STFTLayer(torch.nn.Module):
         specgram = specgram.to(torch.float32)
 
         return specgram
+
+
+class DWTLayer(torch.nn.Module):
+    pass

@@ -13,7 +13,8 @@ from tqdm import tqdm
 
 from .data_loader import LearnWavefakeDataset, WelfordEstimator
 from .models import LearnDeepTestNet, LearnNet, OneDNet, save_model
-from .optimizer import AdamCWT
+# from .optimizer import AdamCWT
+from torch.optim import Adam
 from .ptwt_continuous_transform import get_diff_wavelet
 
 
@@ -360,8 +361,6 @@ def main():
         + "_"
         + path_name[3]
         + "_"
-        + path_name[4]
-        + "_"
         + str(args.learning_rate)
         + "_"
         + str(args.batch_size)
@@ -433,7 +432,8 @@ def main():
 
     loss_fun = torch.nn.CrossEntropyLoss()
 
-    optimizer = AdamCWT(
+    #optimizer = AdamCWT(
+    optimizer = Adam(
         model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
     )
 
