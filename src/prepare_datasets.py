@@ -154,20 +154,23 @@ def load_transform_and_stack(
     window_size = int(window_size)
     for i in range(len(path_list)):
         # cut as much as set in frame_list from current audio
-        audio, sample_rate = torchaudio.load(
-            path_list[i], normalize=True, num_frames=int(old_win_size * frame_list[i])
-        )
-        # resample audio
-        audio_res = torchaudio.functional.resample(
-            audio, sample_rate, resample_rate, resampling_method="kaiser_window"
-        )
-        # cut to non-overlapping equal-sized windows
-        framed_audio = audio_res[0].unfold(0, window_size, window_size)
+        if frame_list[i] > 0:
+            audio, sample_rate = torchaudio.load(
+                path_list[i], normalize=True, num_frames=int(old_win_size * frame_list[i])
+            )
+            # resample audio
+            audio_res = torchaudio.functional.resample(
+                audio, sample_rate, resample_rate, resampling_method="kaiser_window"
+            )
+            # cut to non-overlapping equal-sized windows
+            framed_audio = audio_res[0].unfold(0, window_size, window_size)
 
-        framed_audio = framed_audio.unsqueeze(1)
-        audio_list.extend(np.array(framed_audio))
-        label = np.array(get_label(path_list[i], binary_classification))
-        label_list.extend([label] * framed_audio.shape[0])
+            framed_audio = framed_audio.unsqueeze(1)
+            audio_list.extend(np.array(framed_audio))
+            label = np.array(get_label(path_list[i], binary_classification))
+            label_list.extend([label] * framed_audio.shape[0])
+        else:
+            print(f"skipping: {path_list[i]}")
     return np.stack(audio_list), label_list
 
 
