@@ -574,22 +574,6 @@ def pre_process_folder(
     )
     print("training set stored", flush=True)
 
-    # compute training normalization.
-    # load train data and compute mean and std
-    print("computing mean and std values.", flush=True)
-
-    train_data_set = LearnWavefakeDataset(
-        f"{target_dir}_train",
-    )
-    welford = WelfordEstimator()
-    with torch.no_grad():
-        for aud_no in range(train_data_set.__len__()):
-            welford.update(train_data_set.__getitem__(aud_no)["audio"])
-        mean, std = welford.finalize()
-    print("mean", mean, "std:", std)
-    with open(f"{target_dir}_train/mean_std.pkl", "wb") as f:
-        pickle.dump([mean.cpu().numpy(), std.cpu().numpy()], f)
-
 
 def parse_args():
     """Parse command line arguments."""

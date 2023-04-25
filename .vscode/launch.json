@@ -1,0 +1,44 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    //"version": "0.2.0",
+    //"configurations": [
+    //]
+    "configurations": [
+        {
+            "name": "Python: Module",
+            "type": "python",
+            "request": "launch",
+            "module": "src.tune_imagenet_cnn",
+            "justMyCode": true
+        },
+        //{
+        //    "name": "Python: Current File",
+        //    "type": "python",
+        //    "request": "launch",
+        //    "program": "${file}",
+        //    "console": "integratedTerminal",
+        //    "justMyCode": true,
+        //    "env": {
+        //        "PYTHONPATH": "${workspaceFolder}"
+        //    }
+        //}
+        //
+        //{
+        //    "name": "Python: Module",
+        //    "type": "python",
+        //    "request": "launch",
+        //    "module": "src.prepare_datasets",
+        //    "justMyCode": true,
+        //    "args": [
+        //        "--window-size",
+        //        "44100",
+        //        "--sample-rate",
+        //        "22050",
+        //        "--directory",
+        //        "/home/wolter/uni/audiofake/data/ljspeech/"
+        //    ]
+        //},
+    ]
+}

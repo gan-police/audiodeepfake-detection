@@ -4,6 +4,8 @@ The idea is to provide functionality to make the cwt useful
 for audio analysis and gan-content recognition.
 """
 
+import pywt
+import ptwt
 import torch
 from torchaudio.transforms import Spectrogram
 
@@ -99,5 +101,18 @@ class STFTLayer(torch.nn.Module):
         return specgram
 
 
-class DWTLayer(torch.nn.Module):
-    pass
+def compute_pytorch_packet_representation(
+    pt_data: torch.Tensor, wavelet_str: str = "sym8", max_lev: int = 8
+):
+    """Create a packet image to plot."""
+    wavelet = pywt.Wavelet(wavelet_str)
+    ptwt_wp_tree = ptwt.WaveletPacket(data=pt_data, wavelet=wavelet, mode="reflect")
+
+    # get the pytorch decomposition
+    wp_keys = ptwt_wp_tree.get_level(max_lev)
+    packet_list = []
+    for node in wp_keys:
+        packet_list.append(ptwt_wp_tree[node])
+
+    wp_pt = torch.stack(packet_list, dim=-1)
+    return wp_pt
