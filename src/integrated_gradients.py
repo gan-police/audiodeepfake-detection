@@ -12,7 +12,7 @@ from captum.attr import IntegratedGradients, Saliency
 from torch.utils.data import DataLoader
 
 from .ptwt_continuous_transform import get_diff_wavelet
-from .train_classifier import create_data_loaders, get_model
+from .train_classifier import create_data_loaders, get_model, set_seed
 
 
 class Mean:
@@ -78,6 +78,8 @@ def main() -> None:
     f_max = args.f_max
     num_of_scales = args.num_of_scales
     data_prefix = args.data_prefix
+    features = args.features
+    hop_length = args.hop_length
 
     Path(f"{plot_path}/gfx/tikz").mkdir(parents=True, exist_ok=True)
 
@@ -120,9 +122,9 @@ def main() -> None:
         for seed in seeds:
             index = 0
             print(f"seed: {seed}")
-            torch.manual_seed(seed)
+            set_seed(seed)
 
-            model_path = f"./log/fake_{wavelet_name}_{sample_rate}_{window_size}"
+            model_path = f"./log/fake_{wavelet_name}_{features}_{hop_length}_{sample_rate}_{window_size}"
             model_path += (
                 f"_{num_of_scales}_{int(f_min)}-{int(f_max)}_0.7_{gan}_0.0001_128"
             )
@@ -139,6 +141,8 @@ def main() -> None:
                 num_of_scales,
                 raw_input=False,
                 flattend_size=flattend_size,
+                features=features,
+                hop_length=hop_length,
             )
             old_state_dict = torch.load(model_path, map_location=device)
             model.load_state_dict(old_state_dict)

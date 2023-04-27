@@ -10,9 +10,10 @@ import torch
 from sklearn.metrics import auc
 from torch.utils.data import DataLoader
 from torchmetrics.classification import BinaryAccuracy, MulticlassROC
+from tqdm import tqdm
 
 from .ptwt_continuous_transform import get_diff_wavelet
-from .train_classifier import create_data_loaders, get_model
+from .train_classifier import create_data_loaders, get_model, set_seed
 
 
 def plot_roc(
@@ -69,7 +70,14 @@ def classify_dataset(
         result_targets = []
         result_probs = []
         result_test = []
-        for val_batch in iter(data_loader):
+        for _it, val_batch in enumerate(
+            tqdm(
+                iter(data_loader),
+                desc="Evaluation",
+                unit="batches",
+                disable=False,
+            )
+        ):
             batch_audios = val_batch[data_loader.dataset.key].cuda(non_blocking=True)
             batch_labels = val_batch["label"].cuda(non_blocking=True)
             out = model(batch_audios)
@@ -88,7 +96,7 @@ def classify_dataset(
 
         metric = BinaryAccuracy()
         probs = torch.asarray(result_probs)
-        probs = torch.nn.functional.softmax(probs, dim=-1)
+        # probs = torch.nn.functional.softmax(probs, dim=-1)
         preds = torch.asarray(result_preds)
         targets = torch.asarray(result_targets)
         acc = metric(preds, targets)
@@ -136,6 +144,8 @@ def main() -> None:
     f_max = args.f_max
     num_of_scales = args.num_of_scales
     data_prefix = args.data_prefix
+    features = args.features
+    hop_length = args.hop_length
 
     Path(plot_path).mkdir(parents=True, exist_ok=True)
 
@@ -167,15 +177,14 @@ def main() -> None:
             for seed in seeds:
                 print(f"seed: {seed}")
 
-                torch.manual_seed(seed)
-                model_path = f"./log/fake_{wavelet_name}_{sample_rate}_{window_size}_"
+                set_seed(seed)
+                model_path = f"./log/fake_{wavelet_name}_{features}_{hop_length}_{sample_rate}_{window_size}_"
                 model_path += (
                     f"{num_of_scales}_{int(f_min)}-{int(f_max)}_0.7_{gan}_0.0001_"
                 )
                 model_path += (
                     f"{batch_size}_{nclasses}_10e_{model_name}_{adapt_wav}_{seed}.pt"
                 )
-                print(model_path)
 
                 model = get_model(
                     wavelet=wavelet,
@@ -188,6 +197,8 @@ def main() -> None:
                     num_of_scales=num_of_scales,
                     flattend_size=flattend_size,
                     stft=args.stft,
+                    features=features,
+                    hop_length=hop_length,
                 )
                 old_state_dict = torch.load(model_path)
                 model.load_state_dict(old_state_dict)
@@ -370,6 +381,20 @@ def _parse_args():
         "--stft",
         action="store_true",
         help="If stft be used instead of cwt.",
+    )
+
+    parser.add_argument(
+        "--hop-length",
+        type=int,
+        default=1,
+        help="Hop length in transformation. (default: 1)",
+    )
+    parser.add_argument(
+        "--features",
+        choices=["lfcc", "delta", "doubledelta", "all", "none"],
+        default="none",
+        help="Use features like lfcc, its first and second derivatives or all of them. \
+              Delta and Dooubledelta include lfcc computing. Default: none.",
     )
     parser.add_argument(
         "--num-workers",
