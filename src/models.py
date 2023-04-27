@@ -95,6 +95,7 @@ class LearnDeepTestNet(nn.Module):
             nn.Flatten(),
             nn.Linear(self.flattend_size, classes, bias=True),
         )
+        self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
@@ -102,7 +103,7 @@ class LearnDeepTestNet(nn.Module):
             x = self.transform(x)
         x = self.cnn(x)
         x = self.fc(x)
-        return x
+        return self.logsoftmax(x)
 
     def get_name(self) -> str:
         """Return custom string identifier."""
@@ -169,6 +170,7 @@ class LearnNet(nn.Module):
             nn.Flatten(),
             nn.Linear(self.flattend_size, classes, bias=True),
         )
+        self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
@@ -176,7 +178,7 @@ class LearnNet(nn.Module):
             x = self.transform(x)
         x = self.cnn(x)
         x = self.fc(x)
-        return x
+        return self.logsoftmax(x)
 
     def get_name(self) -> str:
         """Return custom string identifier."""
@@ -240,6 +242,7 @@ class OneDNet(nn.Module):
             nn.Flatten(),
             nn.Linear(self.flattend_size, classes),  # 1184, 128, 4992, 9984
         )
+        self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
@@ -248,7 +251,7 @@ class OneDNet(nn.Module):
         x = x.squeeze(1)
         x = self.cnn(x)
         x = self.fc(x)
-        return x
+        return self.logsoftmax(x)
 
     def get_name(self) -> str:
         """Return custom string identifier."""
