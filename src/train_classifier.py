@@ -84,6 +84,12 @@ def _parse_args():
         help="Maximum frequency to analyze in Hz. (default: 9500)",
     )
     parser.add_argument(
+        "--hop-length",
+        type=int,
+        default=1,
+        help="Hop length in transformation. (default: 1)",
+    )
+    parser.add_argument(
         "--data-prefix",
         type=str,
         default="../data/fake",
@@ -138,12 +144,37 @@ def _parse_args():
         help="Use stft instead of cwt in transformation.",
     )
     parser.add_argument(
+        "--features",
+        choices=["lfcc", "delta", "doubledelta", "all", "none"],
+        default="none",
+        help="Use features like lfcc, its first and second derivatives or all of them. \
+            Delta and Dooubledelta include lfcc computing. Default: none.",
+    )
+    parser.add_argument(
         "--num-workers",
         type=int,
         default=2,
         help="Number of worker processes started by the test and validation data loaders (default: 2)",
     )
+    parser.add_argument(
+        "--ckpt-every",
+        type=int,
+        default=500,
+        help="Save model after a fixed number of steps. (default: 500)",
+    )
     return parser.parse_args()
+
+
+def set_seed(seed: int):
+    """Fix PRNG seed for reproducable experiments."""
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    os.environ["PYTHONHASHSEED"] = str(seed)
 
 
 def val_test_loop(
@@ -197,6 +228,8 @@ def get_model(
     num_of_scales: int = 150,
     flattend_size: int = 21888,
     stft: bool = False,
+    features: str = "none",
+    hop_length: int = 1,
     raw_input: Optional[bool] = True,
 ) -> LearnDeepTestNet | OneDNet | LearnNet:
     """Get torch module model with given parameters."""
@@ -212,6 +245,8 @@ def get_model(
             raw_input=raw_input,
             flattend_size=flattend_size,
             stft=stft,
+            features=features,
+            hop_length=hop_length,
         )  # type: ignore
     elif model_name == "learnnet":
         model = LearnNet(
@@ -225,6 +260,7 @@ def get_model(
             raw_input=raw_input,
             flattend_size=flattend_size,
             stft=stft,
+            hop_length=hop_length,
         )  # type: ignore
     elif model_name == "onednet":
         model = OneDNet(
@@ -238,6 +274,7 @@ def get_model(
             raw_input=raw_input,
             flattend_size=flattend_size,
             stft=stft,
+            hop_length=hop_length,
         )  # type: ignore
     return model
 
@@ -330,6 +367,9 @@ def main():
     All training, validation and testing results are printed to stdout.
     After the training is done, the results are stored in a pickle dump in the 'log' folder.
     The state_dict of the trained model is stored there as well.
+
+    Raises:
+        NotImplementedError: If wrong features are combined with the wrong model.
     """
     args = _parse_args()
     print(args)
@@ -340,7 +380,15 @@ def main():
     if args.f_max > args.sample_rate / 2:
         print("Warning: maximum analyzed frequency is above nyquist rate.")
 
+    if args.features != "none" and args.model != "learndeepnet":
+        raise NotImplementedError(
+            f"LFCC features are currently not implemented for {args.model}."
+        )
+
     path_name = args.data_prefix.split("/")[-1].split("_")
+
+    ckpt_every = args.ckpt_every
+
     model_file = "./log/" + path_name[0] + "_"
     if not args.stft:
         model_file += str(args.wavelet)
@@ -348,6 +396,10 @@ def main():
         model_file += "stft"
     model_file += (
         "_"
+        + str(args.features)
+        + "_"
+        + str(args.hop_length)
+        + "_"
         + str(args.sample_rate)
         + "_"
         + str(args.window_size)
@@ -378,7 +430,8 @@ def main():
     )
 
     # fix the seed in the interest of reproducible results.
-    torch.manual_seed(args.seed)
+    set_seed(args.seed)
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     torch.multiprocessing.set_start_method("spawn")
 
@@ -411,6 +464,8 @@ def main():
         num_of_scales=args.num_of_scales,
         flattend_size=args.flattend_size,
         stft=args.stft,
+        features=args.features,
+        hop_length=args.hop_length,
     )
     model.to(device)
 
@@ -422,6 +477,7 @@ def main():
         writer_str += f"{args.wavelet}/"
         writer_str += f"{args.f_min}-"
         writer_str += f"{args.f_max}/"
+        writer_str += f"{args.features}/"
         writer_str += f"{args.num_of_scales}/"
         writer_str += f"{args.adapt_wavelet}/"
         writer_str += f"{path_name[9]}/"
@@ -434,7 +490,9 @@ def main():
     loss_fun = torch.nn.CrossEntropyLoss()
 
     optimizer = AdamCWT(
-        model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
+        model.parameters(),
+        lr=args.learning_rate,
+        weight_decay=args.weight_decay,
     )
 
     for e in tqdm(
@@ -483,6 +541,10 @@ def main():
                     )
                 print(prt_str, flush=True)
                 torch.cuda.empty_cache()
+
+            if it % ckpt_every == 0:
+                save_model_epoch(model_file, model)
+
             loss.backward()
             optimizer.step()
             step_total += 1
