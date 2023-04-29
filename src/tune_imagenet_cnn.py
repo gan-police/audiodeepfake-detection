@@ -40,8 +40,9 @@ def _parse_args():
 
 
 def main():
-    epochs = 20
+    epochs = 50
     batch_size = 64
+    torch.manual_seed(42)
     dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/ljspeech_22050_44100_0.7_train')
     mean, std = dataset._load_mean_std()
 
@@ -111,7 +112,7 @@ def main():
         # validate
         ok = 0
         total = 0
-        for val_batch in val_loader:
+        for val_batch in tqdm(iter(val_loader), desc='validate', total=len(val_loader)):
             with torch.no_grad():
                 val_packets = compute_pytorch_packet_representation(val_batch['audio'].cuda(), wavelet_str="sym8", max_lev=8)
                 val_packets_norm = transforms(val_packets.unsqueeze(1))

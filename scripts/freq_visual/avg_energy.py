@@ -21,28 +21,18 @@ import torch
 
 import src.plot_util as util
 from src.data_loader import LearnWavefakeDataset
+from src.wavelet_math import compute_pytorch_packet_representation
 
 
-def compute_pytorch_packet_representation(
-    pt_data: torch.Tensor, wavelet_str: str = "sym8", max_lev: int = 6
+
+def compute_cwt_representation(
+        pt_data: torch.Tensor, wavelet_str: str = "morl", max_lev: int = 6
 ):
-    """Create a packet image to plot."""
     wavelet = pywt.Wavelet(wavelet_str)
-    ptwt_wp_tree = ptwt.WaveletPacket(data=pt_data, wavelet=wavelet, mode="reflect")
-
-    # get the pytorch decomposition
-    wp_keys = ptwt_wp_tree.get_level(max_lev)
-    packet_list = []
-    for node in wp_keys:
-        packet_list.append(ptwt_wp_tree[node])
-
-    wp_pt = torch.stack(packet_list, dim=-1)
-    return wp_pt
-
-def compute_cwt():
     pass
 
-def compute_stft():
+def compute_stft_representation(
+        pt_data: torch.Tensor):
     pass
 
 
@@ -51,9 +41,10 @@ label_dict = {0: 'ljspeech', 1: 'melgan', 2: 'hifigan', 3: 'melgan_large', 4: 'm
 
 if __name__ == "__main__":    
 
-    dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/ljspeech_22050_44100_0.7_train')
+    dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/ljspeech_22050_33075_0.7_train')
     dataset = torch.utils.data.DataLoader(dataset, batch_size=5000)
     mean_dict = {}
+
     for it, batch in enumerate(
         tqdm(
             iter(dataset),
@@ -62,9 +53,10 @@ if __name__ == "__main__":
         )
     ):
         batch_audios = batch['audio'].cuda(non_blocking=True)
-        packets = compute_pytorch_packet_representation(batch_audios, wavelet_str="sym8", max_lev=8)
-        # plt.imshow(torch.log(torch.abs(packets.cpu())).T)
-        # plt.show()
+
+        packets = compute_pytorch_packet_representation(batch_audios, wavelet_str="sym8", max_lev=7)
+        plt.imshow(torch.log(torch.abs(packets.cpu())).T)
+        plt.show()
         labels = batch['label']
         max_packets = torch.log(torch.max(torch.abs(packets), 1)[0])
         for l, p in zip(labels, max_packets):
@@ -73,6 +65,7 @@ if __name__ == "__main__":
                 mean_dict[l].append(p)
             else:
                 mean_dict[l] = [p]
+        
     
     for key in mean_dict.keys():
         plt.plot(torch.mean(torch.stack(mean_dict[key], 0), 0).cpu().numpy(),
