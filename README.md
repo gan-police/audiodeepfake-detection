@@ -12,11 +12,11 @@ counterpart (right). In my thesis I compare the performance of cnn based classif
 The latest code can be installed in development mode in a running installation of python 3.10 with:
 
 ```shell
-git clone git@github.com:gan-police/wavelet-audiodeepfake-detection_code.git
+git clone git@github.com:gan-police/wavelet-audiodeepfake-detection.git
 ```
 Move to the repository with
 ```shell
-cd wavelet-audiodeepfake-detection_code
+cd wavelet-audiodeepfake-detection
 ```
 and install all requirements with
 ```shell
@@ -25,7 +25,7 @@ pip install -r requirements.txt
 
 ## Assets
 
-For continuous wavelet computations, I use the:
+For continuous wavelet computations, we use the:
 - [PyTorch-Wavelet-Toolbox: ptwt](https://github.com/v0lta/PyTorch-Wavelet-Toolbox)
 
 We compare our approach to the DCT-LFCC/MFCC-method from:
