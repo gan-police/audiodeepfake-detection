@@ -15,7 +15,7 @@ from .data_loader import LearnWavefakeDataset, WelfordEstimator
 from .models import LearnDeepTestNet, LearnNet, OneDNet, save_model
 from .wavelet_math import compute_pytorch_packet_representation
 
-
+from .augmentation import add_noise, dc_shift, contrast
 
 
 def _parse_args():
@@ -43,8 +43,9 @@ def main():
     epochs = 50
     batch_size = 64
     torch.manual_seed(42)
-    dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/ljspeech_22050_44100_0.7_train')
-    mean, std = dataset._load_mean_std()
+    # dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/ljspeech_22050_44100_0.7_train')
+    dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/fake_22050_44100_0.7_melgan_train')
+    # mean, std = dataset._load_mean_std()
 
     weights = torchvision.models.ResNet50_Weights.DEFAULT
     model = torchvision.models.resnet50(weights=weights)
@@ -95,6 +96,7 @@ def main():
         loss_list = []
         for batch in bar:
             batch_audios = batch['audio'].cuda(non_blocking=True)
+            batch_audios = add_noise(dc_shift(contrast(batch_audios)))
             batch_labels = batch['label'].cuda(non_blocking=True)
             packets = compute_pytorch_packet_representation(batch_audios, wavelet_str="sym8", max_lev=8)
             packets = packets.unsqueeze(1)
@@ -117,7 +119,7 @@ def main():
                 val_packets = compute_pytorch_packet_representation(val_batch['audio'].cuda(), wavelet_str="sym8", max_lev=8)
                 val_packets_norm = transforms(val_packets.unsqueeze(1))
                 out = model(val_packets_norm)
-                ok += sum((torch.argmax(out, -1) == val_batch['label'].cuda()).cpu().numpy().astype(int))
+                ok += sum((torch.argmax(out, -1) == (val_batch['label'] != 0).cuda()).cpu().numpy().astype(int))
                 total += batch_size
         print(f"Val acc: {ok/total:2.2f}")
     pass

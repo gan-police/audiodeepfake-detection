@@ -30,7 +30,8 @@ def compress(in_signal: torch.Tensor, sample_rate: int=22050) -> torch.Tensor:
 
 
 def transpose(in_signal: torch.Tensor, sample_rate=22050):
-    shiftint = np.random.randint(-5, 5)
+    # shiftint = np.random.randint(-8, 8)
+    shiftint = 8
     # pitch works in 100th semitones
     shift = shiftint*200
     param = [["pitch", str(shift)]]
@@ -39,6 +40,20 @@ def transpose(in_signal: torch.Tensor, sample_rate=22050):
     return batch
 
 
+def dc_shift(waveform: torch.Tensor) -> torch.Tensor:
+    shift = np.random.uniform(-.25, .25)
+    return torchaudio.functional.dcshift(waveform, shift)
+
+def contrast(waveform: torch.Tensor) -> torch.Tensor:
+    enhancement_amount = np.random.uniform(0, 100.)
+    return torchaudio.functional.contrast(waveform, enhancement_amount)
+
+
+def add_noise(waveform: torch.Tensor) -> torch.Tensor:
+    noise = torch.randn(waveform.shape).to(waveform.device)
+    noise_snr = np.random.uniform(20, 40)
+    snr = noise_snr*torch.ones(waveform.shape[:-1]).to(waveform.device)
+    return torchaudio.functional.add_noise(waveform, noise, snr)
 
 if __name__ == '__main__':
     print(torchaudio.__version__)
@@ -57,8 +72,9 @@ if __name__ == '__main__':
     ):
         batch_audios = batch['audio']
         # processed = compress(batch_audios.squeeze(1))
-        processed = transpose(batch_audios.squeeze(1))
-        processed = compress(processed)
+        # processed = transpose(batch_audios.squeeze(1))
+        processed = add_noise(dc_shift(contrast(batch_audios.squeeze(1))))
+        # processed = add_noise(batch_audios.squeeze(1))
 
         fig, axs = plt.subplots(2, 2)
         axs[0][0].specgram(batch['audio'][0][0], Fs=22050)
