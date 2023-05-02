@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 data/
+=======
+./data/
+>>>>>>> 73e0cd20293ed28ca24a3b1d5810a42d2ec6bee6
 
 # Created by https://www.toptal.com/developers/gitignore/api/macos,linux,pycharm,python,windows
 # Edit at https://www.toptal.com/developers/gitignore?templates=macos,linux,pycharm,python,windows
