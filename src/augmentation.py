@@ -41,11 +41,11 @@ def transpose(in_signal: torch.Tensor, sample_rate=22050):
 
 
 def dc_shift(waveform: torch.Tensor) -> torch.Tensor:
-    shift = np.random.uniform(-.25, .25)
+    shift = np.random.uniform(-.1, .1)
     return torchaudio.functional.dcshift(waveform, shift)
 
 def contrast(waveform: torch.Tensor) -> torch.Tensor:
-    enhancement_amount = np.random.uniform(0, 100.)
+    enhancement_amount = np.random.uniform(10, 100.)
     return torchaudio.functional.contrast(waveform, enhancement_amount)
 
 
