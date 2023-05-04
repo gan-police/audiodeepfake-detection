@@ -45,13 +45,13 @@ def dc_shift(waveform: torch.Tensor) -> torch.Tensor:
     return torchaudio.functional.dcshift(waveform, shift)
 
 def contrast(waveform: torch.Tensor) -> torch.Tensor:
-    enhancement_amount = np.random.uniform(10, 100.)
+    enhancement_amount = np.random.uniform(0, 100.)
     return torchaudio.functional.contrast(waveform, enhancement_amount)
 
 
 def add_noise(waveform: torch.Tensor) -> torch.Tensor:
     noise = torch.randn(waveform.shape).to(waveform.device)
-    noise_snr = np.random.uniform(20, 40)
+    noise_snr = np.random.uniform(30, 40)
     snr = noise_snr*torch.ones(waveform.shape[:-1]).to(waveform.device)
     return torchaudio.functional.add_noise(waveform, noise, snr)
 
@@ -59,7 +59,7 @@ if __name__ == '__main__':
     print(torchaudio.__version__)
     import matplotlib.pyplot as plt
 
-    dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/ljspeech_22050_33075_0.7_train')
+    dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/ljspeech_22050_22050_0.7_train')
     dataset = torch.utils.data.DataLoader(dataset, batch_size=10)
     mean_dict = {}
 

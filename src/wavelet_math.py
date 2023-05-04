@@ -102,7 +102,7 @@ class STFTLayer(torch.nn.Module):
 
 
 def compute_pytorch_packet_representation(
-    pt_data: torch.Tensor, wavelet_str: str = "sym8", max_lev: int = 8
+    pt_data: torch.Tensor, wavelet_str: str = "sym8", max_lev: int = 8, block_norm=False, log_scale=False
 ):
     """Create a packet image to plot."""
     wavelet = pywt.Wavelet(wavelet_str)
@@ -114,5 +114,12 @@ def compute_pytorch_packet_representation(
     for node in wp_keys:
         packet_list.append(ptwt_wp_tree[node])
 
+    if block_norm:
+        packet_list = [wp/torch.max(torch.abs(wp)) for wp in packet_list]
+
     wp_pt = torch.stack(packet_list, dim=-1)
+
+    if log_scale:
+        wp_pt = torch.log(torch.abs(wp_pt) + 1e-12)
+
     return wp_pt

@@ -28,8 +28,11 @@ from src.wavelet_math import compute_pytorch_packet_representation
 def compute_cwt_representation(
         pt_data: torch.Tensor, wavelet_str: str = "morl", max_lev: int = 6
 ):
-    wavelet = pywt.Wavelet(wavelet_str)
-    pass
+    widths = np.arange(1, 64)
+    cwtmatr, freqs = ptwt.cwt(
+        pt_data, widths, "mexh", sampling_period=(4 / 800) * np.pi
+    )
+    return cwtmatr
 
 def compute_stft_representation(
         pt_data: torch.Tensor):
@@ -41,8 +44,8 @@ label_dict = {0: 'ljspeech', 1: 'melgan', 2: 'hifigan', 3: 'melgan_large', 4: 'm
 
 if __name__ == "__main__":    
 
-    dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/ljspeech_22050_33075_0.7_train')
-    dataset = torch.utils.data.DataLoader(dataset, batch_size=5000)
+    dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/ljspeech_22050_22050_0.7_train')
+    dataset = torch.utils.data.DataLoader(dataset, batch_size=250)
     mean_dict = {}
 
     for it, batch in enumerate(
@@ -55,10 +58,11 @@ if __name__ == "__main__":
         batch_audios = batch['audio'].cuda(non_blocking=True)
 
         packets = compute_pytorch_packet_representation(batch_audios, wavelet_str="sym8", max_lev=7)
-        plt.imshow(torch.log(torch.abs(packets.cpu())).T)
-        plt.show()
+        # cwts = compute_cwt_representation(batch_audios)
+        # plt.imshow(packets[0].cpu().T)
+        # plt.show()
         labels = batch['label']
-        max_packets = torch.log(torch.max(torch.abs(packets), 1)[0])
+        max_packets = torch.max(torch.abs(packets), 1)[0]
         for l, p in zip(labels, max_packets):
             l = int(l)
             if l in mean_dict.keys():

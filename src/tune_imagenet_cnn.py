@@ -59,20 +59,24 @@ class AudioNet(torch.nn.Module):
                 we are using.
         """
         super().__init__()
-        factor = 12
+        factor = 64
         self.layers = torch.nn.Sequential(
             torch.nn.Conv2d(1, factor, 3),
             torch.nn.ReLU(),
-            torch.nn.Conv2d(factor, factor*2, 3),
+            torch.nn.Conv2d(factor, factor, 3),
             torch.nn.ReLU(),
-            torch.nn.Conv2d(factor*2, factor*3, 3),
+            torch.nn.Conv2d(factor, factor, 3),
             torch.nn.ReLU(),
-            torch.nn.Conv2d(factor*3, factor*4, 3),
-            torch.nn.ReLU()
+            torch.nn.Conv2d(factor, factor*2, 3, stride=2),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(factor*2, factor*2, 3),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(factor*2, factor*2, 3),
+            torch.nn.ReLU(),
         )
         self.classes = classes
-        # TODO choose fc.
-        self.fc = torch.nn.Linear(2130816, self.classes, True)
+        # TODO choose fc. # 55936 626_580 671_580
+        self.fc = torch.nn.Linear(616448, self.classes, True)
 
     def forward(self, inx):
         feats = self.layers(inx)
@@ -84,21 +88,28 @@ def main():
     args = _parse_args()
     print(args.snr)
     epochs = 50
-    batch_size = 64
+    batch_size = args.batch_size
+    log_scale = True
+    block_norm = False
     torch.manual_seed(42)
     # dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/ljspeech_22050_44100_0.7_train')
-    dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/fake_22050_44100_0.7_melgan_train')
-    model = "mynet"
-    if model == "ResNet":
-        weights = torchvision.models.ResNet50_Weights.DEFAULT
-        model = torchvision.models.resnet50(weights=weights)
+    # dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/fake_22050_44100_0.7_melgan_train')
+    dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/fake_22050_22050_0.7_fb_melgan_train')
+    model_str = "ResNet"
+
+    if model_str == "ResNet":
+        weights = torchvision.models.ResNet18_Weights.DEFAULT
+        model = torchvision.models.resnet18(weights=weights)
         # use the mean color filters.
         model.conv1.in_channels = 1
         model.conv1.weight = torch.nn.Parameter(torch.mean(model.conv1.weight, 1).unsqueeze(1))
-        model.fc = torch.nn.Linear(2048, 9, bias=True)
+        model.avgpool = torch.nn.Identity()
+        model.fc = torch.nn.Linear(12288, 2, bias=True)
         model = model.cuda()
     else:
         model = AudioNet(2).cuda()
+
+    print(f"Network size: {compute_parameter_total(model)}")
 
     cost_fun = torch.nn.CrossEntropyLoss()
     opt = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -107,14 +118,15 @@ def main():
 
     # normalize
     print("computing mean and std values.", flush=True)
-    norm_dataset_loader = torch.utils.data.DataLoader(dataset, batch_size=5000)
+    norm_dataset_loader = torch.utils.data.DataLoader(dataset, batch_size=8000)
     welford = WelfordEstimator()
     with torch.no_grad():
         for batch in tqdm(iter(norm_dataset_loader),
                 desc="comp normalization",
                 total=len(norm_dataset_loader)
             ):
-            packets = compute_pytorch_packet_representation(batch['audio'].cuda(), wavelet_str="sym8", max_lev=8)
+            packets = compute_pytorch_packet_representation(batch['audio'].cuda(),
+                wavelet_str="sym8", max_lev=7, log_scale=log_scale, block_norm=block_norm)
             welford.update(packets.unsqueeze(-1))
         mean, std = welford.finalize()
     print("mean", mean, "std:", std)
@@ -122,9 +134,9 @@ def main():
     # with open(f"{target_dir}_train/mean_std.pkl", "wb") as f:
     #    pickle.dump([mean.cpu().numpy(), std.cpu().numpy()], f)
 
-    if model == "ResNet":
+    if model_str == "ResNet":
         transforms = torch.nn.Sequential(
-            torchvision.transforms.Resize(size=(224, 224), antialias=True),
+            # torchvision.transforms.Resize(size=(224, 224), antialias=True), # padded if missing.
             torchvision.transforms.Normalize(mean, std)
         )
     else:
@@ -134,8 +146,42 @@ def main():
 
 
     dataset_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    val_dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/ljspeech_22050_44100_0.7_val')
+    val_dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/fake_22050_22050_0.7_fb_melgan_val')
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size)
+    unkown_val_dataset = LearnWavefakeDataset(data_dir='/home/wolter/uni/audiofake/data/ljspeech_22050_22050_0.7_val')
+    unkown_val_loader = torch.utils.data.DataLoader(unkown_val_dataset, batch_size=batch_size)
+
+    def validate(val_loader, name=""):
+        ok_sum = 0
+        total = 0
+        bar  = tqdm(iter(val_loader), desc='validate', total=len(val_loader))
+        model.eval()
+        ok_dict = {}
+        count_dict = {}
+        for val_batch in bar:
+            with torch.no_grad():
+                val_packets = compute_pytorch_packet_representation(val_batch['audio'].cuda(), wavelet_str="sym8", max_lev=7,
+                                                                    log_scale=log_scale, block_norm=block_norm)
+                val_packets_norm = transforms(val_packets.unsqueeze(1))
+                out = model(val_packets_norm)
+                ok_mask = (torch.argmax(out, -1) == (val_batch['label'] != 0).cuda())
+                ok_sum += sum(ok_mask).cpu().numpy().astype(int)
+                total += batch_size
+                bar.set_description(f'{name} acc: {ok_sum/total:2.8f}')
+                for lbl, okl in zip(val_batch['label'], ok_mask):
+                    if lbl.item() not in ok_dict:
+                        ok_dict[lbl.item()] = [okl]
+                    else:
+                        ok_dict[lbl.item()].append(okl)
+                    if lbl.item() not in count_dict:
+                        count_dict[lbl.item()] = 1
+                    else:
+                        count_dict[lbl.item()] += 1
+        common_keys = ok_dict.keys() & count_dict.keys()
+        print([(key, (sum(ok_dict[key])/count_dict[key]).item()) for key in common_keys])
+
+        # print(f"Val acc: {ok/total:2.8f}")
+
 
     for epoch in range(epochs):
         bar = tqdm(
@@ -144,17 +190,24 @@ def main():
                 total=len(dataset_loader)
             )
         loss_list = []
-        model.train()
-        for batch in bar:
-            batch_audios = batch['audio'].cuda(non_blocking=True)
+
+        print("validating...")
+        for pos, batch in enumerate(bar):
+            if pos % 100 == 0 and pos > 0:
+                validate(val_loader, "kown")
+                validate(unkown_val_loader, "unkown")
+
+            model.train()
+            batch_audios = batch['audio'].cuda()
             if args.contrast:
                 batch_audios = contrast(batch_audios)
             if args.dc_shift:
                 batch_audios = dc_shift(batch_audios)
             if args.add_noise:
                 batch_audios = add_noise(batch_audios)
-            batch_labels = batch['label'].cuda(non_blocking=True)
-            packets = compute_pytorch_packet_representation(batch_audios, wavelet_str="sym8", max_lev=8)
+            batch_labels = (batch['label'].cuda() != 0).type(torch.long)
+            packets = compute_pytorch_packet_representation(batch_audios, wavelet_str="sym8", max_lev=7, log_scale=log_scale,
+                                                            block_norm=block_norm)
             packets = packets.unsqueeze(1)
             pad_packets = transforms(packets)
             opt.zero_grad()
@@ -162,24 +215,16 @@ def main():
             cost = cost_fun(out, batch_labels)
             cost.backward()
             opt.step()
-            bar.set_description(f'ce-cost: {cost.item():2.8f}')
+            acc = torch.sum((torch.argmax(out, -1) == (batch_labels != 0).cuda()))/args.batch_size
+            bar.set_description(f'ce-cost: {cost.item():2.8f}, acc: {acc.item():2.2f}')
             loss_list.append(cost.item())
             # print(cost.item())
         print(f"epch: {epoch:2.2f}, cost: {cost.item():2.8f}")
-        # validate
-        ok = 0
-        total = 0
-        bar  = tqdm(iter(val_loader), desc='validate', total=len(val_loader))
-        model.eval()
-        for val_batch in bar:
-            with torch.no_grad():
-                val_packets = compute_pytorch_packet_representation(val_batch['audio'].cuda(), wavelet_str="sym8", max_lev=8)
-                val_packets_norm = transforms(val_packets.unsqueeze(1))
-                out = model(val_packets_norm)
-                ok += sum((torch.argmax(out, -1) == (val_batch['label'] != 0).cuda()).cpu().numpy().astype(int))
-                total += batch_size
-                bar.set_description(f'acc: {ok/total:2.8f}')
-        print(f"Val acc: {ok/total:2.8f}")
+        
+
+        
+        validate(val_loader, "kown")
+        validate(unkown_val_loader, "unkown")
     pass
 
 if __name__ == '__main__':
