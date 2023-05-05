@@ -25,8 +25,8 @@ python -m src.prepare_datasets \
     --train-size 0.7 \
     --test-size 0.2 \
     --val-size 0.1   \
-    --batch-size 2048 \
-    --window-size 44100 \
+    --batch-size 512 \
+    --window-size 22050 \
     --sample-rate 22050 \
     --max-samples 1598536800 \
     --realdir "${HOME}/data/real/A_ljspeech" \
