@@ -4,6 +4,7 @@ Holds a custom torch Dataset class implementation that prepares the audio
 and cuts it to frames and transforms it with CWT. Dataloader methods
 can be found here to.
 """
+import pickle
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -65,8 +66,6 @@ class LearnWavefakeDataset(Dataset):
     def __init__(
         self,
         data_dir: str,
-        mean: Optional[float] = None,
-        std: Optional[float] = None,
         key: Optional[str] = "audio",
     ):
         """Create a Wavefake-dataset object.
@@ -75,8 +74,6 @@ class LearnWavefakeDataset(Dataset):
 
         Args:
             data_dir: A path to a pre-processed folder with numpy files.
-            mean: Pre-computed mean to normalize with. Defaults to None.
-            std: Pre-computed standard deviation to normalize with. Defaults to None.
             key: The key for the input or 'x' component of the dataset.
                 Defaults to "audio".
 
@@ -94,9 +91,11 @@ class LearnWavefakeDataset(Dataset):
             raise ValueError("unexpected file name")
         self.labels = np.load(self.file_lst[-1])
         self.audios = np.array(self.file_lst[:-1])
-        self.mean = mean
-        self.std = std
         self.key = key
+
+    def _load_mean_std(self):
+        with open(self.data_dir + "/mean_std.pkl", "rb") as f:
+            return pickle.load(f)
 
     def __len__(self) -> int:
         """Return the data set length."""
@@ -115,10 +114,6 @@ class LearnWavefakeDataset(Dataset):
         audio_path = self.audios[idx]
         audio = np.load(audio_path)
         audio = torch.from_numpy(audio.astype(np.float32))
-
-        # normalize the data.
-        if self.mean is not None:
-            audio = (audio - self.mean) / self.std
 
         label = self.labels[idx]
         label = torch.tensor(int(label))

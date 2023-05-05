@@ -12,8 +12,9 @@ from torch.utils.data import DataLoader
 from torchmetrics.classification import BinaryAccuracy, MulticlassROC
 from tqdm import tqdm
 
+from .data_loader import LearnWavefakeDataset
 from .ptwt_continuous_transform import get_diff_wavelet
-from .train_classifier import create_data_loaders, get_model, set_seed
+from .train_classifier import get_model, get_transforms, set_seed
 
 
 def plot_roc(
@@ -49,6 +50,8 @@ def classify_dataset(
     data_loader,
     model: torch.nn.Module,
     make_binary_labels,
+    transforms,
+    normalize,
 ):
     """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
 
@@ -70,6 +73,10 @@ def classify_dataset(
         result_targets = []
         result_probs = []
         result_test = []
+
+        ok_sum = 0
+        ok_dict = {}
+        count_dict = {}
         for _it, val_batch in enumerate(
             tqdm(
                 iter(data_loader),
@@ -80,23 +87,42 @@ def classify_dataset(
         ):
             batch_audios = val_batch[data_loader.dataset.key].cuda(non_blocking=True)
             batch_labels = val_batch["label"].cuda(non_blocking=True)
-            out = model(batch_audios)
+
+            with torch.no_grad():
+                freq_time_dt = transforms(batch_audios)
+                freq_time_dt = freq_time_dt.unsqueeze(1)
+                freq_time_dt_norm = normalize(freq_time_dt)
+
+            out = model(freq_time_dt_norm)
             if make_binary_labels:
                 batch_labels[batch_labels > 0] = 1
             val_total += batch_labels.shape[0]
+
+            ok_mask = torch.argmax(out, -1) == (val_batch["label"] != 0).cuda()
+            ok_sum += sum(ok_mask).cpu().numpy().astype(int)
+            for lbl, okl in zip(val_batch["label"], ok_mask):
+                if lbl.item() not in ok_dict:
+                    ok_dict[lbl.item()] = [okl]
+                else:
+                    ok_dict[lbl.item()].append(okl)
+                if lbl.item() not in count_dict:
+                    count_dict[lbl.item()] = 1
+                else:
+                    count_dict[lbl.item()] += 1
 
             result_preds.extend(torch.max(out, dim=-1)[1].tolist())
             result_test.extend(torch.max(out, dim=-1)[0].tolist())
             result_probs.extend(out.tolist())
             result_targets.extend(batch_labels.tolist())
-            if val_total % 2000 == 0:
-                print(
-                    f"processed {val_total//batch_labels.shape[0]} of {data_loader.__len__()}"
-                )
+
+        common_keys = ok_dict.keys() & count_dict.keys()
+        print(
+            [(key, (sum(ok_dict[key]) / count_dict[key]).item()) for key in common_keys]
+        )
 
         metric = BinaryAccuracy()
         probs = torch.asarray(result_probs)
-        # probs = torch.nn.functional.softmax(probs, dim=-1)
+        probs = torch.nn.functional.softmax(probs, dim=-1)
         preds = torch.asarray(result_preds)
         targets = torch.asarray(result_targets)
         acc = metric(preds, targets)
@@ -107,10 +133,15 @@ def classify_dataset(
         fpr, tpr, thresholds = metric2(probs, targets)
         fnr = 1 - tpr[0]
 
+        # 1. Possibilty for EER:
+        # from scipy.optimize import brentq
+        # from scipy.interpolate import interp1d
+        # from sklearn.metrics import roc_curve
+        # fpr, tpr, eer_threshold = roc_curve(targets, -probs[:,0])
+        # eer_test = brentq(lambda x : 1. - x - interp1d(fpr, tpr)(x), 0., 1.)
+        # 2. Possibility for EER:
         eer_threshold = thresholds[0][np.nanargmin(np.absolute((fnr - fpr[0])))]
-        eer_1 = fpr[0][np.nanargmin(np.absolute((fnr - fpr[0])))]
-        eer_2 = fnr[np.nanargmin(np.absolute((fnr - fpr[0])))]
-        eer = (eer_1 + eer_2) / 2
+        eer = fpr[0][np.nanargmin(np.absolute((fnr - fpr[0])))]
 
         print(f"eer {eer:.5f}", flush=True)
 
@@ -126,8 +157,8 @@ def main() -> None:
 
     wavelet_name = args.wavelet
     wavelet = get_diff_wavelet(wavelet_name)
-    if args.stft:
-        wavelet_name = "stft"
+    if args.transform != "cwt":
+        wavelet_name = args.transform
     plot_path = args.plot_path
     num_workers = args.num_workers
     gans = args.train_gans
@@ -151,8 +182,24 @@ def main() -> None:
 
     gan_acc_dict = {}
     mean_eers = {}
+    mean_accs = {}
+
+    transforms, normalize = get_transforms(
+        args, features, device, wavelet, normalization=False
+    )
+
+    if "doubledelta" in features:
+        channels = 60
+    elif "delta" in features:
+        channels = 40
+    elif "lfcc" in features:
+        channels = 20
+    else:
+        channels = int(args.flattend_size / 32 * 16)
+
     for gan in gans:
         aeer = []
+        accs = []
         for c_gan in c_gans:
             print(f"Evaluating {gan} on {c_gan}...", flush=True)
             res_acc = []
@@ -161,12 +208,7 @@ def main() -> None:
 
             test_data_dir = f"{data_prefix}_{c_gan}"
 
-            _, _, test_data_set = create_data_loaders(
-                test_data_dir,
-                batch_size,
-                False,
-                num_workers,
-            )
+            test_data_set = LearnWavefakeDataset(test_data_dir + "_test")
 
             test_data_loader = DataLoader(
                 test_data_set,
@@ -174,6 +216,7 @@ def main() -> None:
                 shuffle=False,
                 num_workers=num_workers,
             )
+
             for seed in seeds:
                 print(f"seed: {seed}")
 
@@ -196,9 +239,10 @@ def main() -> None:
                     sample_rate=sample_rate,
                     num_of_scales=num_of_scales,
                     flattend_size=flattend_size,
-                    stft=args.stft,
+                    stft=args.transform == "stft",
                     features=features,
                     hop_length=hop_length,
+                    channels=channels,
                 )
                 old_state_dict = torch.load(model_path)
                 model.load_state_dict(old_state_dict)
@@ -209,6 +253,8 @@ def main() -> None:
                     test_data_loader,
                     model,
                     make_binary_labels=True,
+                    transforms=transforms,
+                    normalize=normalize,
                 )
 
                 plot_roc(fpr, tpr, gan, c_gan, model_path, plot_path)
@@ -225,8 +271,11 @@ def main() -> None:
             res_dict["std_eer"] = (np.std(res_eer), np.std(res_eer_thresh))
             gan_acc_dict[f"{gan}-{c_gan}"] = res_dict
             aeer.append(res_dict["mean_eer"][0])
+            accs.append(res_dict["mean_acc"])
         mean_eers[gan] = (np.mean(aeer), np.std(aeer))
+        mean_accs[gan] = (np.mean(accs), np.std(accs))
     gan_acc_dict["aEER"] = mean_eers
+    gan_acc_dict["aACC"] = mean_accs
 
     print(gan_acc_dict)
     time_now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -248,6 +297,7 @@ def main() -> None:
             pr_str += f"{gan_acc_dict[ind]['std_eer'][1]:.5f}"
             print(pr_str)
         print(f"average eer for {gan}: {gan_acc_dict['aEER'][gan]}")
+        print(f"average acc for {gan}: {gan_acc_dict['aACC'][gan]}")
 
     pickle.dump(
         gan_acc_dict,
@@ -336,6 +386,9 @@ def _parse_args():
             "hifigan",
             "waveglow",
             "pwg",
+            "bigvgan",
+            "bigvganl",
+            "avocodo",
             "all",
         ],
         help="model postfix specifying the gan in the trainingset.",
@@ -352,6 +405,9 @@ def _parse_args():
             "hifigan",
             "waveglow",
             "pwg",
+            "bigvgan",
+            "bigvganl",
+            "avocodo",
             "all",
         ],
         help="model postfix specifying the gan in the trainingset for cross validation.",
@@ -368,6 +424,7 @@ def _parse_args():
             "onednet",
             "learndeepnet",
             "learnnet",
+            "lcnn",
         ],
         default="learndeepnet",
         help="The model type. Default: learndeepnet.",
@@ -378,11 +435,15 @@ def _parse_args():
         help="If differentiable wavelets shall be used.",
     )
     parser.add_argument(
-        "--stft",
-        action="store_true",
-        help="If stft be used instead of cwt.",
+        "--transform",
+        choices=[
+            "stft",
+            "cwt",
+            "packets",
+        ],
+        default="stft",
+        help="Use different transformations.",
     )
-
     parser.add_argument(
         "--hop-length",
         type=int,

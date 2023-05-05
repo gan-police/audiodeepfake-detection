@@ -6,15 +6,26 @@ from typing import Any, Optional
 
 import numpy as np
 import torch
+import torchvision
 from pywt import ContinuousWavelet
+from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
+from torchaudio.transforms import ComputeDeltas
 from tqdm import tqdm
 
 from .data_loader import LearnWavefakeDataset, WelfordEstimator
-from .models import LearnDeepTestNet, LearnNet, OneDNet, save_model
-from .optimizer import AdamCWT
+from .models import (
+    LCNN,
+    LearnDeepTestNet,
+    LearnNet,
+    OneDNet,
+    add_noise,
+    contrast,
+    save_model,
+)
 from .ptwt_continuous_transform import get_diff_wavelet
+from .wavelet_math import LFCC, CWTLayer, Packets, STFTLayer
 
 
 def _parse_args():
@@ -113,6 +124,7 @@ def _parse_args():
             "onednet",
             "learndeepnet",
             "learnnet",
+            "lcnn",
         ],
         default="learndeepnet",
         help="The model type. Default: learndeepnet.",
@@ -139,15 +151,20 @@ def _parse_args():
         help="calculate normalization for debugging purposes.",
     )
     parser.add_argument(
-        "--stft",
-        action="store_true",
+        "--transform",
+        choices=[
+            "stft",
+            "cwt",
+            "packets",
+        ],
+        default="stft",
         help="Use stft instead of cwt in transformation.",
     )
     parser.add_argument(
         "--features",
-        choices=["lfcc", "delta", "doubledelta", "all", "none"],
+        choices=["lfcc", "delta", "doubledelta", "none"],
         default="none",
-        help="Use features like lfcc, its first and second derivatives or all of them. \
+        help="Use features like lfcc, first and second derivatives. \
             Delta and Dooubledelta include lfcc computing. Default: none.",
     )
     parser.add_argument(
@@ -181,6 +198,8 @@ def val_test_loop(
     data_loader,
     model: torch.nn.Module,
     loss_fun,
+    normalize,
+    transforms,
     make_binary_labels: bool = False,
     pbar: bool = False,
 ) -> tuple[float, Any]:
@@ -205,7 +224,11 @@ def val_test_loop(
         for val_batch in iter(data_loader):
             batch_audios = val_batch[data_loader.dataset.key].cuda(non_blocking=True)
             batch_labels = val_batch["label"].cuda(non_blocking=True)
-            out = model(batch_audios)
+            with torch.no_grad():
+                freq_time_dt = transforms(batch_audios)
+                freq_time_dt_norm = normalize(freq_time_dt)
+
+            out = model(freq_time_dt_norm)
             if make_binary_labels:
                 batch_labels[batch_labels > 0] = 1
             val_loss = loss_fun(torch.squeeze(out), batch_labels)
@@ -231,6 +254,8 @@ def get_model(
     features: str = "none",
     hop_length: int = 1,
     raw_input: Optional[bool] = True,
+    adapt_wavelet: bool = False,
+    channels: int = 32,
 ) -> LearnDeepTestNet | OneDNet | LearnNet:
     """Get torch module model with given parameters."""
     if model_name == "learndeepnet":
@@ -247,6 +272,12 @@ def get_model(
             stft=stft,
             features=features,
             hop_length=hop_length,
+            adapt_wavelet=adapt_wavelet,
+        )  # type: ignore
+    elif model_name == "lcnn":
+        model = LCNN(
+            classes=nclasses,
+            channels=channels,
         )  # type: ignore
     elif model_name == "learnnet":
         model = LearnNet(
@@ -281,9 +312,8 @@ def get_model(
 
 def create_data_loaders(
     data_prefix: str,
-    batch_size: int,
-    normal: bool,
-    num_workers: int,
+    batch_size: int = 64,
+    num_workers: int = 2,
 ) -> tuple:
     """Create the data loaders needed for training.
 
@@ -292,56 +322,14 @@ def create_data_loaders(
     Args:
         data_prefix (str): Where to look for the data.
         batch_size (int): preferred training batch size.
-        normal (bool): True if mean and std need to be calculated again.
         num_workers (int): Number of workers for validation and testing.
 
     Returns:
         dataloaders (tuple): train_data_loader, val_data_loader, test_data_set
     """
-    data_set_list = []
-    key = "audio"
-    if normal:
-        with torch.no_grad():
-            train_data_set = LearnWavefakeDataset(
-                data_prefix + "_train",
-                key=key,
-            )
-            print("Computing mean and std...")
-            welford = WelfordEstimator()
-            ds_length = train_data_set.__len__()
-            for aud_no in range(ds_length):
-                if aud_no % 10000 == 0:
-                    print(f"Computed {aud_no} files")
-                welford.update(train_data_set.__getitem__(aud_no)["audio"])
-            mean_new, std_new = welford.finalize()
-        print("mean", mean_new.mean(), "std:", std_new.mean())
-        with open(f"{data_prefix}_train/mean_std.pkl", "wb") as f:
-            pickle.dump([mean_new.cpu().numpy(), std_new.cpu().numpy()], f)
-
-    with open(f"{data_prefix}_train/mean_std.pkl", "rb") as file:
-        mean, std = pickle.load(file)
-        mean = torch.from_numpy(mean.astype(np.float32))
-        std = torch.from_numpy(std.astype(np.float32))
-
-    train_data_set = LearnWavefakeDataset(
-        data_prefix + "_train",
-        mean=mean,
-        std=std,
-        key=key,
-    )
-    val_data_set = LearnWavefakeDataset(
-        data_prefix + "_val",
-        mean=mean,
-        std=std,
-        key=key,
-    )
-    test_data_set = LearnWavefakeDataset(
-        data_prefix + "_test",
-        mean=mean,
-        std=std,
-        key=key,
-    )
-    data_set_list.append((train_data_set, val_data_set, test_data_set))
+    train_data_set = LearnWavefakeDataset(data_prefix + "_train")
+    val_data_set = LearnWavefakeDataset(data_prefix + "_val")
+    test_data_set = LearnWavefakeDataset(data_prefix + "_test")
 
     train_data_loader = DataLoader(
         train_data_set,
@@ -354,9 +342,8 @@ def create_data_loaders(
         shuffle=False,
         num_workers=num_workers,
     )
-    test_data_sets: Any = test_data_set
 
-    return train_data_loader, val_data_loader, test_data_sets
+    return train_data_loader, val_data_loader, test_data_set
 
 
 def main():
@@ -380,7 +367,7 @@ def main():
     if args.f_max > args.sample_rate / 2:
         print("Warning: maximum analyzed frequency is above nyquist rate.")
 
-    if args.features != "none" and args.model != "learndeepnet":
+    if args.features != "none" and args.model != "lcnn":
         raise NotImplementedError(
             f"LFCC features are currently not implemented for {args.model}."
         )
@@ -388,12 +375,20 @@ def main():
     path_name = args.data_prefix.split("/")[-1].split("_")
 
     ckpt_every = args.ckpt_every
+    transform = args.transform
+    features = args.features
+    sample_rate = args.sample_rate
+
+    if transform == "cwt":
+        print("Warning: cwt not tested.")
 
     model_file = "./log/" + path_name[0] + "_"
-    if not args.stft:
+    if transform == "cwt":
         model_file += str(args.wavelet)
-    else:
+    elif transform == "stft":
         model_file += "stft"
+    elif transform == "packets":
+        model_file += "packets"
     model_file += (
         "_"
         + str(args.features)
@@ -444,7 +439,6 @@ def main():
     train_data_loader, val_data_loader, test_data_set = create_data_loaders(
         args.data_prefix,
         args.batch_size,
-        args.calc_normalization,
         args.num_workers,
     )
 
@@ -453,6 +447,15 @@ def main():
     accuracy_list = []
     step_total = 0
 
+    if "doubledelta" in features:
+        channels = 60
+    elif "delta" in features:
+        channels = 40
+    elif "lfcc" in features:
+        channels = 20
+    else:
+        channels = int(args.flattend_size / 32 * 16)
+
     model = get_model(
         wavelet=wavelet,
         model_name=args.model,
@@ -460,12 +463,14 @@ def main():
         batch_size=args.batch_size,
         f_min=args.f_min,
         f_max=args.f_max,
-        sample_rate=args.sample_rate,
+        sample_rate=sample_rate,
         num_of_scales=args.num_of_scales,
         flattend_size=args.flattend_size,
-        stft=args.stft,
-        features=args.features,
+        stft=args.transform == "stft",
+        features=features,
         hop_length=args.hop_length,
+        adapt_wavelet=args.adapt_wavelet,
+        channels=channels,
     )
     model.to(device)
 
@@ -489,10 +494,14 @@ def main():
 
     loss_fun = torch.nn.CrossEntropyLoss()
 
-    optimizer = AdamCWT(
+    optimizer = Adam(
         model.parameters(),
         lr=args.learning_rate,
         weight_decay=args.weight_decay,
+    )
+
+    transforms, normalize = get_transforms(
+        args, features, device, wavelet, args.calc_normalization
     )
 
     for e in tqdm(
@@ -511,18 +520,25 @@ def main():
             optimizer.zero_grad()
             batch_audios = batch[train_data_loader.dataset.key].cuda(non_blocking=True)
 
-            batch_labels = batch["label"].cuda(non_blocking=True)
+            batch_labels = (batch["label"].cuda() != 0).type(torch.long)
             if make_binary_labels:
                 batch_labels[batch_labels > 0] = 1
 
-            out = model(batch_audios)
+            batch_audios = contrast(batch_audios)
+            batch_audios = add_noise(batch_audios)
+
+            with torch.no_grad():
+                freq_time_dt = transforms(batch_audios)
+                freq_time_dt_norm = normalize(freq_time_dt)
+
+            out = model(freq_time_dt_norm)
             loss = loss_fun(torch.squeeze(out), batch_labels)
             ok_mask = torch.eq(torch.max(out, dim=-1)[1], batch_labels)
             acc = torch.sum(ok_mask.type(torch.float32)) / len(batch_labels)
 
             if it % 10 == 0:
                 prt_str = f"e {e} it {it} total {step_total} loss {loss.item()} acc {acc.item()}"
-                if not args.stft:
+                if args.transform == "cwt":
                     prt_str += " bandwidth "
                     prt_str += str(
                         round(
@@ -563,6 +579,8 @@ def main():
                     val_data_loader,
                     model,
                     loss_fun,
+                    normalize=normalize,
+                    transforms=transforms,
                     make_binary_labels=make_binary_labels,
                     pbar=args.pbar,
                 )
@@ -597,6 +615,8 @@ def main():
             test_data_loader,
             model,
             loss_fun,
+            normalize=normalize,
+            transforms=transforms,
             make_binary_labels=make_binary_labels,
             pbar=not args.pbar,
         )
@@ -618,6 +638,80 @@ def main():
 
     if args.tensorboard:
         writer.close()
+
+
+def get_transforms(
+    args, features, device, wavelet, normalization
+) -> tuple[torch.nn.Sequential, torch.nn.Sequential]:
+    """Initialize transformations and normalize."""
+    if args.transform == "stft":
+        transform = STFTLayer(  # type: ignore
+            n_fft=args.num_of_scales * 2 - 1,
+            hop_length=args.hop_length,
+            log_scale=False,
+        ).cuda()
+    elif args.transform == "cwt":
+        freqs = (
+            torch.linspace(args.f_max, args.f_min, args.num_of_scales, device=device)
+            / args.sample_rate
+        )
+        transform = CWTLayer(  # type: ignore
+            wavelet=wavelet,
+            freqs=freqs,
+            hop_length=args.hop_length,
+            log_scale=False,
+        )
+
+    elif args.transform == "packets":
+        transform = Packets(  # type: ignore
+            wavelet_str="sym8",
+            max_lev=7,
+            log_scale=True,
+            block_norm=False,
+        )
+
+    lfcc = LFCC(
+        sample_rate=args.sample_rate,
+        f_min=args.f_min,
+        f_max=args.f_max,
+        num_of_scales=args.num_of_scales,
+    )
+
+    transforms = torch.nn.Sequential(transform)
+
+    if "lfcc" in features:
+        transforms.append(lfcc)
+
+    if "delta" in features:
+        transforms.append(ComputeDeltas())
+
+    if "doubledelta" in features:
+        transforms.append(ComputeDeltas())
+
+    if normalization:
+        print("computing mean and std values.", flush=True)
+        dataset = LearnWavefakeDataset(args.data_prefix + "_train")
+        norm_dataset_loader = torch.utils.data.DataLoader(dataset, batch_size=8000)
+        welford = WelfordEstimator()
+        with torch.no_grad():
+            for batch in tqdm(
+                iter(norm_dataset_loader),
+                desc="comp normalization",
+                total=len(norm_dataset_loader),
+            ):
+                freq_time_dt = transforms(batch["audio"].cuda())
+                welford.update(freq_time_dt.squeeze(1).unsqueeze(-1))
+            mean, std = welford.finalize()
+    else:
+        mean = torch.tensor(-6.7184, device=device)
+        std = torch.tensor(2.4942, device=device)
+    print("mean", mean, "std:", std)
+
+    normalize = torch.nn.Sequential(
+        torchvision.transforms.Normalize(mean, std),
+    )
+
+    return transforms, normalize
 
 
 def save_model_epoch(model_file, model) -> str:

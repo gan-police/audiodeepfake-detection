@@ -104,7 +104,6 @@ def main() -> None:
         _, _, test_data_set = create_data_loaders(
             test_data_dir,
             batch_size,
-            False,
             num_workers,
         )
 

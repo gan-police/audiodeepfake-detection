@@ -1,14 +1,14 @@
 ssqueezepy
 librosa
-torch==1.13.0
 numpy
 ptwt
 pywavelets
 matplotlib
-torchaudio==0.13.0
+torch==2.0.0
+torchaudio==2.0.0
+torchvision==0.15.1
 tikzplotlib
 torch-summary
-torchvision==0.14.0
 tensorboard
 torchmetrics
 captum

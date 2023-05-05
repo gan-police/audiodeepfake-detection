@@ -84,7 +84,6 @@ def cwt(
         ) / (scale * step)
         j = torch.floor(j).type(torch.long)
         if j[-1] >= len(int_psi):
-            # j = np.extract(j < len(int_psi), j)
             j = torch.masked_select(j, j < len(int_psi))
         int_psi_scale = int_psi[j].flip(0)
 
@@ -111,6 +110,7 @@ def cwt(
             raise ValueError("Selected scale of {} too small.".format(scale))
 
         out.append(coef)
+
     out_tensor = torch.stack(out)
     if type(wavelet) is Wavelet:
         out_tensor = out_tensor.real

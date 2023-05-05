@@ -5,15 +5,13 @@ gradient flow through wavelets possible.
 """
 import argparse
 import os
-import pickle
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
-import torch
 import torchaudio
 
-from .data_loader import LearnWavefakeDataset, WelfordEstimator
+from .train_classifier import set_seed
 
 
 def shuffle_random(a, b) -> tuple[list, list]:
@@ -78,9 +76,6 @@ def get_label_of_folder(
                                         with the label 0. All other folders are considered
                                         fake data, encoded with the label 1.
 
-    Raises:
-        NotImplementedError: Raised if the label letter is unkown.
-
     Returns:
         int: The label encoded as integer.
     """
@@ -93,24 +88,7 @@ def get_label_of_folder(
             return 1
     else:
         # the the label based on the path, As are 0s, Bs are 1, etc.
-        if label_str == "A":
-            label = 0
-        elif label_str == "B":
-            label = 1
-        elif label_str == "C":
-            label = 2
-        elif label_str == "D":
-            label = 3
-        elif label_str == "E":
-            label = 4
-        elif label_str == "F":
-            label = 5
-        elif label_str == "G":
-            label = 6
-        elif label_str == "H":
-            label = 7
-        else:
-            raise NotImplementedError(label_str)
+        label = ord(label_str) - 65
         return label
 
 
@@ -169,22 +147,27 @@ def load_transform_and_stack(
     old_win_size = window_size
     window_size *= resample_rate / torchaudio.info(path_list[0]).sample_rate
     window_size = int(window_size)
-    for i in range(len(path_list)):
-        # cut as much as set in frame_list from current audio
-        audio, sample_rate = torchaudio.load(
-            path_list[i], normalize=True, num_frames=int(old_win_size * frame_list[i])
-        )
-        # resample audio
-        audio_res = torchaudio.functional.resample(
-            audio, sample_rate, resample_rate, resampling_method="kaiser_window"
-        )
-        # cut to non-overlapping equal-sized windows
-        framed_audio = audio_res[0].unfold(0, window_size, window_size)
 
-        framed_audio = framed_audio.unsqueeze(1)
-        audio_list.extend(np.array(framed_audio))
-        label = np.array(get_label(path_list[i], binary_classification))
-        label_list.extend([label] * framed_audio.shape[0])
+    for i in range(len(path_list)):
+        if frame_list[i] > 0:
+            audio, sample_rate = torchaudio.load(
+                path_list[i],
+                normalize=True,
+                num_frames=int(old_win_size * frame_list[i]),
+            )
+            # resample audio
+            audio_res = torchaudio.functional.resample(
+                audio, sample_rate, resample_rate, resampling_method="kaiser_window"
+            )
+            # cut to non-overlapping equal-sized windows
+            framed_audio = audio_res[0].unfold(0, window_size, window_size)
+
+            framed_audio = framed_audio.unsqueeze(1)
+            audio_list.extend(np.array(framed_audio))
+            label = np.array(get_label(path_list[i], binary_classification))
+            label_list.extend([label] * framed_audio.shape[0])
+        else:
+            print(f"skipping: {path_list[i]}")
     return np.stack(audio_list), label_list
 
 
@@ -362,7 +345,7 @@ def split_dataset_random(
                 for i in range(len(file_list)):
                     leng = torchaudio.info(file_list[i]).num_frames
                     length += leng - (leng % window_size)
-                    if i % 10000 == 0:
+                    if i % 10000 == 0 and i > 0:
                         print(i)
                 single_lengths.append(length)
         else:
@@ -376,6 +359,7 @@ def split_dataset_random(
         max_len = min(lengths)  # max length of folder
     max_len -= max_len % window_size
     max_len = int(max_len)
+    print(max_len)
 
     result_list = []
     frames_list = []
@@ -387,47 +371,52 @@ def split_dataset_random(
     test_size = max_len - train_size - val_size
 
     folder_num = len(folder_list) - 1
+    multilabel = False
+
     if folder_num > 2:
         train_size -= train_size % folder_num
         val_size -= val_size % folder_num
         test_size -= test_size % folder_num
 
+    if not multilabel:
+        # insert real folder at last position
+        for folder in folder_list:
+            if get_label_of_folder(folder, True) == 0:
+                folder_list.remove(folder)
+                folder_list.append(folder)
+                break
+
     for folder in folder_list:
+        print(f"splitting folder {folder}")
         file_list = list(folder.glob("./*.wav"))
         if len(file_list) == 0:
             raise ValueError("File list does not contain any files.")
         last_ind = 0
-        if folder_num + 1 == 2 or get_label_of_folder(folder, True) == 0:
-            # if folder holds real data or only one gan is taken into account
-            train_list_f, train_list_w, last_ind = get_frames(
-                window_size, file_list, train_size
+
+        # if folder holds real data or only one gan is taken into account
+        train_list_f, train_list_w, last_ind = get_frames(
+            window_size, file_list, train_size
+        )
+        val_list_f, val_list_w, last_ind = get_frames(
+            window_size, file_list[last_ind + 1 :], val_size, last_ind + 1
+        )
+        test_list_f, test_list_w, last_ind = get_frames(
+            window_size, file_list[last_ind + 1 :], test_size, last_ind + 1
+        )
+        if folder == folder_list[0]:
+            train_size = sum(train_list_w) * window_size
+            val_size = sum(val_list_w) * window_size
+            test_size = sum(test_list_w) * window_size
+
+        if folder_num + 1 > 2 and get_label_of_folder(folder, True) != 0:
+            train_list_f, train_list_w, _ = get_frames(
+                window_size, train_list_f, train_size // folder_num
             )
-            val_list_f, val_list_w, last_ind = get_frames(
-                window_size, file_list[last_ind + 1 :], val_size, last_ind + 1
+            val_list_f, val_list_w, _ = get_frames(
+                window_size, val_list_f, val_size // folder_num
             )
-            test_list_f, test_list_w, last_ind = get_frames(
-                window_size, file_list[last_ind + 1 :], test_size, last_ind + 1
-            )
-            if folder == folder_list[0]:
-                train_size = sum(train_list_w) * window_size
-                val_size = sum(val_list_w) * window_size
-                test_size = sum(test_list_w) * window_size
-        else:
-            # if more than one gan is to be put into the training set
-            train_list_f, train_list_w, last_ind = get_frames(
-                window_size, file_list, train_size // folder_num
-            )
-            val_list_f, val_list_w, last_ind = get_frames(
-                window_size,
-                file_list[last_ind + 1 :],
-                val_size // folder_num,
-                last_ind + 1,
-            )
-            test_list_f, test_list_w, last_ind = get_frames(
-                window_size,
-                file_list[last_ind + 1 :],
-                test_size // folder_num,
-                last_ind + 1,
+            test_list_f, test_list_w, _ = get_frames(
+                window_size, test_list_f, test_size // folder_num
             )
             if folder == folder_list[0]:
                 train_size = sum(train_list_w) * window_size * folder_num
@@ -451,7 +440,6 @@ def split_dataset_random(
     val_list_w = [aud for folder in frames[:, 1] for aud in folder]  # type: ignore
     test_list_w = [aud for folder in frames[:, 2] for aud in folder]  # type: ignore
 
-    np.random.seed(42)
     train_list_f, train_list_w = shuffle_random(
         np.array(train_list_f), np.array(train_list_w)
     )
@@ -479,6 +467,7 @@ def pre_process_folder(
     test_size: float = 0.2,
     window_size: int = 11_025,
     sample_rate: int = 22_050,
+    binary_classification: bool = False,
 ) -> None:
     """Preprocess a folder containing sub-directories with audios from different sources.
 
@@ -500,11 +489,14 @@ def pre_process_folder(
         test_size (float): Desired size of the test subset of all files in decimal. Default: 0.2.
         window_size (int): Size of windows the audios will be cut to. Default: 11_025.
         sample_rate (int): Desired sample rate for audios that will be used to downsample all audios.
+        binary_classification (bool): If true consider this problem as a true or fake binary problem.
 
     Raises:
         ValueError: Raised if train_size, val_size and test_size don't add up to 1 or if directories
                     are not set properly.
     """
+    set_seed(42)
+
     if train_size + val_size + test_size > 1.0:
         raise ValueError(
             "Training, test and validation size factors should result to 1."
@@ -513,7 +505,6 @@ def pre_process_folder(
     data_dir = Path(data_folder)
     folder_name = f"{data_dir.name}_{int(sample_rate)}_{window_size}_{train_size}"
 
-    binary_classification = True
     folder_list_all = sorted(data_dir.glob("./*"))
 
     if leave_out is not None and isinstance(leave_out, list):
@@ -571,7 +562,7 @@ def pre_process_folder(
         "test",
         window_size=window_size,
         sample_rate=sample_rate,
-        binary_classification=False,
+        binary_classification=binary_classification,
     )
     print("test set stored", flush=True)
 
@@ -587,22 +578,6 @@ def pre_process_folder(
         binary_classification=binary_classification,
     )
     print("training set stored", flush=True)
-
-    # compute training normalization.
-    # load train data and compute mean and std
-    print("computing mean and std values.", flush=True)
-
-    train_data_set = LearnWavefakeDataset(
-        f"{target_dir}_train",
-    )
-    welford = WelfordEstimator()
-    with torch.no_grad():
-        for aud_no in range(train_data_set.__len__()):
-            welford.update(train_data_set.__getitem__(aud_no)["audio"])
-        mean, std = welford.finalize()
-    print("mean", mean, "std:", std)
-    with open(f"{target_dir}_train/mean_std.pkl", "wb") as f:
-        pickle.dump([mean.cpu().numpy(), std.cpu().numpy()], f)
 
 
 def parse_args():
@@ -656,7 +631,7 @@ def parse_args():
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=2048,
+        default=512,
         help="The batch_size used for audio conversion. (default: 2048).",
     )
     parser.add_argument(
@@ -678,6 +653,11 @@ def parse_args():
         help="Maximum number of samples taken from a dataset. Only use values below"
         " or equal to the maximum number of samples available.",
     )
+    parser.add_argument(
+        "--binary",
+        type=bool,
+        help="Turns the problem into a fake or real binary classification problem.",
+    )
 
     return parser.parse_args()
 
@@ -698,4 +678,5 @@ if __name__ == "__main__":
         window_size=args.window_size,
         sample_rate=args.sample_rate,
         max_samples=args.max_samples,
+        binary_classification=args.binary,
     )
