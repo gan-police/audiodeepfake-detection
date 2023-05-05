@@ -14,6 +14,7 @@ from tqdm import tqdm
 from .data_loader import LearnWavefakeDataset, WelfordEstimator
 from .models import save_model, compute_parameter_total
 from .wavelet_math import compute_pytorch_packet_representation
+from .eval_models import calculate_eer
 
 from .augmentation import add_noise, dc_shift, contrast
 
@@ -158,16 +159,19 @@ def main():
         model.eval()
         ok_dict = {}
         count_dict = {}
+        y_list = []
+        out_list = []
         for val_batch in bar:
             with torch.no_grad():
                 val_packets = compute_pytorch_packet_representation(val_batch['audio'].cuda(), wavelet_str="sym8", max_lev=7,
                                                                     log_scale=log_scale, block_norm=block_norm)
                 val_packets_norm = transforms(val_packets.unsqueeze(1))
                 out = model(val_packets_norm)
-                ok_mask = (torch.argmax(out, -1) == (val_batch['label'] != 0).cuda())
+                out_max = torch.argmax(out, -1)
+                ok_mask = (out_max == (val_batch['label'] != 0).cuda())
                 ok_sum += sum(ok_mask).cpu().numpy().astype(int)
                 total += batch_size
-                bar.set_description(f'{name} acc: {ok_sum/total:2.8f}')
+                bar.set_description(f'{name} - acc: {ok_sum/total:2.8f}')
                 for lbl, okl in zip(val_batch['label'], ok_mask):
                     if lbl.item() not in ok_dict:
                         ok_dict[lbl.item()] = [okl]
@@ -177,10 +181,16 @@ def main():
                         count_dict[lbl.item()] = 1
                     else:
                         count_dict[lbl.item()] += 1
-        common_keys = ok_dict.keys() & count_dict.keys()
-        print([(key, (sum(ok_dict[key])/count_dict[key]).item()) for key in common_keys])
 
-        # print(f"Val acc: {ok/total:2.8f}")
+                y_list.append((val_batch['label'] != 0))
+                out_list.append(out_max.cpu())
+        common_keys = ok_dict.keys() & count_dict.keys()
+        print(f'{name} - ', [(key, (sum(ok_dict[key])/count_dict[key]).item()) for key in common_keys])
+
+        ys = torch.cat(y_list).numpy()
+        outs = torch.cat(out_list).numpy()
+        eer = calculate_eer(ys, outs)
+        print(f"{name} - eer: {eer:2.8f}, Val acc: {ok_sum/total:2.8f}")
 
 
     for epoch in range(epochs):
@@ -223,7 +233,7 @@ def main():
         
 
         
-        validate(val_loader, "kown")
+        validate(val_loader, "kown  ")
         validate(unkown_val_loader, "unkown")
     pass
 
