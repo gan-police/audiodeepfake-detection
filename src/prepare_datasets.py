@@ -371,14 +371,17 @@ def split_dataset_random(
     test_size = max_len - train_size - val_size
 
     folder_num = len(folder_list) - 1
-    multilabel = False
+
+    # set this to false if ds should contain 50 % real and 50 % fake
+    # otherwise all folders will be equally distributed
+    equal_distr = False
 
     if folder_num > 2:
         train_size -= train_size % folder_num
         val_size -= val_size % folder_num
         test_size -= test_size % folder_num
 
-    if not multilabel:
+    if not equal_distr:
         # insert real folder at last position
         for folder in folder_list:
             if get_label_of_folder(folder, True) == 0:
@@ -386,8 +389,10 @@ def split_dataset_random(
                 folder_list.append(folder)
                 break
 
+    print(f"using folders: {folder_list}", flush=True)
+
     for folder in folder_list:
-        print(f"splitting folder {folder}")
+        print(f"splitting folder {folder}", flush=True)
         file_list = list(folder.glob("./*.wav"))
         if len(file_list) == 0:
             raise ValueError("File list does not contain any files.")
@@ -408,7 +413,8 @@ def split_dataset_random(
             val_size = sum(val_list_w) * window_size
             test_size = sum(test_list_w) * window_size
 
-        if folder_num + 1 > 2 and get_label_of_folder(folder, True) != 0:
+        if folder_num + 1 > 2 and (get_label_of_folder(folder, True) != 0 or equal_distr):
+            print(f"dataset will contain only {50 / folder_num if not equal_distr else 100 / folder_list} % of this folder...")
             train_list_f, train_list_w, _ = get_frames(
                 window_size, train_list_f, train_size // folder_num
             )

@@ -24,6 +24,7 @@ python -m src.prepare_datasets \
     --sample-rate 22050 \
     --max-samples 1598536800 \
     --realdir "${HOME}/data/real/A_ljspeech" \
+    --leave-out ${HOME}/data/fake/B_melgan ${HOME}/data/fake/C_hifigan ${HOME}/data/fake/D_mbmelgan ${HOME}/data/fake/F_waveglow ${HOME}/data/fake/G_pwg ${HOME}/data/fake/H_lmelgan ${HOME}/data/fake/I_avocodo \
     --directory "${HOME}/data/fake"
 
 echo "Goodbye at $(date)."
