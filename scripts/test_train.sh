@@ -31,14 +31,14 @@ python -m src.train_classifier \
     --f-min 1 \
     --f-max 11025 \
     --window-size 22050 \
-    --num-of-scales 256 \
+    --num-of-scales 512 \
     --sample-rate 22050 \
     --features "none" \
-    --hop-length 50 \
+    --hop-length 100 \
     --transform stft \
     --calc-normalization \
     --num-workers 2 \
-    --flattend-size 512 \
+    --flattend-size 1024 \
     --pbar
 
 echo "Goodbye at $(date)."

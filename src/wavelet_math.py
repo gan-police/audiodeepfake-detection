@@ -35,9 +35,9 @@ class CWTLayer(torch.nn.Module):
             wavelet: Wavelet used for continuous wavelet transform.
             freqs (torch.Tensor): Tensor holding desired frequencies to be calculated
                                   in CWT.
-            log_scale (bool): Sets wether transformed audios are log scaled to decibel scale.
+            log_scale (bool): Sets wether transformed audios are log scaled.
                               Default: True.
-            log_offset (float): Offset for log scaling. (Default: 10e-13)
+            log_offset (float): Offset for log scaling. (Default: 1e-12)
         """
         super().__init__()
         self.freqs = freqs
@@ -65,7 +65,7 @@ class CWTLayer(torch.nn.Module):
         sig = torch.abs(sig) ** 2
 
         if self.log_scale:
-            sig = 10.0 * torch.log(sig + self.log_offset)
+            sig = torch.log(sig + self.log_offset)
 
         sig = sig.to(torch.float32)
 
@@ -92,9 +92,9 @@ class STFTLayer(torch.nn.Module):
         Args:
             n_fft (int): Size of FFT, creates n_fft // 2 + 1 bins. (Default: 512)
             hop_length (int): Length of hop between STFT windows. (Default: 1)
-            log_scale (bool): Sets wether transformed audios are log scaled to decibel scale.
+            log_scale (bool): Sets wether transformed audios are log scaled.
                               Default: True.
-            log_offset (float): Offset for log scaling. (Default: 10e-13)
+            log_offset (float): Offset for log scaling. (Default: 1e-12)
         """
         super().__init__()
         self.transform = Spectrogram(n_fft=n_fft, hop_length=hop_length).cuda()
@@ -111,7 +111,7 @@ class STFTLayer(torch.nn.Module):
         specgram = self.transform(input)
 
         if self.log_scale:
-            specgram = 10.0 * torch.log(specgram + self.log_offset)
+            specgram = torch.log(specgram + self.log_offset)
 
         specgram = specgram.to(torch.float32)
 
