@@ -72,7 +72,7 @@ Now, to prepare the data sets run `src.prepare_dataset` . It reads data set, spl
 
 ```shell
 python -m src.prepare_datasets \
-    --window-size 11025 \
+    --window-size 22050 \
     --sample-rate 22050 \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --fakedir "${HOME}/data/fake/B_melgan" \
@@ -81,7 +81,7 @@ python -m src.prepare_datasets \
 or
 ```shell
 python -m src.prepare_datasets \
-    --window-size 11025 \
+    --window-size 22050 \
     --sample-rate 22050 \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --directory "${HOME}/data/fake"
@@ -100,13 +100,19 @@ python -m src.train_classifier \
     --learning-rate 0.0001 \
     --weight-decay 0.0001   \
     --epochs 10 \
-    --model "learndeepnet"  \
+    --model "lcnn"  \
     --wavelet "cmor3.3-4.17" \
     --f-min 1000 \
+    --features "none" \
+    --hop-length 50 \
+    --transform packets \
+    --calc-normalization \
     --f-max 9500 \
     --num-of-scales 150 \
     --sample-rate 22050 \
-    --flattend-size 21888
+    --flattend-size 352 \
+    --pbar \
+    --tensorboard
 ```
 
 This trains a cnn classifier using the chosen hyperparameters. The training, validation and test accuracy and loss values are stored in a file placed in a `log` folder. The state dict of the trained model is stored there as well. Using the argument `--adapt-wavelet` will make the wavelet bandwidth and center frequency part of the trainable parameters of the model. For a list of all optional arguments, open the help page via the `-h` argument.
@@ -119,22 +125,31 @@ To calculate the accuracy and eer of trained models use `src.eval_models` with v
 ```shell
 python -m src.eval_models \
     --data-prefix "${HOME}/data/fake_22050_11025_0.7" \
-    --plot-path "plots/eval/" \
-    --model "learndeepnet"  \
-    --wavelet "cmor3.3-4.17" \
-    --num-of-scales 150 \
+    --model-path-prefix ./log/fake_packets_none_100_22050_22050_256_1-11025_0.7_0.0001_0.01_64_2_10e_lcnn_False \
+    --model "lcnn"  \
+    --batch-size 64 \
+    --window-size 22050 \
     --sample-rate 22050 \
-    --flattend-size 21888 \
+    --flattend-size 352 \
+    --features none \
+    --seed 0 \
+    --transform packets \
     --train-gans "melgan"
 ```
-This also plots the reciever operating characteristic (ROC) and calculates the area under the ROC-curve (AUROC).
 
 If you want to cross evaluate models against the test sets of other gans, you can use the `--crosseval-gans`, e.g. like this:
 ```shell
 python -m src.eval_models \
     --data-prefix "${HOME}/data/fake_22050_11025_0.7" \
-    --plot-path "plots/eval/" \
-    --wavelet "cmor3.3-4.17" \
+    --model-path-prefix ./log/fake_packets_none_100_22050_22050_256_1-11025_0.7_0.0001_0.01_64_2_10e_lcnn_False \
+    --model "lcnn"  \
+    --batch-size 64 \
+    --window-size 22050 \
+    --sample-rate 22050 \
+    --flattend-size 352 \
+    --features none \
+    --seed 0 \
+    --transform packets \
     --train-gans "melgan" \
     --crosseval-gans "melgan" "lmelgan" "mbmelgan" "fbmelgan" "hifigan" "waveglow" "pwg"
 ```

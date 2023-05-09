@@ -8,9 +8,12 @@ from typing import Optional
 import ptwt
 import pywt
 import torch
+import torchvision
 from torchaudio import functional
-from torchaudio.transforms import AmplitudeToDB, Spectrogram
+from torchaudio.transforms import AmplitudeToDB, ComputeDeltas, Spectrogram
+from tqdm import tqdm
 
+from .data_loader import LearnWavefakeDataset, WelfordEstimator
 from .ptwt_continuous_transform import cwt
 
 
@@ -264,3 +267,84 @@ class Packets(torch.nn.Module):
             self.block_norm,
             self.log_scale,
         ).unsqueeze(1)
+
+
+def get_transforms(
+    args,
+    data_prefix,
+    features,
+    device,
+    wavelet,
+    normalization,
+    pbar: bool = False,
+) -> tuple[torch.nn.Sequential, torch.nn.Sequential]:
+    """Initialize transformations and normalize."""
+    if args.transform == "stft":
+        transform = STFTLayer(  # type: ignore
+            n_fft=args.num_of_scales * 2 - 1,
+            hop_length=args.hop_length,
+            log_scale=False,
+        ).cuda()
+    elif args.transform == "cwt":
+        freqs = (
+            torch.linspace(args.f_max, args.f_min, args.num_of_scales, device=device)
+            / args.sample_rate
+        )
+        transform = CWTLayer(  # type: ignore
+            wavelet=wavelet,
+            freqs=freqs,
+            hop_length=args.hop_length,
+            log_scale=False,
+        )
+
+    elif args.transform == "packets":
+        transform = Packets(  # type: ignore
+            wavelet_str="sym8",
+            max_lev=7,
+            log_scale=True,
+            block_norm=False,
+        )
+
+    lfcc = LFCC(
+        sample_rate=args.sample_rate,
+        f_min=args.f_min,
+        f_max=args.f_max,
+        num_of_scales=args.num_of_scales,
+    )
+
+    transforms = torch.nn.Sequential(transform)
+
+    if "lfcc" in features:
+        transforms.append(lfcc)
+
+    if "delta" in features:
+        transforms.append(ComputeDeltas())
+
+    if "doubledelta" in features:
+        transforms.append(ComputeDeltas())
+
+    if normalization:
+        print("computing mean and std values.", flush=True)
+        dataset = LearnWavefakeDataset(data_prefix + "_train")
+        norm_dataset_loader = torch.utils.data.DataLoader(dataset, batch_size=8000)
+        welford = WelfordEstimator()
+        with torch.no_grad():
+            for batch in tqdm(
+                iter(norm_dataset_loader),
+                desc="comp normalization",
+                total=len(norm_dataset_loader),
+                disable=not pbar,
+            ):
+                freq_time_dt = transforms(batch["audio"].cuda())
+                welford.update(freq_time_dt.squeeze(1).unsqueeze(-1))
+            mean, std = welford.finalize()
+    else:
+        mean = torch.tensor(-6.717658042907715, device=device)
+        std = torch.tensor(2.4886956214904785, device=device)
+    print("mean", mean.item(), "std:", std.item())
+
+    normalize = torch.nn.Sequential(
+        torchvision.transforms.Normalize(mean, std),
+    )
+
+    return transforms, normalize

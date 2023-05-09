@@ -1,105 +1,76 @@
 """Evaluate models with accuracy and eer metric."""
 import argparse
-import datetime
-import pickle
-from pathlib import Path
+from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from sklearn.metrics import auc
+from scipy.interpolate import interp1d
+from scipy.optimize import brentq
+from sklearn.metrics import roc_curve
 from torch.utils.data import DataLoader
-from torchmetrics.classification import BinaryAccuracy, MulticlassROC
 from tqdm import tqdm
 
 from .data_loader import LearnWavefakeDataset
+from .models import get_model
 from .ptwt_continuous_transform import get_diff_wavelet
-from .train_classifier import get_model, get_transforms, set_seed
+from .utils import set_seed
+from .wavelet_math import get_transforms
 
 
-def plot_roc(
-    fpr: np.ndarray,
-    tpr: np.ndarray,
-    training_dataset_name: str,
-    fake_dataset_name: str,
-    model_path: str,
-    path: str,
-    lw: int = 2,
-):
-    """Plot roc of given false positive rate and true positive rate."""
-    roc_auc = auc(fpr, tpr)
-    fig, ax = plt.subplots()
-    ax.plot(
-        fpr, tpr, color="darkorange", lw=lw, label="ROC curve (area = %0.2f)" % roc_auc
-    )
-    ax.plot([0, 1], [0, 1], color="navy", lw=lw, linestyle="--")
-    ax.set_xlim([0.0, 1.0])
-    ax.set_ylim([0.0, 1.05])
-    ax.set_xlabel("False Positive Rate")
-    ax.set_ylabel("True Positive Rate")
-    ax.set_title(f"Train: {training_dataset_name}\nEvaluated on {fake_dataset_name}")
-    ax.legend(loc="lower right")
+def calculate_eer(y_true, y_score):
+    """Return the equal error rate for a binary classifier output.
 
-    fig.tight_layout()
-    pt = model_path.split(".pt")[0].split("/")[-1]
-    fig.savefig(f"{path}/{pt}_on_{fake_dataset_name}.pdf")
-    plt.close(fig)
+    Based on:
+    https://github.com/scikit-learn/scikit-learn/issues/15247
+    """
+    fpr, tpr, _ = roc_curve(y_true, y_score, pos_label=1)
+    eer = brentq(lambda x: 1.0 - x - interp1d(fpr, tpr)(x), 0.0, 1.0)
+    return eer
 
 
-def classify_dataset(
+def val_test_loop(
     data_loader,
     model: torch.nn.Module,
-    make_binary_labels,
-    transforms,
-    normalize,
-):
+    normalize: torch.nn.Sequential,
+    transforms: torch.nn.Sequential,
+    batch_size: int,
+    name: str = "",
+    pbar: bool = False,
+) -> tuple[float, Any]:
     """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
 
     Args:
         data_loader (DataLoader): A DataLoader loading the data set on which the performance should be measured,
             e.g. a test or validation set in a data split.
         model (torch.nn.Module): The model to evaluate.
-        make_binary_labels (bool): If flag is set, we only classify binarily, i.e. whether an audio is real or fake.
-            In this case, the label 0 encodes 'real'. All other labels are cosidered fake data, and are set to 1.
+        normalize (torch.nn.Sequential): The modules to normalize the input data.
+        transforms (torch.nn.Sequential): The modules to transform the input data (e.g. packets/stft+lfcc).
+        batch_size (int): Batch size of training process.
+        name (str): Name for tqdm bar (default: "").
+        pbar (bool): Disable/Enable tqdm bar (default: False).
 
     Returns:
-        Tuple[float, Any]: The measured accuracy and loss of the model on the data set.
+        Tuple[float, Any]: The measured accuracy and eer of the model on the data set.
     """
-    with torch.no_grad():
-        model.eval()
-        val_total = 0
-
-        result_preds = []
-        result_targets = []
-        result_probs = []
-        result_test = []
-
-        ok_sum = 0
-        ok_dict = {}
-        count_dict = {}
-        for _it, val_batch in enumerate(
-            tqdm(
-                iter(data_loader),
-                desc="Evaluation",
-                unit="batches",
-                disable=False,
-            )
-        ):
-            batch_audios = val_batch[data_loader.dataset.key].cuda(non_blocking=True)
-            batch_labels = val_batch["label"].cuda(non_blocking=True)
-
-            with torch.no_grad():
-                freq_time_dt = transforms(batch_audios)
-                freq_time_dt = freq_time_dt.unsqueeze(1)
-                freq_time_dt_norm = normalize(freq_time_dt)
+    ok_sum = 0
+    total = 0
+    bar = tqdm(iter(data_loader), desc="validate", total=len(data_loader))
+    model.eval()
+    ok_dict = {}
+    count_dict = {}
+    y_list = []
+    out_list = []
+    for val_batch in bar:
+        with torch.no_grad():
+            freq_time_dt = transforms(val_batch["audio"].cuda())
+            freq_time_dt_norm = normalize(freq_time_dt)
 
             out = model(freq_time_dt_norm)
-            if make_binary_labels:
-                batch_labels[batch_labels > 0] = 1
-            val_total += batch_labels.shape[0]
-
-            ok_mask = torch.argmax(out, -1) == (val_batch["label"] != 0).cuda()
+            out_max = torch.argmax(out, -1)
+            ok_mask = out_max == (val_batch["label"] != 0).cuda()
             ok_sum += sum(ok_mask).cpu().numpy().astype(int)
+            total += batch_size
+            bar.set_description(f"{name} - acc: {ok_sum/total:2.8f}")
             for lbl, okl in zip(val_batch["label"], ok_mask):
                 if lbl.item() not in ok_dict:
                     ok_dict[lbl.item()] = [okl]
@@ -110,42 +81,19 @@ def classify_dataset(
                 else:
                     count_dict[lbl.item()] += 1
 
-            result_preds.extend(torch.max(out, dim=-1)[1].tolist())
-            result_test.extend(torch.max(out, dim=-1)[0].tolist())
-            result_probs.extend(out.tolist())
-            result_targets.extend(batch_labels.tolist())
+            y_list.append((val_batch["label"] != 0))
+            out_list.append(out_max.cpu())
+    common_keys = ok_dict.keys() & count_dict.keys()
+    print(
+        f"{name} - ",
+        [(key, (sum(ok_dict[key]) / count_dict[key]).item()) for key in common_keys],
+    )
 
-        common_keys = ok_dict.keys() & count_dict.keys()
-        print(
-            [(key, (sum(ok_dict[key]) / count_dict[key]).item()) for key in common_keys]
-        )
-
-        metric = BinaryAccuracy()
-        probs = torch.asarray(result_probs)
-        probs = torch.nn.functional.softmax(probs, dim=-1)
-        preds = torch.asarray(result_preds)
-        targets = torch.asarray(result_targets)
-        acc = metric(preds, targets)
-
-        print(f"acc {acc.item()*100:.3f} %", flush=True)
-
-        metric2 = MulticlassROC(num_classes=2, thresholds=None)
-        fpr, tpr, thresholds = metric2(probs, targets)
-        fnr = 1 - tpr[0]
-
-        # 1. Possibilty for EER:
-        # from scipy.optimize import brentq
-        # from scipy.interpolate import interp1d
-        # from sklearn.metrics import roc_curve
-        # fpr, tpr, eer_threshold = roc_curve(targets, -probs[:,0])
-        # eer_test = brentq(lambda x : 1. - x - interp1d(fpr, tpr)(x), 0., 1.)
-        # 2. Possibility for EER:
-        eer_threshold = thresholds[0][np.nanargmin(np.absolute((fnr - fpr[0])))]
-        eer = fpr[0][np.nanargmin(np.absolute((fnr - fpr[0])))]
-
-        print(f"eer {eer:.5f}", flush=True)
-
-    return acc, fpr[0], tpr[0], eer, eer_threshold
+    ys = torch.cat(y_list).numpy()
+    outs = torch.cat(out_list).numpy()
+    eer = calculate_eer(ys, outs)
+    print(f"{name} - eer: {eer:2.8f}, Val acc: {ok_sum/total:2.8f}")
+    return ok_sum / total, eer
 
 
 def main() -> None:
@@ -155,21 +103,17 @@ def main() -> None:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    wavelet_name = args.wavelet
-    wavelet = get_diff_wavelet(wavelet_name)
-    if args.transform != "cwt":
-        wavelet_name = args.transform
-    plot_path = args.plot_path
+    model_path = (args.model_path_prefix).split("_")
+
+    wavelet = get_diff_wavelet(args.wavelet)
     num_workers = args.num_workers
     gans = args.train_gans
     c_gans = args.crosseval_gans
     seeds = args.seeds
     sample_rate = args.sample_rate
-    window_size = args.window_size
     model_name = args.model
     batch_size = args.batch_size
     flattend_size = args.flattend_size
-    adapt_wav = args.adapt_wavelet
     nclasses = args.nclasses
     f_min = args.f_min
     f_max = args.f_max
@@ -178,15 +122,9 @@ def main() -> None:
     features = args.features
     hop_length = args.hop_length
 
-    Path(plot_path).mkdir(parents=True, exist_ok=True)
-
     gan_acc_dict = {}
     mean_eers = {}
     mean_accs = {}
-
-    transforms, normalize = get_transforms(
-        args, features, device, wavelet, normalization=False
-    )
 
     if "doubledelta" in features:
         channels = 60
@@ -195,16 +133,25 @@ def main() -> None:
     elif "lfcc" in features:
         channels = 20
     else:
-        channels = int(args.flattend_size / 32 * 16)
+        channels = int(flattend_size / 2)
 
     for gan in gans:
         aeer = []
         accs = []
+
+        transforms, normalize = get_transforms(
+            args,
+            f"{data_prefix}_{gan}",
+            features,
+            device,
+            wavelet,
+            normalization=True,
+            pbar=True,
+        )
         for c_gan in c_gans:
             print(f"Evaluating {gan} on {c_gan}...", flush=True)
             res_acc = []
             res_eer = []
-            res_eer_thresh = []
 
             test_data_dir = f"{data_prefix}_{c_gan}"
 
@@ -219,15 +166,9 @@ def main() -> None:
 
             for seed in seeds:
                 print(f"seed: {seed}")
+                model_dir = f'{"_".join(model_path)}_{gan}_{str(seed)}.pt'
 
                 set_seed(seed)
-                model_path = f"./log/fake_{wavelet_name}_{features}_{hop_length}_{sample_rate}_{window_size}_"
-                model_path += (
-                    f"{num_of_scales}_{int(f_min)}-{int(f_max)}_0.7_{gan}_0.0001_"
-                )
-                model_path += (
-                    f"{batch_size}_{nclasses}_10e_{model_name}_{adapt_wav}_{seed}.pt"
-                )
 
                 model = get_model(
                     wavelet=wavelet,
@@ -244,33 +185,32 @@ def main() -> None:
                     hop_length=hop_length,
                     channels=channels,
                 )
-                old_state_dict = torch.load(model_path)
+                old_state_dict = torch.load(model_dir)
                 model.load_state_dict(old_state_dict)
 
                 model.to(device)
 
-                acc, fpr, tpr, eer, eer_threshold = classify_dataset(
+                acc, eer = val_test_loop(
                     test_data_loader,
                     model,
-                    make_binary_labels=True,
                     transforms=transforms,
                     normalize=normalize,
+                    batch_size=batch_size,
+                    name=c_gan,
+                    pbar=True,
                 )
 
-                plot_roc(fpr, tpr, gan, c_gan, model_path, plot_path)
-
                 res_acc.append(acc)
-                res_eer.append(eer.item())
-                res_eer_thresh.append(eer_threshold.item())
+                res_eer.append(eer)
             res_dict = {}
             res_dict["max_acc"] = np.max(res_acc)
             res_dict["mean_acc"] = np.mean(res_acc)
             res_dict["std_acc"] = np.std(res_acc)
-            res_dict["min_eer"] = (np.min(res_eer), np.min(res_eer_thresh))
-            res_dict["mean_eer"] = (np.mean(res_eer), np.mean(res_eer_thresh))
-            res_dict["std_eer"] = (np.std(res_eer), np.std(res_eer_thresh))
+            res_dict["min_eer"] = np.min(res_eer)
+            res_dict["mean_eer"] = np.mean(res_eer)
+            res_dict["std_eer"] = np.std(res_eer)
             gan_acc_dict[f"{gan}-{c_gan}"] = res_dict
-            aeer.append(res_dict["mean_eer"][0])
+            aeer.append(res_dict["mean_eer"])
             accs.append(res_dict["mean_acc"])
         mean_eers[gan] = (np.mean(aeer), np.std(aeer))
         mean_accs[gan] = (np.mean(accs), np.std(accs))
@@ -278,9 +218,7 @@ def main() -> None:
     gan_acc_dict["aACC"] = mean_accs
 
     print(gan_acc_dict)
-    time_now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
 
-    print(wavelet)
     for gan in gans:
         for c_gan in c_gans:
             ind = f"{gan}-{c_gan}"
@@ -288,29 +226,22 @@ def main() -> None:
             pr_str += f", mean {100 * gan_acc_dict[ind]['mean_acc']:.3f} +- "
             pr_str += f"{100 * gan_acc_dict[ind]['std_acc']:.3f} %"
             print(pr_str)
-            pr_str = f"{ind}: eer: min {gan_acc_dict[ind]['min_eer'][0]:.5f},"
-            pr_str += f" mean {gan_acc_dict[ind]['mean_eer'][0]:.5f} +- "
-            pr_str += f"{gan_acc_dict[ind]['std_eer'][0]:.5f}"
-            print(pr_str)
-            pr_str = f"{ind}: eer thresh: min {gan_acc_dict[ind]['min_eer'][1]:.5f},"
-            pr_str += f" mean {gan_acc_dict[ind]['mean_eer'][1]:.5f} +- "
-            pr_str += f"{gan_acc_dict[ind]['std_eer'][1]:.5f}"
+            pr_str = f"{ind}: eer: min {gan_acc_dict[ind]['min_eer']:.5f},"
+            pr_str += f" mean {gan_acc_dict[ind]['mean_eer']:.5f} +- "
+            pr_str += f"{gan_acc_dict[ind]['std_eer']:.5f}"
             print(pr_str)
         print(f"average eer for {gan}: {gan_acc_dict['aEER'][gan]}")
         print(f"average acc for {gan}: {gan_acc_dict['aACC'][gan]}")
-
-    pickle.dump(
-        gan_acc_dict,
-        open(
-            f"log/results/results_all_{wavelet_name}_{model_name}_{sample_rate}_{time_now}.pkl",
-            "wb",
-        ),
-    )
 
 
 def _parse_args():
     """Parse cmd line args for evaluating audio classification models."""
     parser = argparse.ArgumentParser(description="Eval models.")
+    parser.add_argument(
+        "--model-path-prefix",
+        type=str,
+        help="Prefix of model path (without '_seed.pt').",
+    )
     parser.add_argument(
         "--batch-size",
         type=int,

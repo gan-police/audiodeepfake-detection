@@ -31,5 +31,5 @@ exclude =
     .eggs,
     data
 max-line-length = 120
-max-complexity = 28
+max-complexity = 29
 application-import-names = tests

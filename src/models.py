@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torchaudio
+from pywt import ContinuousWavelet
 from torchaudio.transforms import ComputeDeltas
 
 from .wavelet_math import LFCC, CWTLayer, STFTLayer
@@ -454,26 +455,6 @@ class OneDNet(nn.Module):
         return "OneDNet"
 
 
-def save_model(model: torch.nn.Module, path) -> None:
-    """Save the state dict of the model to the specified path.
-
-    Args:
-        model (torch.nn.Module): model to store
-        path: file path of the storage file
-    """
-    torch.save(model.state_dict(), path)
-
-
-def initialize_model(model: torch.nn.Module, path) -> torch.nn.Module:
-    """Initialize the given model from a stored state dict file.
-
-    Args:
-        model (torch.nn.Module): model to initialize
-        path: file path of the storage file
-    """
-    return model.load_state_dict(torch.load(path))
-
-
 class MaxFeatureMap2D(nn.Module):
     """Max feature map (along 2D).
 
@@ -551,3 +532,93 @@ class BLSTMLayer(nn.Module):
         blstm_data, _ = self.l_blstm(x.permute(1, 0, 2))
         # permute it backt to (batchsize=1, length, dim)
         return blstm_data.permute(1, 0, 2)
+
+
+def get_model(
+    wavelet: ContinuousWavelet,
+    model_name: str,
+    nclasses: int = 2,
+    batch_size: int = 128,
+    f_min: float = 1000,
+    f_max: float = 9500,
+    sample_rate: int = 22050,
+    num_of_scales: int = 150,
+    flattend_size: int = 21888,
+    stft: bool = False,
+    features: str = "none",
+    hop_length: int = 1,
+    raw_input: Optional[bool] = True,
+    adapt_wavelet: bool = False,
+    channels: int = 32,
+) -> LearnDeepTestNet | OneDNet | LearnNet:
+    """Get torch module model with given parameters."""
+    if model_name == "learndeepnet":
+        model = LearnDeepTestNet(
+            classes=nclasses,
+            wavelet=wavelet,
+            f_min=f_min,
+            f_max=f_max,
+            sample_rate=sample_rate,
+            num_of_scales=num_of_scales,
+            batch_size=batch_size,
+            raw_input=raw_input,
+            flattend_size=flattend_size,
+            stft=stft,
+            features=features,
+            hop_length=hop_length,
+            adapt_wavelet=adapt_wavelet,
+        )  # type: ignore
+    elif model_name == "lcnn":
+        model = LCNN(
+            classes=nclasses,
+            channels=channels,
+        )  # type: ignore
+    elif model_name == "learnnet":
+        model = LearnNet(
+            classes=nclasses,
+            wavelet=wavelet,
+            f_min=f_min,
+            f_max=f_max,
+            sample_rate=sample_rate,
+            num_of_scales=num_of_scales,
+            batch_size=batch_size,
+            raw_input=raw_input,
+            flattend_size=flattend_size,
+            stft=stft,
+            hop_length=hop_length,
+        )  # type: ignore
+    elif model_name == "onednet":
+        model = OneDNet(
+            classes=nclasses,
+            wavelet=wavelet,
+            f_min=f_min,
+            f_max=f_max,
+            sample_rate=sample_rate,
+            num_of_scales=num_of_scales,
+            batch_size=batch_size,
+            raw_input=raw_input,
+            flattend_size=flattend_size,
+            stft=stft,
+            hop_length=hop_length,
+        )  # type: ignore
+    return model
+
+
+def save_model(model: torch.nn.Module, path) -> None:
+    """Save the state dict of the model to the specified path.
+
+    Args:
+        model (torch.nn.Module): model to store
+        path: file path of the storage file
+    """
+    torch.save(model.state_dict(), path)
+
+
+def initialize_model(model: torch.nn.Module, path) -> torch.nn.Module:
+    """Initialize the given model from a stored state dict file.
+
+    Args:
+        model (torch.nn.Module): model to initialize
+        path: file path of the storage file
+    """
+    return model.load_state_dict(torch.load(path))

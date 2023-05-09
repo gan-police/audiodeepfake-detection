@@ -413,8 +413,11 @@ def split_dataset_random(
             val_size = sum(val_list_w) * window_size
             test_size = sum(test_list_w) * window_size
 
-        if folder_num + 1 > 2 and (get_label_of_folder(folder, True) != 0 or equal_distr):
-            print(f"dataset will contain only {50 / folder_num if not equal_distr else 100 / folder_list} % of this folder...")
+        if folder_num + 1 > 2 and (
+            get_label_of_folder(folder, True) != 0 or equal_distr
+        ):
+            percentage = 50 / folder_num if not equal_distr else 100 / folder_num
+            print(f"dataset will contain only {percentage} % of this folder...")
             train_list_f, train_list_w, _ = get_frames(
                 window_size, train_list_f, train_size // folder_num
             )
@@ -638,20 +641,20 @@ def parse_args():
         "--batch-size",
         type=int,
         default=512,
-        help="The batch_size used for audio conversion. (default: 2048).",
+        help="The batch_size used for audio conversion. (default: 512).",
     )
     parser.add_argument(
         "--window-size",
         type=int,
-        default=11025,
+        default=22050,
         help="Size of window of audio file as number of samples relative to initial"
-        " sample rate. Default: 11025.",
+        " sample rate (default: 22050).",
     )
     parser.add_argument(
         "--sample-rate",
         type=int,
         default=22_050,
-        help="Desired sample rate of audio in Hz. Default: 8_000.",
+        help="Desired sample rate of audio in Hz (default: 22_050).",
     )
     parser.add_argument(
         "--max-samples",
