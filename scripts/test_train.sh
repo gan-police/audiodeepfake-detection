@@ -20,10 +20,10 @@ conda activate py310
 python -m src.train_classifier \
     --batch-size 128 \
     --learning-rate 0.0001 \
-    --weight-decay 0.01   \
+    --weight-decay 0.1   \
     --epochs 15 \
     --validation-interval 300    \
-    --data-prefix "${HOME}/data/fake_22050_22050_0.7_fbmelgan" \
+    --data-prefix "${HOME}/data/fake_22050_22050_0.7_bigvganfbmelgan" \
     --unknown-prefix "${HOME}/data/fake_22050_22050_0.7_allwithbigvgan" \
     --nclasses 2 \
     --seed 0 \
@@ -39,6 +39,6 @@ python -m src.train_classifier \
     --calc-normalization \
     --num-workers 2 \
     --flattend-size 1024 \
-    --pbar
+    --tensorboard
 
 echo "Goodbye at $(date)."
