@@ -23,7 +23,7 @@ python -m src.train_classifier \
     --weight-decay 0.01   \
     --epochs 15 \
     --validation-interval 300    \
-    --data-prefix "${HOME}/data/fake_22050_22050_0.7_bigvganl" \
+    --data-prefix "${HOME}/data/fake_22050_22050_0.7_fbmelgan" \
     --unknown-prefix "${HOME}/data/fake_22050_22050_0.7_allwithbigvgan" \
     --nclasses 2 \
     --seed 0 \
@@ -35,10 +35,10 @@ python -m src.train_classifier \
     --sample-rate 22050 \
     --features "none" \
     --hop-length 50 \
-    --transform packets \
+    --transform stft \
     --calc-normalization \
     --num-workers 2 \
-    --flattend-size 352 \
-    --tensorboard 
+    --flattend-size 512 \
+    --pbar
 
 echo "Goodbye at $(date)."

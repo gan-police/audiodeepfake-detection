@@ -283,7 +283,7 @@ def get_transforms(
         transform = STFTLayer(  # type: ignore
             n_fft=args.num_of_scales * 2 - 1,
             hop_length=args.hop_length,
-            log_scale=False,
+            log_scale=args.features == "none",
         ).cuda()
     elif args.transform == "cwt":
         freqs = (
@@ -294,14 +294,14 @@ def get_transforms(
             wavelet=wavelet,
             freqs=freqs,
             hop_length=args.hop_length,
-            log_scale=False,
+            log_scale=args.features == "none",
         )
 
     elif args.transform == "packets":
         transform = Packets(  # type: ignore
             wavelet_str="sym8",
             max_lev=7,
-            log_scale=True,
+            log_scale=args.features == "none",
             block_norm=False,
         )
 
