@@ -526,7 +526,7 @@ def pre_process_folder(
         if fake is None:
             folder_list_all.append(Path(real))
             folder_list = folder_list_all
-            folder_name += "_all"
+            folder_name += "_allwithjust"
         else:
             folder_name += f"_{fake.split('_')[-1]}"
             folder_list = [Path(real), Path(fake)]

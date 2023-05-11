@@ -5,7 +5,7 @@
 #SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/out/prep_all_%j.out
 #SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/out/prep_all_%j.err
 #SBATCH --cpus-per-task=8
-#SBATCH --time=02:00:00
+#SBATCH --time=03:00:00
 #SBATCH --partition=A40short
 #SBATCH -x node-02
 
@@ -22,7 +22,6 @@ python -m src.prepare_datasets \
     --batch-size 512 \
     --window-size 22050 \
     --sample-rate 22050 \
-    --max-samples 1598536800 \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --directory "${HOME}/data/fake"
 

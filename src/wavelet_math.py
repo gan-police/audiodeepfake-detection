@@ -3,6 +3,7 @@
 The idea is to provide functionality to make the cwt useful
 for audio analysis and gan-content recognition.
 """
+from math import log
 from typing import Optional
 
 import ptwt
@@ -260,13 +261,17 @@ class Packets(torch.nn.Module):
 
     def forward(self, pt_data: torch.Tensor) -> torch.Tensor:
         """Forward packet representation."""
-        return compute_pytorch_packet_representation(
-            pt_data,
-            self.wavelet,
-            self.max_lev,
-            self.block_norm,
-            self.log_scale,
-        ).unsqueeze(1)
+        return (
+            compute_pytorch_packet_representation(
+                pt_data,
+                self.wavelet,
+                self.max_lev,
+                self.block_norm,
+                self.log_scale,
+            )
+            .unsqueeze(1)
+            .permute(0, 1, 3, 2)
+        )
 
 
 def get_transforms(
@@ -283,7 +288,7 @@ def get_transforms(
         transform = STFTLayer(  # type: ignore
             n_fft=args.num_of_scales * 2 - 1,
             hop_length=args.hop_length,
-            log_scale=args.features == "none",
+            log_scale=args.features == "none" and args.log_scale,
         ).cuda()
     elif args.transform == "cwt":
         freqs = (
@@ -294,14 +299,14 @@ def get_transforms(
             wavelet=wavelet,
             freqs=freqs,
             hop_length=args.hop_length,
-            log_scale=args.features == "none",
+            log_scale=args.features == "none" and args.log_scale,
         )
 
     elif args.transform == "packets":
         transform = Packets(  # type: ignore
-            wavelet_str="sym8",
-            max_lev=7,
-            log_scale=args.features == "none",
+            wavelet_str=args.wavelet,
+            max_lev=int(log(args.num_of_scales, 2)),
+            log_scale=args.features == "none" and args.log_scale,
             block_norm=False,
         )
 
@@ -339,8 +344,8 @@ def get_transforms(
                 welford.update(freq_time_dt.squeeze(1).unsqueeze(-1))
             mean, std = welford.finalize()
     else:
-        mean = torch.tensor(-6.717658042907715, device=device)
-        std = torch.tensor(2.4886956214904785, device=device)
+        mean = torch.tensor(args.mean, device=device)
+        std = torch.tensor(args.std, device=device)
     print("mean", mean.item(), "std:", std.item())
 
     normalize = torch.nn.Sequential(

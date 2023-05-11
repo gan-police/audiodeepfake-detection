@@ -244,12 +244,11 @@ class _ComplexMorletWavelet(_DifferentiableContinuousWavelet):
 
 def get_diff_wavelet(
     wavelet: str,
-) -> _ComplexMorletWavelet | _ShannonWavelet:
+) -> _ComplexMorletWavelet | _ShannonWavelet | None:
     """Get differentiable wavelet from given string.
 
     Raises:
         ValueError: If wavelet is not a str or pywt Continuous Wavelet.
-        NotImplementedError: If requested wavelet is not implemented yet.
     """
     if not isinstance(wavelet, (str, ContinuousWavelet)):
         raise ValueError(
@@ -263,4 +262,4 @@ def get_diff_wavelet(
     elif "shan" in wavelet:
         return _ShannonWavelet(name=wavelet)
     else:
-        raise NotImplementedError
+        return None

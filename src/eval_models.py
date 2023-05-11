@@ -54,7 +54,9 @@ def val_test_loop(
     """
     ok_sum = 0
     total = 0
-    bar = tqdm(iter(data_loader), desc="validate", total=len(data_loader))
+    bar = tqdm(
+        iter(data_loader), desc="validate", total=len(data_loader), disable=not pbar
+    )
     model.eval()
     ok_dict = {}
     count_dict = {}
@@ -133,7 +135,7 @@ def main() -> None:
     elif "lfcc" in features:
         channels = 20
     else:
-        channels = int(flattend_size / 2)
+        channels = int(args.num_of_scales)
 
     for gan in gans:
         aeer = []
@@ -364,6 +366,23 @@ def _parse_args():
         "--adapt-wavelet",
         action="store_true",
         help="If differentiable wavelets shall be used.",
+    )
+    parser.add_argument(
+        "--log-scale",
+        action="store_true",
+        help="If differentiable wavelets shall be used.",
+    )
+    parser.add_argument(
+        "--mean",
+        type=float,
+        default=0,
+        help="Pre calculated mean. (default: 0)",
+    )
+    parser.add_argument(
+        "--std",
+        type=float,
+        default=1,
+        help="Pre calculated std. (default: 1)",
     )
     parser.add_argument(
         "--transform",

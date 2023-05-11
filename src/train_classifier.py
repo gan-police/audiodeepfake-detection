@@ -92,11 +92,11 @@ def main():
 
     model_file = "./log/" + path_name[0] + "_"
     if transform == "cwt":
-        model_file += str(args.wavelet)
+        model_file += "cwt" + str(args.wavelet)
     elif transform == "stft":
         model_file += "stft"
     elif transform == "packets":
-        model_file += "packets"
+        model_file += "packets" + str(args.wavelet)
     model_file += (
         "_"
         + str(args.features)
@@ -141,8 +141,9 @@ def main():
     torch.multiprocessing.set_start_method("spawn")
 
     wavelet = get_diff_wavelet(args.wavelet)
-    wavelet.bandwidth_par.requires_grad = args.adapt_wavelet
-    wavelet.center_par.requires_grad = args.adapt_wavelet
+    if wavelet is not None:
+        wavelet.bandwidth_par.requires_grad = args.adapt_wavelet
+        wavelet.center_par.requires_grad = args.adapt_wavelet
 
     train_data_loader, val_data_loader, test_data_set = create_data_loaders(
         args.data_prefix,
@@ -178,7 +179,7 @@ def main():
     elif "lfcc" in features:
         channels = 20
     else:
-        channels = int(args.flattend_size / 32 * 16)
+        channels = int(args.num_of_scales)
 
     model = get_model(
         wavelet=wavelet,
@@ -199,16 +200,16 @@ def main():
     model.to(device)
 
     if args.tensorboard:
-        writer_str = "runs/"
+        writer_str = "exp/runs/"
         writer_str += f"{args.model}/"
         writer_str += f"{args.transform}/"
+        if transform == "cwt" or transform == "packets":
+            writer_str += f"{args.wavelet}/"
         writer_str += f"{args.features}/"
         writer_str += f"{args.batch_size}_"
         writer_str += f"{args.learning_rate}_"
         writer_str += f"{args.weight_decay}_"
         writer_str += f"{args.epochs}/"
-        if transform == "cwt":
-            writer_str += f"{args.wavelet}/"
         writer_str += f"{args.f_min}-"
         writer_str += f"{args.f_max}/"
         writer_str += f"{args.num_of_scales}/"
@@ -565,6 +566,23 @@ def _parse_args():
         "--calc-normalization",
         action="store_true",
         help="calculate normalization for debugging purposes.",
+    )
+    parser.add_argument(
+        "--mean",
+        type=float,
+        default=0,
+        help="Pre calculated mean. (default: 0)",
+    )
+    parser.add_argument(
+        "--std",
+        type=float,
+        default=1,
+        help="Pre calculated std. (default: 1)",
+    )
+    parser.add_argument(
+        "--log-scale",
+        action="store_true",
+        help="log-scale transformed audio.",
     )
     parser.add_argument(
         "--transform",
