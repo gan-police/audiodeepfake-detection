@@ -156,6 +156,7 @@ def load_transform_and_stack(
                 num_frames=int(old_win_size * frame_list[i]),
             )
             # resample audio
+            # TODO: bring together framing and resampling
             audio_res = torchaudio.functional.resample(
                 audio, sample_rate, resample_rate, resampling_method="kaiser_window"
             )
@@ -199,7 +200,10 @@ def load_process_store(
     Raises:
         ValueError: If datasets are not distributed between the different labels.
     """
+    if len(file_list) < preprocessing_batch_size:
+        preprocessing_batch_size = len(file_list)
     splits = int(len(file_list) / preprocessing_batch_size)
+
     batched_files = np.array_split(file_list, splits)
     batched_frames = np.array_split(frames_list, splits)
     file_count = 0
@@ -264,10 +268,19 @@ def get_frames(
         last_ind (int): The number of files that were used from given file_list + start.
                         Necessary if method is called multiple times, so that audio files are not
                         used twice.
+
+    Raises:
+        IndexError: If train size is bigger than there are samples in current folder.
     """
+    if len(file_list) == 0:
+        raise IndexError(
+            "Max len of train set is bigger than the samples contained in this folder."
+        )
+
     result_lst = []
     frames_lst = []
     length = 0
+
     for i in range(len(file_list)):
         leng = torchaudio.info(file_list[i]).num_frames
         temp = int(leng - (leng % window_size))
@@ -290,6 +303,7 @@ def split_dataset_random(
     window_size: int,
     folder_list: list[Path],
     folder_list_all: list[Path],
+    equal_distr: bool = False,
     max_len: Optional[int] = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Get shuffled dataset windows and paths with equally distributed labels.
@@ -308,6 +322,8 @@ def split_dataset_random(
                                 available sample number of a sub-dataset will be used for
                                 all of the other training sets. This argument is only necessary
                                 if max_len is not set manually.
+        equal_distr (bool): set this to false if ds should contain 50 % real and 50 % fake
+                            otherwise all folders will be equally distributed. Default: False.
         max_len (int): Maximum number of samples taken from each sub-datset (real or fake).
                        Can be used to make all datasets the same size. Default: None.
 
@@ -371,10 +387,6 @@ def split_dataset_random(
     test_size = max_len - train_size - val_size
 
     folder_num = len(folder_list) - 1
-
-    # set this to false if ds should contain 50 % real and 50 % fake
-    # otherwise all folders will be equally distributed
-    equal_distr = False
 
     if folder_num > 2:
         train_size -= train_size % folder_num
@@ -476,6 +488,7 @@ def pre_process_folder(
     test_size: float = 0.2,
     window_size: int = 11_025,
     sample_rate: int = 22_050,
+    equal_distr: bool = False,
     binary_classification: bool = False,
 ) -> None:
     """Preprocess a folder containing sub-directories with audios from different sources.
@@ -546,6 +559,7 @@ def pre_process_folder(
         window_size=window_size,
         folder_list=folder_list,
         folder_list_all=folder_list_all,
+        equal_distr=equal_distr,
         max_len=max_samples,
     )  # type: ignore
 
@@ -667,6 +681,11 @@ def parse_args():
         type=bool,
         help="Turns the problem into a fake or real binary classification problem.",
     )
+    parser.add_argument(
+        "--equal-distr",
+        action="store_true",
+        help="Distributes all source folders equally in datasets.",
+    )
 
     return parser.parse_args()
 
@@ -687,5 +706,6 @@ if __name__ == "__main__":
         window_size=args.window_size,
         sample_rate=args.sample_rate,
         max_samples=args.max_samples,
+        equal_distr=args.equal_distr,
         binary_classification=args.binary,
     )

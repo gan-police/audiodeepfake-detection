@@ -147,8 +147,8 @@ def main() -> None:
             features,
             device,
             wavelet,
-            normalization=True,
-            pbar=True,
+            normalization=args.mean == 0.0,
+            pbar=args.pbar,
         )
         for c_gan in c_gans:
             print(f"Evaluating {gan} on {c_gan}...", flush=True)
@@ -199,7 +199,7 @@ def main() -> None:
                     normalize=normalize,
                     batch_size=batch_size,
                     name=c_gan,
-                    pbar=True,
+                    pbar=args.pbar,
                 )
 
                 res_acc.append(acc)
@@ -366,6 +366,16 @@ def _parse_args():
         "--adapt-wavelet",
         action="store_true",
         help="If differentiable wavelets shall be used.",
+    )
+    parser.add_argument(
+        "--pbar",
+        action="store_true",
+        help="enables progress bars",
+    )
+    parser.add_argument(
+        "--calc-normalization",
+        action="store_true",
+        help="calculate normalization for debugging purposes.",
     )
     parser.add_argument(
         "--log-scale",

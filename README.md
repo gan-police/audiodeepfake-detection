@@ -87,7 +87,7 @@ python -m src.prepare_datasets \
     --directory "${HOME}/data/fake"
 ```
 
-The dataset preparation script accepts additional arguments. For example, it is possible to change the sizes of the train, test or validation sets. For a list of all optional arguments, open the help page via the `-h` argument.
+The dataset preparation script accepts additional arguments. For example, it is possible to change the sizes of the train, test or validation sets. Important: All .wav files need to have the same sample rate before preparing the datasets. For a list of all optional arguments, open the help page via the `-h` argument.
 
 ### Training the Classifier
 
