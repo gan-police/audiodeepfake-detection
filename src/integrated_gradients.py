@@ -244,10 +244,9 @@ def main() -> None:
         extent = [0, args.window_size / sample_rate, f_min / 1000, f_max / 1000]
         im_plot(
             inital.squeeze(2),
-            f"{plot_path}/cwt_{postfix}",
+            f"{plot_path}/raw_{postfix}",
             cmap="turbo",
             extent=extent,
-            cb_label="dB",
         )
         im_plot(attr_ig, f"{plot_path}/attr_ig_{postfix}", cmap="PRGn", extent=extent)
         im_plot(

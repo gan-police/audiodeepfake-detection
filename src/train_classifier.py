@@ -444,153 +444,19 @@ def _parse_args():
     parser.add_argument(
         "--learning-rate",
         type=float,
-        default=1e-3,
-        help="learning rate for optimizer (default: 1e-3)",
+        default=0.0001,
+        help="learning rate for optimizer (default: 0.0001)",
     )
     parser.add_argument(
         "--weight-decay",
         type=float,
-        default=0.0001,
-        help="weight decay for optimizer (default: 0.0001)",
+        default=0.01,
+        help="weight decay for optimizer (default: 0.01)",
     )
     parser.add_argument(
         "--epochs", type=int, default=10, help="number of epochs (default: 10)"
     )
-    parser.add_argument(
-        "--validation-interval",
-        type=int,
-        default=200,
-        help="number of training steps after which the model is tested on the validation data set (default: 200)",
-    )
-    parser.add_argument(
-        "--num-of-scales",
-        type=int,
-        default=150,
-        help="number of scales used in training set. (default: 150)",
-    )
-    parser.add_argument(
-        "--wavelet",
-        type=str,
-        default="cmor3.3-4.17",
-        help="Wavelet to use in cwt. (default: cmor3.3-4.17)",
-    )
-    parser.add_argument(
-        "--sample-rate",
-        type=int,
-        default=22050,
-        help="Sample rate of audio. (default: 22050)",
-    )
-    parser.add_argument(
-        "--window-size",
-        type=int,
-        default=11025,
-        help="Sample rate of audio. (default: 11025)",
-    )
-    parser.add_argument(
-        "--f-min",
-        type=float,
-        default=1000,
-        help="Minimum frequency to analyze in Hz. (default: 1000)",
-    )
-    parser.add_argument(
-        "--f-max",
-        type=float,
-        default=9500,
-        help="Maximum frequency to analyze in Hz. (default: 9500)",
-    )
-    parser.add_argument(
-        "--hop-length",
-        type=int,
-        default=1,
-        help="Hop length in transformation. (default: 1)",
-    )
-    parser.add_argument(
-        "--data-prefix",
-        type=str,
-        default="../data/fake",
-        help="shared prefix of the data paths (default: ../data/fake)",
-    )
-    parser.add_argument(
-        "--unknown-prefix",
-        type=str,
-        help="shared prefix of the data paths (default: none)",
-    )
-    parser.add_argument(
-        "--nclasses", type=int, default=2, help="number of classes (default: 2)"
-    )
-    parser.add_argument(
-        "--seed", type=int, default=0, help="the random seed pytorch works with."
-    )
-    parser.add_argument(
-        "--flattend-size",
-        type=int,
-        default=21888,
-        help="dense layer input size (default: 21888)",
-    )
-    parser.add_argument(
-        "--model",
-        choices=[
-            "onednet",
-            "learndeepnet",
-            "learnnet",
-            "lcnn",
-        ],
-        default="learndeepnet",
-        help="The model type. Default: learndeepnet.",
-    )
-    parser.add_argument(
-        "--adapt-wavelet",
-        action="store_true",
-        help="If differentiable wavelets shall be used.",
-    )
 
-    parser.add_argument(
-        "--tensorboard",
-        action="store_true",
-        help="enables a tensorboard visualization.",
-    )
-    parser.add_argument(
-        "--pbar",
-        action="store_true",
-        help="enables progress bars",
-    )
-    parser.add_argument(
-        "--calc-normalization",
-        action="store_true",
-        help="calculate normalization for debugging purposes.",
-    )
-    parser.add_argument(
-        "--mean",
-        type=float,
-        default=0,
-        help="Pre calculated mean. (default: 0)",
-    )
-    parser.add_argument(
-        "--std",
-        type=float,
-        default=1,
-        help="Pre calculated std. (default: 1)",
-    )
-    parser.add_argument(
-        "--log-scale",
-        action="store_true",
-        help="log-scale transformed audio.",
-    )
-    parser.add_argument(
-        "--loss-less",
-        action="store_true",
-        help="if sign pattern is to be used as second channel.",
-    )
-    parser.add_argument(
-        "--aug-contrast",
-        action="store_true",
-        help="use augmentation method contrast.",
-    )
-    parser.add_argument(
-        "--aug-noise",
-        action="store_true",
-        help="use augmentation method contrast.",
-    )
     parser.add_argument(
         "--transform",
         choices=[
@@ -609,10 +475,155 @@ def _parse_args():
             Delta and Dooubledelta include lfcc computing. Default: none.",
     )
     parser.add_argument(
+        "--num-of-scales",
+        type=int,
+        default=256,
+        help="number of scales used in training set. (default: 256)",
+    )
+    parser.add_argument(
+        "--wavelet",
+        type=str,
+        default="sym8",
+        help="Wavelet to use in wavelet transformations. (default: sym8)",
+    )
+    parser.add_argument(
+        "--sample-rate",
+        type=int,
+        default=22050,
+        help="Sample rate of audio. (default: 22050)",
+    )
+    parser.add_argument(
+        "--window-size",
+        type=int,
+        default=11025,
+        help="Window size of audio. (default: 11025)",
+    )
+    parser.add_argument(
+        "--f-min",
+        type=float,
+        default=1000,
+        help="Minimum frequency to analyze in Hz. (default: 1000)",
+    )
+    parser.add_argument(
+        "--f-max",
+        type=float,
+        default=11025,
+        help="Maximum frequency to analyze in Hz. (default: 11025)",
+    )
+    parser.add_argument(
+        "--hop-length",
+        type=int,
+        default=1,
+        help="Hop length in cwt and stft. (default: 100).",
+    )
+    parser.add_argument(
+        "--adapt-wavelet",
+        action="store_true",
+        help="If differentiable wavelets shall be used.",
+    )
+
+    parser.add_argument(
+        "--log-scale",
+        action="store_true",
+        help="Log-scale transformed audio.",
+    )
+    parser.add_argument(
+        "--loss-less",
+        action="store_true",
+        help="If sign pattern is to be used as second channel, only works for packets.",
+    )
+    parser.add_argument(
+        "--aug-contrast",
+        action="store_true",
+        help="Use augmentation method contrast.",
+    )
+    parser.add_argument(
+        "--aug-noise",
+        action="store_true",
+        help="Use augmentation method contrast.",
+    )
+
+    parser.add_argument(
+        "--calc-normalization",
+        action="store_true",
+        help="calculate normalization for debugging purposes.",
+    )
+    parser.add_argument(
+        "--mean",
+        type=float,
+        default=0,
+        help="Pre calculated mean. (default: 0)",
+    )
+    parser.add_argument(
+        "--std",
+        type=float,
+        default=1,
+        help="Pre calculated std. (default: 1)",
+    )
+
+    parser.add_argument(
+        "--data-prefix",
+        type=str,
+        default="../data/fake",
+        help="Shared prefix of the data paths (default: ../data/fake).",
+    )
+    parser.add_argument(
+        "--unknown-prefix",
+        type=str,
+        help="Shared prefix of the unknown source data paths (default: none).",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="The random seed pytorch and numpy works with (default: 0).",
+    )
+    parser.add_argument(
+        "--flattend-size",
+        type=int,
+        default=21888,
+        help="Dense layer input size (default: 21888).",
+    )
+    parser.add_argument(
+        "--model",
+        choices=[
+            "onednet",
+            "learndeepnet",
+            "learnnet",
+            "lcnn",
+        ],
+        default="lcnn",
+        help="The model type (default: lcnn).",
+    )
+    parser.add_argument(
+        "--nclasses",
+        type=int,
+        default=2,
+        help="Number of output classes in model (default: 2).",
+    )
+
+    parser.add_argument(
+        "--tensorboard",
+        action="store_true",
+        help="enables a tensorboard visualization.",
+    )
+    parser.add_argument(
+        "--pbar",
+        action="store_true",
+        help="enables progress bars",
+    )
+    parser.add_argument(
         "--num-workers",
         type=int,
         default=2,
         help="Number of worker processes started by the test and validation data loaders (default: 2)",
+    )
+    parser.add_argument(
+        "--validation-interval",
+        type=int,
+        default=200,
+        help="number of training steps after which the model is tested "
+        " on the validation data set (default: 200)",
     )
     parser.add_argument(
         "--ckpt-every",

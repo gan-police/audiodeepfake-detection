@@ -22,7 +22,7 @@ python -m src.prepare_datasets \
     --batch-size 512 \
     --window-size 22050 \
     --sample-rate 22050 \
-    --max-samples 1598536800 \
+    --max-samples 1751144850 \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --leave-out ${HOME}/data/fake/B_melgan ${HOME}/data/fake/C_hifigan ${HOME}/data/fake/D_mbmelgan ${HOME}/data/fake/F_waveglow ${HOME}/data/fake/G_pwg ${HOME}/data/fake/H_lmelgan ${HOME}/data/fake/I_avocodo \
     --directory "${HOME}/data/fake"
