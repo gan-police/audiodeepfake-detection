@@ -85,8 +85,8 @@ class STFTLayer(torch.nn.Module):
         self,
         n_fft: int = 512,
         hop_length: int = 1,
-        log_scale: bool = True,
         log_offset: float = 1e-12,
+        log_scale: bool = False,
     ):
         """Initialize config.
 
@@ -98,7 +98,9 @@ class STFTLayer(torch.nn.Module):
             log_offset (float): Offset for log scaling. (Default: 1e-12)
         """
         super().__init__()
-        self.transform = Spectrogram(n_fft=n_fft, hop_length=hop_length).cuda()
+        self.transform = Spectrogram(
+            n_fft=n_fft, hop_length=hop_length, power=2.0
+        ).cuda()
         self.log_scale = log_scale
         self.log_offset = log_offset
 
@@ -112,9 +114,7 @@ class STFTLayer(torch.nn.Module):
         specgram = self.transform(input)
 
         if self.log_scale:
-            specgram = torch.log(specgram + self.log_offset)
-
-        specgram = specgram.to(torch.float32)
+            specgram = torch.log(specgram + 1e-12)
 
         return specgram
 
@@ -219,8 +219,8 @@ def compute_pytorch_packet_representation(
     pt_data: torch.Tensor,
     wavelet: pywt.Wavelet,
     max_lev: int = 8,
-    block_norm: bool = False,
     log_scale: bool = False,
+    loss_less: bool = False,
 ):
     """Create a packet image."""
     ptwt_wp_tree = ptwt.WaveletPacket(data=pt_data, wavelet=wavelet, mode="reflect")
@@ -231,13 +231,18 @@ def compute_pytorch_packet_representation(
     for node in wp_keys:
         packet_list.append(ptwt_wp_tree[node])
 
-    if block_norm:
-        packet_list = [wp / torch.max(torch.abs(wp)) for wp in packet_list]
-
     wp_pt = torch.stack(packet_list, dim=-1)
 
     if log_scale:
-        wp_pt = torch.log(torch.abs(wp_pt) + 1e-12)
+        wp_pt_log = torch.log(torch.abs(wp_pt).pow(2.0) + 1e-12)
+
+        if loss_less:
+            sign_pattern = ((wp_pt < 0).type(torch.float32) * (-1) + 0.5) * 2
+            wp_pt = torch.stack([wp_pt_log, sign_pattern], 1)
+        else:
+            wp_pt = wp_pt_log.unsqueeze(1)
+    else:
+        wp_pt = wp_pt.unsqueeze(1)
 
     return wp_pt
 
@@ -249,29 +254,25 @@ class Packets(torch.nn.Module):
         self,
         wavelet_str: str = "sym8",
         max_lev: int = 8,
-        block_norm=False,
-        log_scale=False,
+        log_scale: bool = False,
+        loss_less: bool = False,
     ) -> None:
         """Initialize."""
         super().__init__()
         self.wavelet = pywt.Wavelet(wavelet_str)
         self.max_lev = max_lev
-        self.block_norm = block_norm
         self.log_scale = log_scale
+        self.loss_less = loss_less
 
     def forward(self, pt_data: torch.Tensor) -> torch.Tensor:
         """Forward packet representation."""
-        return (
-            compute_pytorch_packet_representation(
-                pt_data,
-                self.wavelet,
-                self.max_lev,
-                self.block_norm,
-                self.log_scale,
-            )
-            .unsqueeze(1)
-            .permute(0, 1, 3, 2)
-        )
+        return compute_pytorch_packet_representation(
+            pt_data,
+            self.wavelet,
+            self.max_lev,
+            self.log_scale,
+            self.loss_less,
+        ).permute(0, 1, 3, 2)
 
 
 def get_transforms(
@@ -307,7 +308,7 @@ def get_transforms(
             wavelet_str=args.wavelet,
             max_lev=int(log(args.num_of_scales, 2)),
             log_scale=args.features == "none" and args.log_scale,
-            block_norm=False,
+            loss_less=args.loss_less,
         )
 
     lfcc = LFCC(
@@ -341,12 +342,12 @@ def get_transforms(
                 disable=not pbar,
             ):
                 freq_time_dt = transforms(batch["audio"].cuda())
-                welford.update(freq_time_dt.squeeze(1).unsqueeze(-1))
+                welford.update(freq_time_dt.permute(0, 3, 2, 1))
             mean, std = welford.finalize()
     else:
         mean = torch.tensor(args.mean, device=device)
         std = torch.tensor(args.std, device=device)
-    print("mean", mean.item(), "std:", std.item())
+    print("mean", mean, "std:", std)
 
     normalize = torch.nn.Sequential(
         torchvision.transforms.Normalize(mean, std),

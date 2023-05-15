@@ -4,12 +4,10 @@
 #SBATCH --job-name=train_cnn
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH --time=8:00:00
 #SBATCH --partition=A40short
-#SBATCH --mem=94GB
-#SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log/train_lcnn_packets_fbmelgan_%j.out
-#SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log/train_lcnn_packets_fbmelgan_%j.err
-#SBATCH -x node-02
+#SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log3/slurm/train/train_lcnn_packets_fbmelgan_%A_%a.out
+#SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log3/slurm/train/train_lcnn_packets_fbmelgan_%A_%a.err
+#SBATCH --array=0-4
 
 source ${HOME}/.bashrc
 
@@ -18,29 +16,32 @@ echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
 module load CUDA/11.7.0
 conda activate py310
 
+echo "using power of 2.0 before log scaling..."
+
 python -m src.train_classifier \
     --batch-size 128 \
     --learning-rate 0.0001 \
     --weight-decay 0.01   \
-    --epochs 10 \
-    --validation-interval 396    \
-    --data-prefix "${HOME}/data/fake_22050_22050_0.7_$1" \
-    --unknown-prefix "${HOME}/data/fake_22050_22050_0.7_allwithjsut" \
+    --epochs 5 \
+    --validation-interval 800    \
+    --data-prefix "${HOME}/data/run4/fake_22050_22050_0.7_$2" \
+    --unknown-prefix "${HOME}/data/run4/fake_22050_22050_0.7_all" \
     --nclasses 2 \
-    --seed 0 \
+    --seed $SLURM_ARRAY_TASK_ID \
     --model lcnn  \
-    --transform packets \
-    --wavelet $2 \
+    --transform $1 \
+    --wavelet $4 \
     --num-of-scales $3 \
     --hop-length 100 \
     --log-scale \
+    --loss-less \
     --f-min 1 \
-    --f-max 11024 \
+    --f-max 11025 \
     --window-size 22050 \
     --sample-rate 22050 \
     --features none \
     --calc-normalization \
     --num-workers 2 \
-    --pbar
+    --tensorboard
 
 echo "Goodbye at $(date)."

@@ -59,16 +59,22 @@ data
   │         ├── LJ001-0001_gen.wav
   |         ├── ...
   │         └── LJ008-0217_gen.wav
-  └── real
-       └── A_ljspeech
-            ├── LJ001-0001.wav
+  ├── real
+  |    └── A_ljspeech
+  |         ├── LJ001-0001.wav
+  |         ├── ...
+  |         └── LJ008-0217.wav
+  └── fake_test
+       └── N_conformer
+            ├── 0001_gen.wav
             ├── ...
-            └── LJ008-0217.wav
+            └── 2200_gen.wav
 ```
 
 The prefixes of the folders are important, since the directories get the labels in lexicographic order of their prefix, i.e. directory `A_...` gets label 0, `B_...` label 1, etc.
 
-Now, to prepare the data sets run `src.prepare_dataset` . It reads data set, splits them into a training, validation and test set, cuts all audios to pieces of window_size, resamples to the desired sample rate and stores the result as numpy arrays. This could look like this:
+Now, to prepare the data sets run `src.prepare_dataset` . It reads data set, splits them into a training, validation and test set, cuts all audios to pieces of window_size and stores the result as numpy arrays. 
+If you want to only generate test datasets e.g. for cross validation, put them into a seperate folder like `fake_test` and pass them to `prepare_datasets.py` with the option `--testdir`. This could look like this:
 
 ```shell
 python -m src.prepare_datasets \
@@ -76,7 +82,8 @@ python -m src.prepare_datasets \
     --sample-rate 22050 \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --fakedir "${HOME}/data/fake/B_melgan" \
-    --directory "${HOME}/data/fake"
+    --directory "${HOME}/data/fake" \
+    --target-dir "${HOME}/data/datasets"
 ```
 or
 ```shell
@@ -85,9 +92,18 @@ python -m src.prepare_datasets \
     --sample-rate 22050 \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --directory "${HOME}/data/fake"
+    --target-dir "${HOME}/data/datasets"
 ```
 
 The dataset preparation script accepts additional arguments. For example, it is possible to change the sizes of the train, test or validation sets. Important: All .wav files need to have the same sample rate before preparing the datasets. For a list of all optional arguments, open the help page via the `-h` argument.
+
+We recommend to use the scripts `scripts/prepare_single_dataset.sh`, `scripts/prepare_all_dataset.sh` and `scripts/prepare_test_dataset.sh`.
+
+Important: After preparing all folders run `python scripts/clean_up.py` to make sure that all dataset splits contain the same amount of positive and negative labels. Make sure to set `path` to the target directory from above (it should only contain the output folders from the step before ending with `_test`, `_val` and `_all`). Check if the script executed properly with
+```shell
+for folder in *_train; do echo "$folder: $(find "$folder" -maxdepth 1 -type f | wc -l)"; done
+```
+Find all folders to contain the same amount of files.
 
 ### Training the Classifier
 

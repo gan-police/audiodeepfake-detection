@@ -16,12 +16,15 @@ from .train_classifier import set_seed
 
 def shuffle_random(a, b) -> tuple[list, list]:
     """Shuffle two arrays randomly in the same order."""
-    c: np.ndarray = np.c_[a.reshape(len(a), -1), b.reshape(len(b), -1)]
-    a2: np.ndarray = c[:, : a.size // len(a)].reshape(a.shape)
-    b2: np.ndarray = c[:, a.size // len(a) :].reshape(b.shape)
-    np.random.shuffle(c)
+    if a.shape[0] > 0 and b.shape[0] > 0:
+        c: np.ndarray = np.c_[a.reshape(len(a), -1), b.reshape(len(b), -1)]
+        a2: np.ndarray = c[:, : a.size // len(a)].reshape(a.shape)
+        b2: np.ndarray = c[:, a.size // len(a) :].reshape(b.shape)
+        np.random.shuffle(c)
+        a = a2.tolist()
+        b = b2.tolist()
 
-    return a2.tolist(), b2.tolist()
+    return a, b
 
 
 def save_to_disk(
@@ -280,7 +283,6 @@ def get_frames(
     result_lst = []
     frames_lst = []
     length = 0
-
     for i in range(len(file_list)):
         leng = torchaudio.info(file_list[i]).num_frames
         temp = int(leng - (leng % window_size))
@@ -303,6 +305,7 @@ def split_dataset_random(
     window_size: int,
     folder_list: list[Path],
     folder_list_all: list[Path],
+    test_folder: Optional[Path] = None,
     equal_distr: bool = False,
     max_len: Optional[int] = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -347,19 +350,25 @@ def split_dataset_random(
             sizes.append(len(file_list))
             for i in range(len(file_list)):
                 leng = torchaudio.info(file_list[i]).num_frames
+                if leng < window_size:
+                    print(f"skipping {file_list[i]}..")
+                    continue
                 length += leng - (leng % window_size)
-                if i % 10000 == 0:
+                if i % 10000 == 0 and i > 0:
                     print(i)
             lengths.append(length)
 
         single_lengths = []
-        if folder_list != folder_list_all:
+        if folder_list != folder_list_all and len(folder_list) > 1:
             print("Counting ", folder)
             for folder in folder_list:
                 length = 0
                 file_list = list(folder.glob("./*.wav"))
                 for i in range(len(file_list)):
                     leng = torchaudio.info(file_list[i]).num_frames
+                    if leng < window_size:
+                        print(f"skipping {file_list[i]}..")
+                        continue
                     length += leng - (leng % window_size)
                     if i % 10000 == 0 and i > 0:
                         print(i)
@@ -375,17 +384,18 @@ def split_dataset_random(
         max_len = min(lengths)  # max length of folder
     max_len -= max_len % window_size
     max_len = int(max_len)
-    print(max_len)
+    print(
+        f"Hint: use --max-samples {max_len} for all the following splits to speed up preparation."
+    )
 
     result_list = []
     frames_list = []
 
     train_size = int(max_len * train_size)
-    train_size -= train_size % window_size
+    train_size -= train_size % window_size + 10 * window_size
     val_size = int(max_len * val_size)
-    val_size -= val_size % window_size
-    test_size = max_len - train_size - val_size
-
+    val_size -= val_size % window_size + 10 * window_size
+    test_size = (max_len - train_size - val_size) - 30 * window_size
     folder_num = len(folder_list) - 1
 
     if folder_num > 2:
@@ -393,7 +403,7 @@ def split_dataset_random(
         val_size -= val_size % folder_num
         test_size -= test_size % folder_num
 
-    if not equal_distr:
+    if not equal_distr and len(folder_list) > 1:
         # insert real folder at last position
         for folder in folder_list:
             if get_label_of_folder(folder, True) == 0:
@@ -451,6 +461,26 @@ def split_dataset_random(
             np.asarray([train_list_w, val_list_w, test_list_w], dtype=object)
         )
 
+    if test_folder is not None:
+        print(f"splitting folder {test_folder}", flush=True)
+        file_list = list(test_folder.glob("./*.wav"))
+        if len(file_list) == 0:
+            raise ValueError("File list does not contain any files.")
+        test_list_f, test_list_w, last_ind = get_frames(
+            window_size, file_list, test_size
+        )
+        result_list_new = []
+        frames_list_new = []
+        result_list_new.append(np.asarray([[], [], result_list[0][2]]))
+        frames_list_new.append(np.asarray([[], [], frames_list[0][2]]))
+        result_list_new.append(np.asarray([[], [], test_list_f], dtype=object))
+        frames_list_new.append(np.asarray([[], [], test_list_w], dtype=object))
+        result_list = result_list_new
+        frames_list = frames_list_new
+        print(
+            f"Important: Train test and validation files of test folder {test_folder} will be the same."
+        )
+
     files = np.asarray(result_list, dtype=object)
     frames = np.asarray(frames_list, dtype=object)
 
@@ -482,6 +512,7 @@ def pre_process_folder(
     real: Optional[str],
     fake: Optional[str],
     leave_out: Optional[list],
+    only_test: Optional[str],
     max_samples: Optional[int] = None,
     train_size: float = 0.7,
     val_size: float = 0.1,
@@ -518,7 +549,6 @@ def pre_process_folder(
                     are not set properly.
     """
     set_seed(42)
-
     if train_size + val_size + test_size > 1.0:
         raise ValueError(
             "Training, test and validation size factors should result to 1."
@@ -536,71 +566,121 @@ def pre_process_folder(
                 folder_name += f"_x{folder.split('_')[-1]}"
 
     if real is not None:
-        if fake is None:
+        if fake is None and only_test is None:
             folder_list_all.append(Path(real))
             folder_list = folder_list_all
-            folder_name += "_allwithjust"
+            folder_name += "_all"
         else:
+            if only_test is not None:
+                fake = only_test
+                folder_list = [Path(real)]
+            else:
+                folder_list = [Path(real), Path(fake)]
             folder_name += f"_{fake.split('_')[-1]}"
-            folder_list = [Path(real), Path(fake)]
             folder_list_all.append(Path(real))
     else:
         if len(folder_list_all) == 0:
             raise ValueError("Either directory and/or realdir must be set.")
         folder_list = folder_list_all
 
-    if len(folder_list_all) <= 1:
-        print("Warning: training will contain one or less labels.")
-    target_dir = data_dir.parent / folder_name
+    if args.target_dir is not None:
+        target_dir = Path(args.target_dir) / folder_name
+    else:
+        target_dir = data_dir.parent / folder_name
+    target_dir.mkdir(parents=True, exist_ok=True)
 
-    train_list, val_list, test_list = split_dataset_random(
-        train_size=train_size,
-        val_size=val_size,
-        window_size=window_size,
-        folder_list=folder_list,
-        folder_list_all=folder_list_all,
-        equal_distr=equal_distr,
-        max_len=max_samples,
-    )  # type: ignore
+    if only_test is not None:
+        _, _, test_list = split_dataset_random(
+            train_size=train_size,
+            val_size=val_size,
+            window_size=window_size,
+            folder_list=folder_list,
+            folder_list_all=folder_list_all,
+            test_folder=Path(only_test),
+            equal_distr=equal_distr,
+            max_len=max_samples,
+        )  # type: ignore
+        process_folders(
+            preprocessing_batch_size,
+            window_size,
+            sample_rate,
+            binary_classification,
+            target_dir,
+            test_list=test_list,
+        )
+    else:
+        train_list, val_list, test_list = split_dataset_random(
+            train_size=train_size,
+            val_size=val_size,
+            window_size=window_size,
+            folder_list=folder_list,
+            folder_list_all=folder_list_all,
+            equal_distr=equal_distr,
+            max_len=max_samples,
+        )  # type: ignore
+        process_folders(
+            preprocessing_batch_size,
+            window_size,
+            sample_rate,
+            binary_classification,
+            target_dir,
+            train_list,
+            val_list,
+            test_list,
+        )
 
+
+def process_folders(
+    preprocessing_batch_size,
+    window_size,
+    sample_rate,
+    binary_classification,
+    target_dir,
+    train_list=None,
+    val_list=None,
+    test_list=None,
+):
     print("processing validation set.", flush=True)
-    load_process_store(
-        val_list[0],
-        val_list[1],
-        preprocessing_batch_size,
-        target_dir,
-        "val",
-        window_size=window_size,
-        sample_rate=sample_rate,
-        binary_classification=binary_classification,
-    )
-    print("validation set stored")
+    if val_list is not None:
+        load_process_store(
+            val_list[0],
+            val_list[1],
+            preprocessing_batch_size,
+            target_dir,
+            "val",
+            window_size=window_size,
+            sample_rate=sample_rate,
+            binary_classification=binary_classification,
+        )
+        print("validation set stored")
 
     print("processing test set.", flush=True)
-    load_process_store(
-        test_list[0],
-        test_list[1],
-        preprocessing_batch_size,
-        target_dir,
-        "test",
-        window_size=window_size,
-        sample_rate=sample_rate,
-        binary_classification=binary_classification,
-    )
-    print("test set stored", flush=True)
+    if test_list is not None:
+        load_process_store(
+            test_list[0],
+            test_list[1],
+            preprocessing_batch_size,
+            target_dir,
+            "test",
+            window_size=window_size,
+            sample_rate=sample_rate,
+            binary_classification=binary_classification,
+        )
+        print("test set stored", flush=True)
 
     print("processing training set.", flush=True)
-    load_process_store(
-        train_list[0],
-        train_list[1],
-        preprocessing_batch_size,
-        target_dir,
-        "train",
-        window_size=window_size,
-        sample_rate=sample_rate,
-        binary_classification=binary_classification,
-    )
-    print("training set stored", flush=True)
+    if train_list is not None:
+        load_process_store(
+            train_list[0],
+            train_list[1],
+            preprocessing_batch_size,
+            target_dir,
+            "train",
+            window_size=window_size,
+            sample_rate=sample_rate,
+            binary_classification=binary_classification,
+        )
+        print("training set stored", flush=True)
 
 
 def parse_args():
@@ -627,11 +707,22 @@ def parse_args():
         " argument will be ignored, but --realdir must be set.",
     )
     parser.add_argument(
+        "--target-dir",
+        type=str,
+        default="./data/datasets",
+        help="The target dir for the sub folders.",
+    )
+    parser.add_argument(
         "--leave-out",
         nargs="+",
         default=[],
         type=str,
-        help="Wich gans to ignore in folder.",
+        help="Which gans to ignore in folder.",
+    )
+    parser.add_argument(
+        "--testdir",
+        type=str,
+        help="The folder with the gan generated audio only for testing. Select only a single one.",
     )
     parser.add_argument(
         "--train-size",
@@ -700,6 +791,7 @@ if __name__ == "__main__":
         real=args.realdir,
         fake=args.fakedir,
         leave_out=args.leave_out,
+        only_test=args.testdir,
         train_size=args.train_size,
         val_size=args.val_size,
         test_size=args.test_size,

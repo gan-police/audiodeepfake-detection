@@ -54,14 +54,15 @@ class LCNN(nn.Module):
     def __init__(
         self,
         classes: int = 2,
-        channels: int = 32,
+        in_channels: int = 1,
+        lstm_channels: int = 32,
     ) -> None:
         """Define network sturcture."""
         super(LCNN, self).__init__()
 
         # LCNN from AVSpoofChallenge 2021
         self.lcnn = nn.Sequential(
-            nn.Conv2d(1, 64, 5, 1, padding=2),
+            nn.Conv2d(in_channels, 64, 5, 1, padding=2),
             MaxFeatureMap2D(),
             nn.MaxPool2d(2, 2),
             nn.Conv2d(32, 64, 1, 1, padding=0),
@@ -93,12 +94,11 @@ class LCNN(nn.Module):
         )
 
         self.lstm = nn.Sequential(
-            BLSTMLayer((channels // 16) * 32, (channels // 16) * 32),
-            BLSTMLayer((channels // 16) * 32, (channels // 16) * 32),
+            BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
+            BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
         )
 
-        self.fc = nn.Linear((channels // 16) * 32, classes)
-        self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
+        self.fc = nn.Linear((lstm_channels // 16) * 32, classes)
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
@@ -549,6 +549,7 @@ def get_model(
     hop_length: int = 1,
     raw_input: Optional[bool] = True,
     adapt_wavelet: bool = False,
+    in_channels: int = 1,
     channels: int = 32,
 ) -> LearnDeepTestNet | OneDNet | LearnNet:
     """Get torch module model with given parameters."""
@@ -571,7 +572,8 @@ def get_model(
     elif model_name == "lcnn":
         model = LCNN(
             classes=nclasses,
-            channels=channels,
+            in_channels=in_channels,
+            lstm_channels=channels,
         )  # type: ignore
     elif model_name == "learnnet":
         model = LearnNet(

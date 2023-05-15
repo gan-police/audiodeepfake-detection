@@ -67,9 +67,11 @@ def main():
     """
     args = _parse_args()
     print(args)
-
-    if not os.path.exists("./log/"):
-        os.makedirs("./log/")
+    base_dir = "./exp/log3/"
+    if not os.path.exists(base_dir + "/models"):
+        os.makedirs(base_dir + "/models")
+    if not os.path.exists(base_dir + "/tensorboard"):
+        os.makedirs(base_dir + "/tensorboard")
 
     if args.f_max > args.sample_rate / 2:
         print("Warning: maximum analyzed frequency is above nyquist rate.")
@@ -89,8 +91,10 @@ def main():
 
     if transform == "cwt":
         print("Warning: cwt not tested.")
+    elif transform == "stft" and args.loss_less:
+        raise ValueError("Sign channel not possible for stft due to complex data type.")
 
-    model_file = "./log/" + path_name[0] + "_"
+    model_file = base_dir + "models/" + path_name[0] + "_"
     if transform == "cwt":
         model_file += "cwt" + str(args.wavelet)
     elif transform == "stft":
@@ -126,8 +130,8 @@ def main():
         + f"{args.epochs}e"
         + "_"
         + str(args.model)
-        + "_"
-        + str(args.adapt_wavelet)
+        + "_signs"
+        + str(args.loss_less)
         + "_"
         + known_gen_name
         + "_"
@@ -195,12 +199,13 @@ def main():
         features=features,
         hop_length=args.hop_length,
         adapt_wavelet=args.adapt_wavelet,
+        in_channels=2 if args.loss_less else 1,
         channels=channels,
     )
     model.to(device)
 
     if args.tensorboard:
-        writer_str = "exp/runs/"
+        writer_str = base_dir + "/tensorboard/"
         writer_str += f"{args.model}/"
         writer_str += f"{args.transform}/"
         if transform == "cwt" or transform == "packets":
@@ -213,7 +218,7 @@ def main():
         writer_str += f"{args.f_min}-"
         writer_str += f"{args.f_max}/"
         writer_str += f"{args.num_of_scales}/"
-        writer_str += f"{args.adapt_wavelet}/"
+        writer_str += f"signs{args.loss_less}/"
         writer_str += f"{known_gen_name}/"
         writer_str += f"{args.seed}"
         writer = SummaryWriter(writer_str, max_queue=100)
@@ -269,28 +274,6 @@ def main():
             )
 
             bar.set_description(f"ce-cost: {loss.item():2.8f}, acc: {acc.item():2.2f}")
-
-            if it % 2000 == 0 and it > 0:
-                prt_str = f"e {e} it {it} total {step_total} loss {loss.item()} acc {acc.item()}"
-                if args.transform == "cwt":
-                    prt_str += " bandwidth "
-                    prt_str += str(
-                        round(
-                            model.state_dict()["transform.wavelet.bandwidth_par"].item()
-                            ** 2,
-                            5,
-                        )
-                    )
-                    prt_str += " center freq "
-                    prt_str += str(
-                        round(
-                            model.state_dict()["transform.wavelet.center_par"].item()
-                            ** 2,
-                            5,
-                        )
-                    )
-                print(prt_str, flush=True)
-                torch.cuda.empty_cache()
 
             if it % ckpt_every == 0 and it > 0:
                 save_model_epoch(model_file, model)
@@ -583,6 +566,11 @@ def _parse_args():
         "--log-scale",
         action="store_true",
         help="log-scale transformed audio.",
+    )
+    parser.add_argument(
+        "--loss-less",
+        action="store_true",
+        help="if sign pattern is to be used as second channel.",
     )
     parser.add_argument(
         "--transform",

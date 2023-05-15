@@ -1,5 +1,6 @@
 """Evaluate models with accuracy and eer metric."""
 import argparse
+import json
 from typing import Any
 
 import numpy as np
@@ -127,6 +128,8 @@ def main() -> None:
     gan_acc_dict = {}
     mean_eers = {}
     mean_accs = {}
+    allres_eer_seeds = {}
+    allres_acc_seeds = {}
 
     if "doubledelta" in features:
         channels = 60
@@ -140,6 +143,8 @@ def main() -> None:
     for gan in gans:
         aeer = []
         accs = []
+        aeer_seeds = []
+        aacc_seeds = []
 
         transforms, normalize = get_transforms(
             args,
@@ -157,7 +162,8 @@ def main() -> None:
 
             test_data_dir = f"{data_prefix}_{c_gan}"
 
-            test_data_set = LearnWavefakeDataset(test_data_dir + "_test")
+            set_name = "_test"
+            test_data_set = LearnWavefakeDataset(test_data_dir + set_name)
 
             test_data_loader = DataLoader(
                 test_data_set,
@@ -185,6 +191,7 @@ def main() -> None:
                     stft=args.transform == "stft",
                     features=features,
                     hop_length=hop_length,
+                    in_channels=2 if args.loss_less else 1,
                     channels=channels,
                 )
                 old_state_dict = torch.load(model_dir)
@@ -214,10 +221,22 @@ def main() -> None:
             gan_acc_dict[f"{gan}-{c_gan}"] = res_dict
             aeer.append(res_dict["mean_eer"])
             accs.append(res_dict["mean_acc"])
-        mean_eers[gan] = (np.mean(aeer), np.std(aeer))
-        mean_accs[gan] = (np.mean(accs), np.std(accs))
+            aeer_seeds.append(res_eer)
+            aacc_seeds.append(res_acc)
+        allres_eer_seeds[gan] = np.asarray(aeer_seeds)
+        allres_acc_seeds[gan] = np.asarray(aacc_seeds)
+        if allres_acc_seeds[gan].shape[0] > 1:
+            accs = allres_acc_seeds[gan].mean(0)
+            aeer = allres_eer_seeds[gan].mean(0)
+        else:
+            accs = allres_acc_seeds[gan]
+            aeer = allres_eer_seeds[gan]
+        mean_eers[gan] = (aeer.mean(), aeer.mean(), accs.min())
+        mean_accs[gan] = (accs.mean(), accs.mean(), accs.max())
     gan_acc_dict["aEER"] = mean_eers
     gan_acc_dict["aACC"] = mean_accs
+    gan_acc_dict["allres_eer"] = allres_eer_seeds
+    gan_acc_dict["allres_acc"] = allres_acc_seeds
 
     print(gan_acc_dict)
 
@@ -232,8 +251,14 @@ def main() -> None:
             pr_str += f" mean {gan_acc_dict[ind]['mean_eer']:.5f} +- "
             pr_str += f"{gan_acc_dict[ind]['std_eer']:.5f}"
             print(pr_str)
-        print(f"average eer for {gan}: {gan_acc_dict['aEER'][gan]}")
-        print(f"average acc for {gan}: {gan_acc_dict['aACC'][gan]}")
+        print(f"mean +- std and min eer for {gan}: {gan_acc_dict['aEER'][gan]}")
+        print(f"mean +- std and max acc for {gan}: {gan_acc_dict['aACC'][gan]}")
+        print(
+            f"& ${round(gan_acc_dict['aACC'][gan][2] * 100, 2)}$ & ${round(gan_acc_dict['aACC'][gan][0] * 100, 2)} \pm{round(gan_acc_dict['aACC'][gan][1] * 100, 2)}$ & ${round(gan_acc_dict['aEER'][gan][2], 3)}$ & ${round(gan_acc_dict['aEER'][gan][0], 3)}\pm{round(gan_acc_dict['aEER'][gan][1], 3)}$"
+        )
+
+    with open(f"{args.model_path_prefix}_results.json", "w+") as json_file:
+        json.dump(gan_acc_dict, json_file, indent=4)
 
 
 def _parse_args():
@@ -381,6 +406,11 @@ def _parse_args():
         "--log-scale",
         action="store_true",
         help="If differentiable wavelets shall be used.",
+    )
+    parser.add_argument(
+        "--loss-less",
+        action="store_true",
+        help="if sign pattern is to be used as second channel.",
     )
     parser.add_argument(
         "--mean",
