@@ -1,13 +1,12 @@
 #!/bin/bash
 #
 #SBATCH --nodes=1
-#SBATCH --job-name=eval
-#SBATCH --output=/home/s6kogase/wavelet-audiodeepfake-detection_code/out/ig_%j.out
-#SBATCH --error=/home/s6kogase/wavelet-audiodeepfake-detection_code/out/ig_%j.err
+#SBATCH --job-name=attribute
+#SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log3/slurm/ig/ig_%j.out
+#SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log3/slurm/ig/ig_%j.err
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH --partition=A40medium
-#SBATCH --nodelist=node-01
+#SBATCH --partition=A40devel
 
 source ${HOME}/.bashrc
 
@@ -15,15 +14,25 @@ echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
 
 conda activate py310
 python -m src.integrated_gradients \
-    --data-prefix "${HOME}/data/fake_22050_11025_0.7" \
     --plot-path "./plots/attribution" \
     --target-label 1 \
-    --times 5056 \
-    --model "learndeepnet"  \
-    --wavelet "cmor3.3-4.17" \
-    --num-of-scales 150 \
+    --times 10000 \
+    --data-prefix "${HOME}/data/run4/fake_22050_22050_0.7" \
+    --model-path-prefix ./exp/log3/models/fake_packetssym8_none_100_22050_22050_256_1-11025_0.7_0.0001_0.01_128_2_10e_lcnn_signsFalse \
+    --model "lcnn"  \
+    --batch-size 128 \
+    --wavelet sym8 \
+    --f-min 1 \
+    --f-max 11025 \
+    --window-size 22050 \
+    --num-of-scales 256 \
     --sample-rate 22050 \
-    --flattend-size 21888 \
-    --gans "melgan" "lmelgan" "mbmelgan" "fbmelgan" "hifigan" "waveglow" "pwg" "all"
+    --features none \
+    --hop-length 100 \
+    --seed 0 \
+    --transform packets \
+    --log-scale \
+    --gans "fbmelgan" \
+    --pbar
 
 echo "Goodbye at $(date)."

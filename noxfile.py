@@ -6,6 +6,15 @@ See also: https://nox.thea.codes/en/stable/
 import nox
 
 
+@nox.session(name="format", python=["3.10"])
+def format(session) -> None:
+    """Fix common convention problems automatically."""
+    session.install("black")
+    session.install("isort")
+    session.run("isort", "src", "scripts", "noxfile.py")
+    session.run("black", "src", "scripts", "noxfile.py")
+
+
 @nox.session(name="test", python=["3.10"])
 def run_test(session) -> None:
     """Run tests."""
@@ -44,12 +53,3 @@ def mypy(session) -> None:
         "--allow-untyped-calls",
         "src",
     )
-
-
-@nox.session(name="format", python=["3.10"])
-def format(session) -> None:
-    """Fix common convention problems automatically."""
-    session.install("black")
-    session.install("isort")
-    session.run("isort", "src", "scripts", "noxfile.py")
-    session.run("black", "src", "scripts", "noxfile.py")

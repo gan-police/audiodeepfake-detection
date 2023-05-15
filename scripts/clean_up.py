@@ -1,3 +1,4 @@
+"""Clean up train, test and validation sets to be exactly equally distributed in all labels."""
 import os
 
 import numpy as np
@@ -27,7 +28,7 @@ for end in ["_val", "_test", "_train"]:
     for i in range(0, len(len_list), 2):
         if len_list[i] > minimum or len_list[i + 1] > minimum:
             del_list = []
-            print(f"processing " + dir_list[i // 2])
+            print(f"processing {dir_list[i // 2]}")
             dataset = LearnWavefakeDataset(dir_list[i // 2])
 
             del_list.extend(

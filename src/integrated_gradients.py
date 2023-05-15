@@ -10,9 +10,13 @@ import tikzplotlib as tikz
 import torch
 from captum.attr import IntegratedGradients, Saliency
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
+from .data_loader import LearnWavefakeDataset
 from .ptwt_continuous_transform import get_diff_wavelet
-from .train_classifier import create_data_loaders, get_model, set_seed
+from .train_classifier import get_model
+from .utils import set_seed
+from .wavelet_math import get_transforms
 
 
 class Mean:
@@ -59,20 +63,17 @@ def main() -> None:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    wavelet_name = args.wavelet
-    wavelet = get_diff_wavelet(wavelet_name)
-    if args.stft:
-        wavelet_name = "stft"
-    plot_path = args.plot_path
+    model_path = (args.model_path_prefix).split("_")
+
+    wavelet = get_diff_wavelet(args.wavelet)
     num_workers = args.num_workers
+    plot_path = args.plot_path
     gans = args.gans
     seeds = args.seeds
     sample_rate = args.sample_rate
-    window_size = args.window_size
     model_name = args.model
     batch_size = args.batch_size
     flattend_size = args.flattend_size
-    adapt_wav = args.adapt_wavelet
     nclasses = args.nclasses
     f_min = args.f_min
     f_max = args.f_max
@@ -80,6 +81,15 @@ def main() -> None:
     data_prefix = args.data_prefix
     features = args.features
     hop_length = args.hop_length
+
+    if "doubledelta" in features:
+        channels = 60
+    elif "delta" in features:
+        channels = 40
+    elif "lfcc" in features:
+        channels = 20
+    else:
+        channels = int(args.num_of_scales)
 
     Path(f"{plot_path}/gfx/tikz").mkdir(parents=True, exist_ok=True)
 
@@ -101,11 +111,17 @@ def main() -> None:
 
         test_data_dir = f"{data_prefix}_{gan}"
 
-        _, _, test_data_set = create_data_loaders(
-            test_data_dir,
-            batch_size,
-            num_workers,
+        transforms, normalize = get_transforms(
+            args,
+            f"{data_prefix}_{gan}",
+            features,
+            device,
+            wavelet,
+            normalization=args.mean == 0.0,
+            pbar=args.pbar,
         )
+        set_name = "_test"
+        test_data_set = LearnWavefakeDataset(test_data_dir + set_name)
 
         test_data_loader = DataLoader(
             test_data_set,
@@ -114,36 +130,40 @@ def main() -> None:
             num_workers=num_workers,
         )
 
-        postfix = f"{gan}_{wavelet_name}_{window_size}_{num_of_scales}_{int(f_min)}"
-        postfix += f"_{int(f_max)}_{sample_rate}_{model_name}_{adapt_wav}"
-        postfix += f"_{target}_x{times*batch_size}"
-
+        postfix = f'{"_".join(model_path)}_{gan}'
+        postfix += f"_target{target}_x{times*batch_size}"
+        postfix = postfix.split("/")[-1]
+        length = float(times // batch_size)
+        bar = tqdm(
+            iter(test_data_loader),
+            desc="attribute",
+            total=length,
+            disable=not args.pbar,
+        )
         for seed in seeds:
             index = 0
             print(f"seed: {seed}")
             set_seed(seed)
 
-            model_path = f"./log/fake_{wavelet_name}_{features}_{hop_length}_{sample_rate}_{window_size}"
-            model_path += (
-                f"_{num_of_scales}_{int(f_min)}-{int(f_max)}_0.7_{gan}_0.0001_128"
-            )
-            model_path += f"_{nclasses}_10e_{model_name}_{adapt_wav}_{seed}.pt"
-            print(model_path)
+            model_dir = f'{"_".join(model_path)}_{gan}_{str(seed)}.pt'
+            print(model_dir)
             model = get_model(
-                wavelet,
-                model_name,
-                nclasses,
-                batch_size,
-                f_min,
-                f_max,
-                sample_rate,
-                num_of_scales,
-                raw_input=False,
+                wavelet=wavelet,
+                model_name=model_name,
+                nclasses=nclasses,
+                batch_size=batch_size,
+                f_min=f_min,
+                f_max=f_max,
+                sample_rate=sample_rate,
+                num_of_scales=num_of_scales,
                 flattend_size=flattend_size,
+                stft=args.transform == "stft",
                 features=features,
                 hop_length=hop_length,
+                in_channels=2 if args.loss_less else 1,
+                channels=channels,
             )
-            old_state_dict = torch.load(model_path, map_location=device)
+            old_state_dict = torch.load(model_dir, map_location=device)
             model.load_state_dict(old_state_dict)
 
             model.to(device)
@@ -152,12 +172,9 @@ def main() -> None:
             saliency = Saliency(model)
 
             model.zero_grad()
-            for batch in iter(test_data_loader):
+            for batch in bar:
                 index += 1
-                audio = batch[test_data_loader.dataset.key].cuda(  # type: ignore
-                    non_blocking=True
-                )
-                label = batch["label"].cuda(non_blocking=True)
+                label = (batch["label"].cuda() != 0).type(torch.long)
 
                 if make_binary_labels:
                     label[label > 0] = 1
@@ -168,10 +185,11 @@ def main() -> None:
                         break
                     continue
 
-                audio_cwt = model.transform(audio)  # type: ignore
+                freq_time_dt = transforms(batch["audio"].cuda())
+                freq_time_dt_norm = normalize(freq_time_dt)
 
                 attributions_ig = integrated_gradients.attribute(
-                    audio_cwt,
+                    freq_time_dt_norm,
                     target=label,
                     n_steps=200,
                     internal_batch_size=batch_size,
@@ -179,15 +197,13 @@ def main() -> None:
                 welford_ig.update(attributions_ig)
                 del attributions_ig
 
-                attributions_sals = saliency.attribute(audio_cwt, target=label).squeeze(
-                    0
-                )
+                attributions_sals = saliency.attribute(
+                    freq_time_dt_norm, target=label
+                ).squeeze(0)
                 welford_sal.update(attributions_sals)
                 del attributions_sals
 
                 torch.cuda.empty_cache()
-                if index % 5 == 0:
-                    print("processed ", index * batch_size, flush=True)
                 if index == times:
                     break
 
@@ -195,9 +211,9 @@ def main() -> None:
         mean_sal = welford_sal.finalize()
         mean_ig_max = torch.max(mean_ig, dim=1)[0]
         mean_ig_min = torch.min(mean_ig, dim=1)[0]
-        audio_cwt = torch.mean(audio_cwt, dim=0)
+        audio_packets = torch.mean(freq_time_dt_norm, dim=0)
 
-        inital = np.transpose(audio_cwt.cpu().detach().numpy(), (1, 2, 0))
+        inital = np.transpose(audio_packets.cpu().detach().numpy(), (1, 2, 0))
         attr_ig = mean_ig.cpu().detach().numpy()
         attr_sal = mean_sal.cpu().detach().numpy()
         ig_max = mean_ig_max.cpu().detach().numpy()
@@ -225,7 +241,7 @@ def main() -> None:
         )
         pickle.dump(res, open(stats_file, "wb"))
 
-        extent = [0, window_size / sample_rate, f_min / 1000, f_max / 1000]
+        extent = [0, args.window_size / sample_rate, f_min / 1000, f_max / 1000]
         im_plot(
             inital.squeeze(2),
             f"{plot_path}/cwt_{postfix}",
@@ -260,7 +276,7 @@ def bar_plot(ig, f_min, f_max, n_bins, path):
 
     axs.set_xticks(ticks)
     axs.set_xticklabels(ticklabels)
-    axs.set_xlabel("Frequenz (kHz)")
+    axs.set_xlabel("Frequenz")
     axs.set_ylabel("Intensität")
 
     axs.bar(
@@ -277,7 +293,7 @@ def im_plot(ig, path, cmap, extent, vmin=None, vmax=None, cb_label=None):
     fig, axs = plt.subplots(1, 1)
     im = axs.imshow(ig, cmap=cmap, extent=extent, vmin=vmin, vmax=vmax)
     axs.set_xlabel("Zeit (sek)")
-    axs.set_ylabel("Frequenz (kHz)")
+    axs.set_ylabel("Frequenz")
     fig.colorbar(im, ax=axs, label=cb_label)
     fig.set_dpi(200)
 
@@ -299,12 +315,6 @@ def _parse_args():
     """Parse cmd line args for attributing audio classification models with integrated gradients."""
     parser = argparse.ArgumentParser(description="Eval models.")
     parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=64,
-        help="input batch size for attribution (default: 64)",
-    )
-    parser.add_argument(
         "--target-label",
         type=int,
         default=1,
@@ -315,6 +325,23 @@ def _parse_args():
         type=int,
         default=5056,
         help="number of testing samples for attribution (default: 5056)",
+    )
+    parser.add_argument(
+        "--plot-path",
+        type=str,
+        default="./plots/attribution",
+        help="path for the attribution plots and results (default: ./plots/attribution)",
+    )
+    parser.add_argument(
+        "--model-path-prefix",
+        type=str,
+        help="Prefix of model path (without '_seed.pt').",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=128,
+        help="input batch size for testing (default: 128)",
     )
     parser.add_argument(
         "--window-size",
@@ -344,24 +371,18 @@ def _parse_args():
         "--f-min",
         type=float,
         default=1000,
-        help="Minimum frequency analyzed in Hz. (default: 1000)",
+        help="Minimum frequency to analyze in Hz. (default: 1000)",
     )
     parser.add_argument(
         "--f-max",
         type=float,
         default=9500,
-        help="Maximum frequency analyzed in Hz. (default: 9500)",
+        help="Maximum frequency to analyze in Hz. (default: 9500)",
     )
     parser.add_argument(
         "--data-prefix",
         type=str,
         help="shared prefix of the data paths",
-    )
-    parser.add_argument(
-        "--plot-path",
-        type=str,
-        default="./plots/attribution",
-        help="path for the attribution plots and results (default: ./plots/attribution)",
     )
     parser.add_argument(
         "--nclasses", type=int, default=2, help="number of classes (default: 2)"
@@ -371,7 +392,7 @@ def _parse_args():
         type=int,
         nargs="+",
         default=[0, 1, 2, 3, 4],
-        help="the random seeds that are attributed.",
+        help="the random seeds that are evaluated.",
     )
     parser.add_argument(
         "--gans",
@@ -385,9 +406,12 @@ def _parse_args():
             "hifigan",
             "waveglow",
             "pwg",
+            "bigvgan",
+            "bigvganl",
+            "avocodo",
             "all",
         ],
-        help="model postfix specifying the gan in the training set.",
+        help="model postfix specifying the gan in the trainingset.",
     )
     parser.add_argument(
         "--flattend-size",
@@ -401,6 +425,7 @@ def _parse_args():
             "onednet",
             "learndeepnet",
             "learnnet",
+            "lcnn",
         ],
         default="learndeepnet",
         help="The model type. Default: learndeepnet.",
@@ -411,9 +436,59 @@ def _parse_args():
         help="If differentiable wavelets shall be used.",
     )
     parser.add_argument(
-        "--stft",
+        "--pbar",
+        action="store_true",
+        help="enables progress bars",
+    )
+    parser.add_argument(
+        "--calc-normalization",
+        action="store_true",
+        help="calculate normalization for debugging purposes.",
+    )
+    parser.add_argument(
+        "--log-scale",
         action="store_true",
         help="If differentiable wavelets shall be used.",
+    )
+    parser.add_argument(
+        "--loss-less",
+        action="store_true",
+        help="if sign pattern is to be used as second channel.",
+    )
+    parser.add_argument(
+        "--mean",
+        type=float,
+        default=0,
+        help="Pre calculated mean. (default: 0)",
+    )
+    parser.add_argument(
+        "--std",
+        type=float,
+        default=1,
+        help="Pre calculated std. (default: 1)",
+    )
+    parser.add_argument(
+        "--transform",
+        choices=[
+            "stft",
+            "cwt",
+            "packets",
+        ],
+        default="stft",
+        help="Use different transformations.",
+    )
+    parser.add_argument(
+        "--hop-length",
+        type=int,
+        default=1,
+        help="Hop length in transformation. (default: 1)",
+    )
+    parser.add_argument(
+        "--features",
+        choices=["lfcc", "delta", "doubledelta", "all", "none"],
+        default="none",
+        help="Use features like lfcc, its first and second derivatives or all of them. \
+              Delta and Dooubledelta include lfcc computing. Default: none.",
     )
     parser.add_argument(
         "--num-workers",

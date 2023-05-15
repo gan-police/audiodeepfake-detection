@@ -13,7 +13,7 @@ from .data_loader import LearnWavefakeDataset
 from .eval_models import val_test_loop
 from .models import get_model, save_model
 from .ptwt_continuous_transform import get_diff_wavelet
-from .utils import set_seed
+from .utils import add_noise, contrast, set_seed
 from .wavelet_math import get_transforms
 
 
@@ -64,6 +64,7 @@ def main():
 
     Raises:
         NotImplementedError: If wrong features are combined with the wrong model.
+        ValueError: If stft is started with signed log scaling.
     """
     args = _parse_args()
     print(args)
@@ -132,6 +133,10 @@ def main():
         + str(args.model)
         + "_signs"
         + str(args.loss_less)
+        + "_augc"
+        + str(args.aug_contrast)
+        + "_augn"
+        + str(args.aug_noise)
         + "_"
         + known_gen_name
         + "_"
@@ -219,6 +224,8 @@ def main():
         writer_str += f"{args.f_max}/"
         writer_str += f"{args.num_of_scales}/"
         writer_str += f"signs{args.loss_less}/"
+        writer_str += f"augc{args.aug_contrast}/"
+        writer_str += f"augn{args.aug_noise}/"
         writer_str += f"{known_gen_name}/"
         writer_str += f"{args.seed}"
         writer = SummaryWriter(writer_str, max_queue=100)
@@ -258,8 +265,10 @@ def main():
             batch_audios = batch[train_data_loader.dataset.key].cuda(non_blocking=True)
             batch_labels = (batch["label"].cuda() != 0).type(torch.long)
 
-            # batch_audios = contrast(batch_audios)
-            # batch_audios = add_noise(batch_audios)
+            if args.aug_contrast:
+                batch_audios = contrast(batch_audios)
+            if args.aug_noise:
+                batch_audios = add_noise(batch_audios)
 
             optimizer.zero_grad()
             with torch.no_grad():
@@ -571,6 +580,16 @@ def _parse_args():
         "--loss-less",
         action="store_true",
         help="if sign pattern is to be used as second channel.",
+    )
+    parser.add_argument(
+        "--aug-contrast",
+        action="store_true",
+        help="use augmentation method contrast.",
+    )
+    parser.add_argument(
+        "--aug-noise",
+        action="store_true",
+        help="use augmentation method contrast.",
     )
     parser.add_argument(
         "--transform",

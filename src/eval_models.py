@@ -1,6 +1,5 @@
 """Evaluate models with accuracy and eer metric."""
 import argparse
-import json
 from typing import Any
 
 import numpy as np
@@ -14,7 +13,7 @@ from tqdm import tqdm
 from .data_loader import LearnWavefakeDataset
 from .models import get_model
 from .ptwt_continuous_transform import get_diff_wavelet
-from .utils import set_seed
+from .utils import print_results, set_seed
 from .wavelet_math import get_transforms
 
 
@@ -226,13 +225,13 @@ def main() -> None:
         allres_eer_seeds[gan] = np.asarray(aeer_seeds)
         allres_acc_seeds[gan] = np.asarray(aacc_seeds)
         if allres_acc_seeds[gan].shape[0] > 1:
-            accs = allres_acc_seeds[gan].mean(0)
-            aeer = allres_eer_seeds[gan].mean(0)
+            accs_arr = allres_acc_seeds[gan].mean(0)
+            aeer_arr = allres_eer_seeds[gan].mean(0)
         else:
-            accs = allres_acc_seeds[gan]
-            aeer = allres_eer_seeds[gan]
-        mean_eers[gan] = (aeer.mean(), aeer.mean(), accs.min())
-        mean_accs[gan] = (accs.mean(), accs.mean(), accs.max())
+            accs_arr = allres_acc_seeds[gan]
+            aeer_arr = allres_eer_seeds[gan]
+        mean_eers[gan] = (aeer_arr.mean(), aeer_arr.mean(), aeer_arr.min())
+        mean_accs[gan] = (accs_arr.mean(), accs_arr.mean(), accs_arr.max())
     gan_acc_dict["aEER"] = mean_eers
     gan_acc_dict["aACC"] = mean_accs
     gan_acc_dict["allres_eer"] = allres_eer_seeds
@@ -251,14 +250,7 @@ def main() -> None:
             pr_str += f" mean {gan_acc_dict[ind]['mean_eer']:.5f} +- "
             pr_str += f"{gan_acc_dict[ind]['std_eer']:.5f}"
             print(pr_str)
-        print(f"mean +- std and min eer for {gan}: {gan_acc_dict['aEER'][gan]}")
-        print(f"mean +- std and max acc for {gan}: {gan_acc_dict['aACC'][gan]}")
-        print(
-            f"& ${round(gan_acc_dict['aACC'][gan][2] * 100, 2)}$ & ${round(gan_acc_dict['aACC'][gan][0] * 100, 2)} \pm{round(gan_acc_dict['aACC'][gan][1] * 100, 2)}$ & ${round(gan_acc_dict['aEER'][gan][2], 3)}$ & ${round(gan_acc_dict['aEER'][gan][0], 3)}\pm{round(gan_acc_dict['aEER'][gan][1], 3)}$"
-        )
-
-    with open(f"{args.model_path_prefix}_results.json", "w+") as json_file:
-        json.dump(gan_acc_dict, json_file, indent=4)
+        print_results(gan_acc_dict["allres_eer"][gan], gan_acc_dict["allres_acc"][gan])
 
 
 def _parse_args():

@@ -575,8 +575,8 @@ def pre_process_folder(
                 fake = only_test
                 folder_list = [Path(real)]
             else:
-                folder_list = [Path(real), Path(fake)]
-            folder_name += f"_{fake.split('_')[-1]}"
+                folder_list = [Path(real), Path(fake)]  # type: ignore
+            folder_name += f"_{fake.split('_')[-1]}"  # type: ignore
             folder_list_all.append(Path(real))
     else:
         if len(folder_list_all) == 0:
@@ -640,6 +640,7 @@ def process_folders(
     val_list=None,
     test_list=None,
 ):
+    """Process train, test and validations sets."""
     print("processing validation set.", flush=True)
     if val_list is not None:
         load_process_store(
