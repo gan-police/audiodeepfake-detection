@@ -6,7 +6,6 @@
 #SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log3/prep/prep_single_%A_%a.err
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=A40devel
-#SBATCH -x node-02
 
 # Prepare all files of all GAN architectures in combination with the real audio
 # dataset. The resulting files are resampled but not transformed yet to make
@@ -33,7 +32,7 @@ python -m src.prepare_datasets \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --fakedir "${HOME}/data/fake/${datasets[${i}]}" \
     --directory "${HOME}/data/fake" \
-    --target-dir /home/s6kogase/data/run4/ &
+    --target-dir /home/s6kogase/data/run5/ &
 done
 
 echo "Goodbye at $(date)."

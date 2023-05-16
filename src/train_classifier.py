@@ -137,6 +137,8 @@ def main():
         + str(args.aug_contrast)
         + "_augn"
         + str(args.aug_noise)
+        + "_power"
+        + str(args.power)
         + "_"
         + known_gen_name
         + "_"
@@ -226,6 +228,7 @@ def main():
         writer_str += f"signs{args.loss_less}/"
         writer_str += f"augc{args.aug_contrast}/"
         writer_str += f"augn{args.aug_noise}/"
+        writer_str += f"power{args.power}/"
         writer_str += f"{known_gen_name}/"
         writer_str += f"{args.seed}"
         writer = SummaryWriter(writer_str, max_queue=100)
@@ -526,6 +529,12 @@ def _parse_args():
         "--log-scale",
         action="store_true",
         help="Log-scale transformed audio.",
+    )
+    parser.add_argument(
+        "--power",
+        type=float,
+        default=2.0,
+        help="Calculate power spectrum of given factor (for stft and packets) (default: 2.0).",
     )
     parser.add_argument(
         "--loss-less",

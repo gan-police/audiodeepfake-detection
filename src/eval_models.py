@@ -400,6 +400,12 @@ def _parse_args():
         help="If differentiable wavelets shall be used.",
     )
     parser.add_argument(
+        "--power",
+        type=float,
+        default=2.0,
+        help="Calculate power spectrum of given factor (for stft and packets) (default: 2.0).",
+    )
+    parser.add_argument(
         "--loss-less",
         action="store_true",
         help="if sign pattern is to be used as second channel.",

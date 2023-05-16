@@ -15,21 +15,22 @@ echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
 conda activate py310
 python -m src.eval_models \
     --data-prefix "${HOME}/data/run4/fake_22050_22050_0.7" \
-    --model-path-prefix ./exp/log3/models/fake_packetssym8_none_100_22050_22050_512_1-11025_0.7_0.0001_0.01_128_2_5e_lcnn_signsFalse \
+    --model-path-prefix ./exp/log3/models/fake_packetsdb8_none_100_22050_22050_256_1-11025_0.7_0.0001_0.01_128_2_10e_lcnn_signsTrue_augcFalse_augnFalse_power1.0 \
     --model "lcnn"  \
     --batch-size 128 \
-    --wavelet sym8 \
+    --wavelet db8 \
     --f-min 1 \
     --f-max 11025 \
     --window-size 22050 \
-    --num-of-scales 512 \
+    --num-of-scales 256 \
     --sample-rate 22050 \
-    --flattend-size 352 \
     --features none \
     --hop-length 100 \
     --seed 0 1 2 3 4 \
     --transform packets \
     --log-scale \
+    --loss-less \
+    --power 1.0 \
     --train-gans "fbmelgan" \
     --crosseval-gans "lmelgan" "mbmelgan" "melgan" "hifigan" "waveglow" "pwg" "bigvgan" "bigvganl" "avocodo" "conformer" "jsutmbmelgan" "jsutpwg"
 

@@ -51,10 +51,10 @@ def print_results(res_eer, res_acc):
         ]
     ).mean(0)
     str_all += f"&${round(res_acc.mean(0).max()*100, 2)}$ & "
-    str_all += rf"${round(res_acc.mean()*100, 2)} \\pm {round(res_acc.mean(0).std()*100, 2)}$ &"
+    str_all += rf"${round(res_acc.mean()*100, 2)} \pm {round(res_acc.mean(0).std()*100, 2)}$ &"
     str_wf += f"&${round(wavefake.max()*100, 2)}$ & "
     str_wf += (
-        rf"${round(wavefake.mean()*100, 2)} \\pm {round(wavefake.std()*100, 2)}$ &"
+        rf"${round(wavefake.mean()*100, 2)} \pm {round(wavefake.std()*100, 2)}$ &"
     )
     wavefake = np.stack(
         [
@@ -70,9 +70,9 @@ def print_results(res_eer, res_acc):
         ]
     )
     str_all += f"${round(res_eer.mean(0).min(), 3)}$ & "
-    str_all += rf"${round(res_eer.mean(), 3)} \\pm {round(res_eer.mean(0).std(), 3)}$ "
+    str_all += rf"${round(res_eer.mean(), 3)} \pm {round(res_eer.mean(0).std(), 3)}$ "
     str_wf += f"${round(wavefake.mean(0).min(), 3)}$ & "
-    str_wf += rf"${round(wavefake.mean(), 3)} \\pm {round(wavefake.mean(0).std(), 3)}$ "
+    str_wf += rf"${round(wavefake.mean(), 3)} \pm {round(wavefake.mean(0).std(), 3)}$ "
 
     avocodo_acc = res_acc[8]
     bigvgan_acc = np.stack([res_acc[6], res_acc[7]]).mean(0)
@@ -81,18 +81,18 @@ def print_results(res_eer, res_acc):
     bigvgan_eer = np.stack([res_eer[6], res_eer[7]]).mean(0)
 
     str_avbig += f"&${round(avocodo_acc.max()*100, 2)}$ & "
-    str_avbig += rf"${round(avocodo_acc.mean()*100, 2)} \\pm {round(avocodo_acc.std()*100, 2)}$ &"
-    str_avbig += f"${round(avocodo_eer.min(), 3)}$ & "
     str_avbig += (
-        rf"${round(avocodo_eer.mean(), 3)} \\pm {round(avocodo_eer.std(), 3)}$ "
+        rf"${round(avocodo_acc.mean()*100, 2)} \pm {round(avocodo_acc.std()*100, 2)}$ &"
     )
+    str_avbig += f"${round(avocodo_eer.min(), 3)}$ & "
+    str_avbig += rf"${round(avocodo_eer.mean(), 3)} \pm {round(avocodo_eer.std(), 3)}$ "
     str_avbig += "& "
     str_avbig += f"${round(bigvgan_acc.max()*100, 2)}$ & "
-    str_avbig += rf"${round(bigvgan_acc.mean()*100, 2)} \\pm {round(bigvgan_acc.std()*100, 2)}$ &"
-    str_avbig += f"${round(bigvgan_eer.min(), 3)}$ & "
     str_avbig += (
-        rf"${round(bigvgan_eer.mean(), 3)} \\pm {round(bigvgan_eer.std(), 3)}$ "
+        rf"${round(bigvgan_acc.mean()*100, 2)} \pm {round(bigvgan_acc.std()*100, 2)}$ &"
     )
+    str_avbig += f"${round(bigvgan_eer.min(), 3)}$ & "
+    str_avbig += rf"${round(bigvgan_eer.mean(), 3)} \pm {round(bigvgan_eer.std(), 3)}$ "
 
     print("all")
     print(str_all)

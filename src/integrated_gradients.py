@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 import matplotlib.pyplot as plt
+import matplotlib.colors as colors
 import numpy as np
 import tikzplotlib as tikz
 import torch
@@ -91,7 +92,7 @@ def main() -> None:
     else:
         channels = int(args.num_of_scales)
 
-    Path(f"{plot_path}/gfx/tikz").mkdir(parents=True, exist_ok=True)
+    Path(f"{plot_path}/images").mkdir(parents=True, exist_ok=True)
 
     if args.times < batch_size:
         times = 1
@@ -137,7 +138,7 @@ def main() -> None:
         bar = tqdm(
             iter(test_data_loader),
             desc="attribute",
-            total=length,
+            total=len(test_data_loader),
             disable=not args.pbar,
         )
         for seed in seeds:
@@ -211,9 +212,11 @@ def main() -> None:
         mean_sal = welford_sal.finalize()
         mean_ig_max = torch.max(mean_ig, dim=1)[0]
         mean_ig_min = torch.min(mean_ig, dim=1)[0]
-        audio_packets = torch.mean(freq_time_dt_norm, dim=0)
+        audio_packets = torch.mean(freq_time_dt, dim=0)
 
-        inital = np.transpose(audio_packets.cpu().detach().numpy(), (1, 2, 0))
+        inital = np.transpose(audio_packets.cpu().detach().numpy(), (1, 2, 0)).squeeze(
+            -1
+        )
         attr_ig = mean_ig.cpu().detach().numpy()
         attr_sal = mean_sal.cpu().detach().numpy()
         ig_max = mean_ig_max.cpu().detach().numpy()
@@ -241,60 +244,102 @@ def main() -> None:
         )
         pickle.dump(res, open(stats_file, "wb"))
 
-        extent = [0, args.window_size / sample_rate, f_min / 1000, f_max / 1000]
+        seconds = args.window_size / sample_rate
+        t = np.linspace(0, seconds, int(seconds // (1 / sample_rate)))
+        bins = np.int64(num_of_scales)
+        n = list(range(int(bins)))
+        freqs = (sample_rate / 2) * (n / bins)
+
+        x_ticks = np.flipud(list(range(inital.shape[-1]))[:: inital.shape[-1] // 10])
+        x_labels = np.flipud(np.around(np.linspace(min(t), max(t), inital.shape[-1]), 2)[
+            :: inital.shape[-1] // 10
+        ])
+
+        y_ticks = np.flipud(n[:: freqs.shape[0] // 10])
+        y_labels = np.flipud(np.around(freqs[:: freqs.shape[0] // 10] / 1000, 1))
+
         im_plot(
-            inital.squeeze(2),
+            freq_time_dt[0].squeeze(0).cpu().detach().numpy(),
             f"{plot_path}/raw_{postfix}",
             cmap="turbo",
-            extent=extent,
+            x_ticks=x_ticks,
+            x_labels=x_labels,
+            y_ticks=y_ticks,
+            y_labels=y_labels,
+            vmax=np.max(attr_ig).item(),
+            vmin=np.min(attr_ig).item(),
         )
-        im_plot(attr_ig, f"{plot_path}/attr_ig_{postfix}", cmap="PRGn", extent=extent)
+        im_plot(
+            attr_ig,
+            f"{plot_path}/attr_ig_{postfix}",
+            cmap="viridis_r",
+            x_ticks=x_ticks,
+            x_labels=x_labels,
+            y_ticks=y_ticks,
+            y_labels=y_labels,
+            vmax=np.max(attr_ig).item(),
+            vmin=np.min(attr_ig).item(),
+        )
         im_plot(
             attr_sal,
             f"{plot_path}/attr_sal_{postfix}",
-            cmap="hot",
-            extent=extent,
+            cmap="plasma",
             vmax=np.max(attr_sal).item(),
             vmin=np.min(attr_sal).item(),
+            x_ticks=x_ticks,
+            x_labels=x_labels,
+            y_ticks=y_ticks,
+            y_labels=y_labels,
+            norm=colors.SymLogNorm(linthresh=0.01),
         )
 
-        n_bins = ig_max.shape[0]
-        bar_plot(ig_max, f_min, f_max, n_bins, f"{plot_path}/attr_max_{postfix}")
-        bar_plot(ig_max, f_min, f_max, n_bins, f"{plot_path}/attr_min_{postfix}")
-        bar_plot(ig_abs, f_min, f_max, n_bins, f"{plot_path}/attr_abs_{postfix}")
+        # bar_plot(ig_max, x_ticks, x_ticklabels, f"{plot_path}/attr_max_{postfix}")
+        # bar_plot(ig_min, x_ticks, x_ticklabels, f"{plot_path}/attr_min_{postfix}")
+        bar_plot(ig_abs, y_ticks, y_labels, f"{plot_path}/attr_abs_{postfix}")
         plt.close()
 
 
-def bar_plot(ig, f_min, f_max, n_bins, path):
+def bar_plot(data, x_ticks, x_labels, path):
     """Plot histogram of model attribution."""
     _fig, axs = plt.subplots(1, 1, sharey=True, tight_layout=True)
-    ticks = np.linspace(0, n_bins, 10)
-    tiks = np.linspace(f_min / 1000, f_max / 1000, len(ticks))
 
-    ticklabels = [round(item, 1) for item in tiks]
-
-    axs.set_xticks(ticks)
-    axs.set_xticklabels(ticklabels)
-    axs.set_xlabel("Frequenz")
-    axs.set_ylabel("Intensität")
+    axs.set_xticks(x_ticks)
+    axs.set_xticklabels(x_labels)
+    axs.set_xlabel("frequency [kHz]")
 
     axs.bar(
-        x=list(range(n_bins)),
-        height=np.flipud(ig),
+        x=list(range(data.shape[0])),
+        height=np.flipud(data),
         color="crimson",
     )
 
     save_plot(path)
 
 
-def im_plot(ig, path, cmap, extent, vmin=None, vmax=None, cb_label=None):
+def im_plot(
+    data,
+    path,
+    cmap,
+    x_ticks,
+    x_labels,
+    y_ticks,
+    y_labels,
+    vmin=None,
+    vmax=None,
+    norm=None,
+):
     """Plot image of model attribution."""
     fig, axs = plt.subplots(1, 1)
-    im = axs.imshow(ig, cmap=cmap, extent=extent, vmin=vmin, vmax=vmax)
-    axs.set_xlabel("Zeit (sek)")
-    axs.set_ylabel("Frequenz")
-    fig.colorbar(im, ax=axs, label=cb_label)
+    im = axs.imshow(np.flipud(data), aspect="auto", norm=norm, cmap=cmap)
+    axs.set_xlabel("time [sec]")
+    axs.set_ylabel("frequency [kHz]")
+    axs.set_xticks(x_ticks)
+    axs.set_xticklabels(x_labels)
+    axs.set_yticks(y_ticks)
+    axs.set_yticklabels(y_labels)
+    fig.colorbar(im, ax=axs)
     fig.set_dpi(200)
+    #axs.invert_yaxis()
 
     save_plot(path)
 
@@ -305,7 +350,7 @@ def save_plot(path):
         f"{path}.tex",
         encoding="utf-8",
         standalone=True,
-        tex_relative_path_to_data="gfx/tikz",
+        tex_relative_path_to_data="images",
         override_externals=True,
     )
 
@@ -322,7 +367,7 @@ def _parse_args():
     parser.add_argument(
         "--times",
         type=int,
-        default=5056,
+        default=10000,
         help="number of testing samples for attribution (default: 5056)",
     )
     parser.add_argument(
@@ -448,6 +493,12 @@ def _parse_args():
         "--log-scale",
         action="store_true",
         help="If differentiable wavelets shall be used.",
+    )
+    parser.add_argument(
+        "--power",
+        type=float,
+        default=2.0,
+        help="Calculate power spectrum of given factor (for stft and packets) (default: 2.0).",
     )
     parser.add_argument(
         "--loss-less",

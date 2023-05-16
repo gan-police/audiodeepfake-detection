@@ -33,7 +33,7 @@ python -m src.prepare_datasets \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --directory "${HOME}/data/fake" \
     --testdir "${HOME}/data/fake_test/${datasets[${i}]}" \
-    --target-dir /home/s6kogase/data/run4/ &
+    --target-dir /home/s6kogase/data/run5/ &
 done
 
 echo "Goodbye at $(date)."

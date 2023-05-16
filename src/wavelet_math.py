@@ -87,6 +87,7 @@ class STFTLayer(torch.nn.Module):
         hop_length: int = 1,
         log_offset: float = 1e-12,
         log_scale: bool = False,
+        power: float = 2.0,
     ):
         """Initialize config.
 
@@ -99,7 +100,7 @@ class STFTLayer(torch.nn.Module):
         """
         super().__init__()
         self.transform = Spectrogram(
-            n_fft=n_fft, hop_length=hop_length, power=2.0
+            n_fft=n_fft, hop_length=hop_length, power=power
         ).cuda()
         self.log_scale = log_scale
         self.log_offset = log_offset
@@ -221,6 +222,7 @@ def compute_pytorch_packet_representation(
     max_lev: int = 8,
     log_scale: bool = False,
     loss_less: bool = False,
+    power: float = 2.0,
 ):
     """Create a packet image."""
     ptwt_wp_tree = ptwt.WaveletPacket(data=pt_data, wavelet=wavelet, mode="reflect")
@@ -234,7 +236,7 @@ def compute_pytorch_packet_representation(
     wp_pt = torch.stack(packet_list, dim=-1)
 
     if log_scale:
-        wp_pt_log = torch.log(torch.abs(wp_pt).pow(2.0) + 1e-12)
+        wp_pt_log = torch.log(torch.abs(wp_pt).pow(power) + 1e-12)
 
         if loss_less:
             sign_pattern = ((wp_pt < 0).type(torch.float32) * (-1) + 0.5) * 2
@@ -256,6 +258,7 @@ class Packets(torch.nn.Module):
         max_lev: int = 8,
         log_scale: bool = False,
         loss_less: bool = False,
+        power: float = 2.0,
     ) -> None:
         """Initialize."""
         super().__init__()
@@ -263,6 +266,7 @@ class Packets(torch.nn.Module):
         self.max_lev = max_lev
         self.log_scale = log_scale
         self.loss_less = loss_less
+        self.power = power
 
     def forward(self, pt_data: torch.Tensor) -> torch.Tensor:
         """Forward packet representation."""
@@ -272,6 +276,7 @@ class Packets(torch.nn.Module):
             self.max_lev,
             self.log_scale,
             self.loss_less,
+            self.power,
         ).permute(0, 1, 3, 2)
 
 
@@ -290,6 +295,7 @@ def get_transforms(
             n_fft=args.num_of_scales * 2 - 1,
             hop_length=args.hop_length,
             log_scale=args.features == "none" and args.log_scale,
+            power=args.power,
         ).cuda()
     elif args.transform == "cwt":
         freqs = (
@@ -309,6 +315,7 @@ def get_transforms(
             max_lev=int(log(args.num_of_scales, 2)),
             log_scale=args.features == "none" and args.log_scale,
             loss_less=args.loss_less,
+            power=args.power,
         )
 
     lfcc = LFCC(
