@@ -1,22 +1,25 @@
 # Erkennung von Audiodeepfakes mithilfe von kontinuierlichen Wavelet-Transformationen
 
-This is the supplementary source code for my bachelor thesis "[Erkennung von Audiodeepfakes mithilfe von kontinuierlichen Wavelet-Transformationen](https://github.com/gan-police/wavelet-audiodeepfake-detection_thesis)".
+This is the supplementary source code for our paper "[Towards generalizing deep-audio fake detection networks](https://arxiv.org/abs/2305.13033)".
 
-![cwt scalogram](./img/cwt_visualization.png)
+![packet vizualization](./img/packet_vizualization.png)
 
-The plot above shows the scalograms (scale-time representation) of a real audio file (left) and the melgan generated
-counterpart (right). In my thesis I compare the performance of cnn based classifiers for audio deepfake detection with the work of [Frank and Schönherr](https://github.com/RUB-SysSec/WaveFake).
+The plot above shows Wavelet packet visualizations of WaveFake-Sample LJ001-0002: "In being comparatively 
+modern." A wavelet packet transformed version of the one-second long original recording is
+shown on the left. The center plot depicts a full-band melgan re-synthesis. The plot on the right
+shows their absolute difference. By leveraging the wavelet-packet and short-time fourier transform, 
+we train excellent lightweight detectors that generalize and examine the results in our paper.
 
 ## Installation
 
 The latest code can be installed in development mode in a running installation of python 3.10 with:
 
 ```shell
-git clone git@github.com:gan-police/wavelet-audiodeepfake-detection_code.git
+git clone git@github.com:gan-police/wavelet-audiodeepfake-detection.git
 ```
 Move to the repository with
 ```shell
-cd wavelet-audiodeepfake-detection_code
+cd wavelet-audiodeepfake-detection
 ```
 and install all requirements with
 ```shell
@@ -38,9 +41,17 @@ We utilize two datasets that appeared in previous work:
 - [LJSpeech 1.1](https://keithito.com/LJ-Speech-Dataset/)
 - [WaveFake](https://zenodo.org/record/5642694)
 
+### GAN Architectures
+We utilize pre-trained models from the following repositories:
+
+- [WaveFake](https://github.com/RUB-SysSec/WaveFake)
+- [BigVGAN](https://github.com/NVIDIA/BigVGAN)
+
+We used the inofficial implementation of Avocodo from [commit 2999557](https://github.com/ncsoft/avocodo) to train the avocodo vocoder.
+
 ## Reproduction
 
-The following section of the README serves as a guide to reproducing the experiments from my thesis.
+The following section of the README serves as a guide to reproducing the experiments from our paper.
 
 ### Preparation
 
@@ -194,16 +205,17 @@ This plots the saliency, the integrated gradients and the mean over all time of 
 
 
 ## Issues
-As we use a port of the Adam optimizer of the python module pytorch, we recommend to use torch 1.13.0, torchaudio 0.13.0 and cuda 11.
+As we use the Adam optimizer of the python module pytorch, we recommend to use torch 2.0.0, torchaudio 2.0.0 and cuda 11.7.
 
 ## Citation
 This work is in the public domain. Feel free to use my material, but please cite it properly.
 ```
-@misc{Gasenzer2023cwtaudiofreqdec,
-  publisher = {Rheinische Friedrich-Wilhelms Universität Bonn.},
-       year = {2023},
-      title = {Erkennung von Audiodeepfakes mithilfe von kontinuierlichen Wavelet-Transformationen},
-    address = {Bonn},
-     author = {Gasenzer, Konstantin and Wolter, Moritz},
+@misc{gasenzerwolter2023generalizingadf,
+      title={Towards generalizing deep-audio fake detection networks}, 
+      author={Konstantin Gasenzer and Moritz Wolter},
+      year={2023},
+      eprint={2305.13033},
+      archivePrefix={arXiv},
+      primaryClass={cs.SD}
 }
 ```
