@@ -17,9 +17,9 @@ echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
 echo "Preparing single binary classification dataset."
 conda activate py310
 
-datasets=("B_melgan" "C_hifigan"  "D_mbmelgan" "E_fbmelgan" "F_waveglow" "G_pwg" "H_lmelgan" "I_avocodo"  "J_bigvgan"  "K_bigvganl")
+datasets=("I_conformer" "M_jsutmbmelgan"  "N_jsutpwg")
 
-for i in {0..10};
+for i in {0..2};
 do
 python -m src.prepare_datasets \
     --train-size 0.7 \
@@ -30,8 +30,8 @@ python -m src.prepare_datasets \
     --sample-rate 22050 \
     --max-samples 1751144850 \
     --realdir "${HOME}/data/real/A_ljspeech" \
-    --fakedir "${HOME}/data/fake/${datasets[${i}]}" \
     --directory "${HOME}/data/fake" \
+    --testdir "${HOME}/data/fake_test/${datasets[${i}]}" \
     --target-dir /home/s6kogase/data/run5/ &
 done
 

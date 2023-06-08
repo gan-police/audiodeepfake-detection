@@ -1,6 +1,4 @@
 """Count trainable parameters of models."""
-from torchsummary import summary
-
 from src.models import compute_parameter_total
 from src.ptwt_continuous_transform import get_diff_wavelet
 from src.train_classifier import get_model
@@ -10,25 +8,28 @@ def main() -> None:
     """Define wavelet, count parameters."""
     wavelet = get_diff_wavelet("cmor4.6-0.87")
 
-    models = ["learndeepnet", "onednet", "learnnet"]
+    models = ["lcnn"]
     sample_rate = 22050
-    window_size = 11025
-    num_of_scales = 150
-
-    f_sizes = [21888, 5440, 39168]
+    num_of_scales = [256, 512]
     totals = []
-    for i in range(len(models)):
+    for _i in range(len(models)):
         model = get_model(
-            wavelet,
-            models[i],
+            wavelet=wavelet,
+            model_name="lcnn",
+            nclasses=2,
+            batch_size=128,
+            f_min=1,
+            f_max=11025,
             sample_rate=sample_rate,
-            flattend_size=f_sizes[i],
             num_of_scales=num_of_scales,
+            features="none",
+            hop_length=100,
+            in_channels=1,
+            channels=num_of_scales,
         )
 
         totals.append(compute_parameter_total(model))
 
-        summary(model, (1, window_size))
         print("")
 
     print("")

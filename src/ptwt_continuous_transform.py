@@ -84,7 +84,6 @@ def cwt(
         ) / (scale * step)
         j = torch.floor(j).type(torch.long)
         if j[-1] >= len(int_psi):
-            # j = np.extract(j < len(int_psi), j)
             j = torch.masked_select(j, j < len(int_psi))
         int_psi_scale = int_psi[j].flip(0)
 
@@ -111,6 +110,7 @@ def cwt(
             raise ValueError("Selected scale of {} too small.".format(scale))
 
         out.append(coef)
+
     out_tensor = torch.stack(out)
     if type(wavelet) is Wavelet:
         out_tensor = out_tensor.real
@@ -244,12 +244,11 @@ class _ComplexMorletWavelet(_DifferentiableContinuousWavelet):
 
 def get_diff_wavelet(
     wavelet: str,
-) -> _ComplexMorletWavelet | _ShannonWavelet:
+) -> _ComplexMorletWavelet | _ShannonWavelet | None:
     """Get differentiable wavelet from given string.
 
     Raises:
         ValueError: If wavelet is not a str or pywt Continuous Wavelet.
-        NotImplementedError: If requested wavelet is not implemented yet.
     """
     if not isinstance(wavelet, (str, ContinuousWavelet)):
         raise ValueError(
@@ -263,4 +262,4 @@ def get_diff_wavelet(
     elif "shan" in wavelet:
         return _ShannonWavelet(name=wavelet)
     else:
-        raise NotImplementedError
+        return None

@@ -1,120 +1,106 @@
 """Evaluate models with accuracy and eer metric."""
 import argparse
-import datetime
-import pickle
-from pathlib import Path
+from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from sklearn.metrics import auc
+from scipy.interpolate import interp1d
+from scipy.optimize import brentq
+from sklearn.metrics import roc_curve
 from torch.utils.data import DataLoader
-from torchmetrics.classification import BinaryAccuracy, MulticlassROC
 from tqdm import tqdm
 
+from .data_loader import LearnWavefakeDataset
+from .models import get_model
 from .ptwt_continuous_transform import get_diff_wavelet
-from .train_classifier import create_data_loaders, get_model, set_seed
+from .utils import print_results, set_seed
+from .wavelet_math import get_transforms
 
 
-def plot_roc(
-    fpr: np.ndarray,
-    tpr: np.ndarray,
-    training_dataset_name: str,
-    fake_dataset_name: str,
-    model_path: str,
-    path: str,
-    lw: int = 2,
-):
-    """Plot roc of given false positive rate and true positive rate."""
-    roc_auc = auc(fpr, tpr)
-    fig, ax = plt.subplots()
-    ax.plot(
-        fpr, tpr, color="darkorange", lw=lw, label="ROC curve (area = %0.2f)" % roc_auc
-    )
-    ax.plot([0, 1], [0, 1], color="navy", lw=lw, linestyle="--")
-    ax.set_xlim([0.0, 1.0])
-    ax.set_ylim([0.0, 1.05])
-    ax.set_xlabel("False Positive Rate")
-    ax.set_ylabel("True Positive Rate")
-    ax.set_title(f"Train: {training_dataset_name}\nEvaluated on {fake_dataset_name}")
-    ax.legend(loc="lower right")
+def calculate_eer(y_true, y_score):
+    """Return the equal error rate for a binary classifier output.
 
-    fig.tight_layout()
-    pt = model_path.split(".pt")[0].split("/")[-1]
-    fig.savefig(f"{path}/{pt}_on_{fake_dataset_name}.pdf")
-    plt.close(fig)
+    Based on:
+    https://github.com/scikit-learn/scikit-learn/issues/15247
+    """
+    fpr, tpr, _ = roc_curve(y_true, y_score, pos_label=1)
+    eer = brentq(lambda x: 1.0 - x - interp1d(fpr, tpr)(x), 0.0, 1.0)
+    return eer
 
 
-def classify_dataset(
+def val_test_loop(
     data_loader,
     model: torch.nn.Module,
-    make_binary_labels,
-):
+    normalize: torch.nn.Sequential,
+    transforms: torch.nn.Sequential,
+    batch_size: int,
+    name: str = "",
+    pbar: bool = False,
+) -> tuple[float, Any]:
     """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
 
     Args:
         data_loader (DataLoader): A DataLoader loading the data set on which the performance should be measured,
             e.g. a test or validation set in a data split.
         model (torch.nn.Module): The model to evaluate.
-        make_binary_labels (bool): If flag is set, we only classify binarily, i.e. whether an audio is real or fake.
-            In this case, the label 0 encodes 'real'. All other labels are cosidered fake data, and are set to 1.
+        normalize (torch.nn.Sequential): The modules to normalize the input data.
+        transforms (torch.nn.Sequential): The modules to transform the input data (e.g. packets/stft+lfcc).
+        batch_size (int): Batch size of training process.
+        name (str): Name for tqdm bar (default: "").
+        pbar (bool): Disable/Enable tqdm bar (default: False).
 
     Returns:
-        Tuple[float, Any]: The measured accuracy and loss of the model on the data set.
+        Tuple[float, Any]: The measured accuracy and eer of the model on the data set.
     """
-    with torch.no_grad():
-        model.eval()
-        val_total = 0
+    ok_sum = 0
+    total = 0
+    bar = tqdm(
+        iter(data_loader), desc="validate", total=len(data_loader), disable=not pbar
+    )
+    model.eval()
+    ok_dict = {}
+    count_dict = {}
+    y_list = []
+    out_list = []
+    correct_labels = []
+    predicted_labels: list = []
+    for val_batch in bar:
+        with torch.no_grad():
+            freq_time_dt = transforms(val_batch["audio"].cuda())
+            freq_time_dt_norm = normalize(freq_time_dt)
 
-        result_preds = []
-        result_targets = []
-        result_probs = []
-        result_test = []
-        for _it, val_batch in enumerate(
-            tqdm(
-                iter(data_loader),
-                desc="Evaluation",
-                unit="batches",
-                disable=False,
-            )
-        ):
-            batch_audios = val_batch[data_loader.dataset.key].cuda(non_blocking=True)
-            batch_labels = val_batch["label"].cuda(non_blocking=True)
-            out = model(batch_audios)
-            if make_binary_labels:
-                batch_labels[batch_labels > 0] = 1
-            val_total += batch_labels.shape[0]
+            out = model(freq_time_dt_norm)
+            out_max = torch.argmax(out, -1)
+            ok_mask = out_max == (val_batch["label"] != 0).cuda()
+            correct_labels.extend((val_batch["label"].cuda()).type(torch.long))
+            predicted_labels.extend(out_max.cpu())
+            ok_sum += sum(ok_mask).cpu().numpy().astype(int)
+            total += batch_size
+            bar.set_description(f"{name} - acc: {ok_sum/total:2.8f}")
+            for lbl, okl in zip(val_batch["label"], ok_mask):
+                if lbl.item() not in ok_dict:
+                    ok_dict[lbl.item()] = [okl]
+                else:
+                    ok_dict[lbl.item()].append(okl)
+                if lbl.item() not in count_dict:
+                    count_dict[lbl.item()] = 1
+                else:
+                    count_dict[lbl.item()] += 1
 
-            result_preds.extend(torch.max(out, dim=-1)[1].tolist())
-            result_test.extend(torch.max(out, dim=-1)[0].tolist())
-            result_probs.extend(out.tolist())
-            result_targets.extend(batch_labels.tolist())
-            if val_total % 2000 == 0:
-                print(
-                    f"processed {val_total//batch_labels.shape[0]} of {data_loader.__len__()}"
-                )
+            y_list.append((val_batch["label"] != 0))
+            out_list.append(out_max.cpu())
 
-        metric = BinaryAccuracy()
-        probs = torch.asarray(result_probs)
-        # probs = torch.nn.functional.softmax(probs, dim=-1)
-        preds = torch.asarray(result_preds)
-        targets = torch.asarray(result_targets)
-        acc = metric(preds, targets)
+    common_keys = ok_dict.keys() & count_dict.keys()
+    print(
+        f"{name} - ",
+        [(key, (sum(ok_dict[key]) / count_dict[key]).item()) for key in common_keys],
+    )
 
-        print(f"acc {acc.item()*100:.3f} %", flush=True)
-
-        metric2 = MulticlassROC(num_classes=2, thresholds=None)
-        fpr, tpr, thresholds = metric2(probs, targets)
-        fnr = 1 - tpr[0]
-
-        eer_threshold = thresholds[0][np.nanargmin(np.absolute((fnr - fpr[0])))]
-        eer_1 = fpr[0][np.nanargmin(np.absolute((fnr - fpr[0])))]
-        eer_2 = fnr[np.nanargmin(np.absolute((fnr - fpr[0])))]
-        eer = (eer_1 + eer_2) / 2
-
-        print(f"eer {eer:.5f}", flush=True)
-
-    return acc, fpr[0], tpr[0], eer, eer_threshold
+    ys = torch.cat(y_list).numpy()
+    outs = torch.cat(out_list).numpy()
+    eer = calculate_eer(ys, outs)
+    print(f"{name} - eer: {eer:2.8f}, Val acc: {ok_sum/total:2.8f}")
+    return ok_sum / total, eer
 
 
 def main() -> None:
@@ -124,21 +110,17 @@ def main() -> None:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    wavelet_name = args.wavelet
-    wavelet = get_diff_wavelet(wavelet_name)
-    if args.stft:
-        wavelet_name = "stft"
-    plot_path = args.plot_path
+    model_path = (args.model_path_prefix).split("_")
+
+    wavelet = get_diff_wavelet(args.wavelet)
     num_workers = args.num_workers
     gans = args.train_gans
     c_gans = args.crosseval_gans
     seeds = args.seeds
     sample_rate = args.sample_rate
-    window_size = args.window_size
     model_name = args.model
     batch_size = args.batch_size
     flattend_size = args.flattend_size
-    adapt_wav = args.adapt_wavelet
     nclasses = args.nclasses
     f_min = args.f_min
     f_max = args.f_max
@@ -147,26 +129,45 @@ def main() -> None:
     features = args.features
     hop_length = args.hop_length
 
-    Path(plot_path).mkdir(parents=True, exist_ok=True)
-
     gan_acc_dict = {}
     mean_eers = {}
+    mean_accs = {}
+    allres_eer_seeds = {}
+    allres_acc_seeds = {}
+
+    if "doubledelta" in features:
+        channels = 60
+    elif "delta" in features:
+        channels = 40
+    elif "lfcc" in features:
+        channels = 20
+    else:
+        channels = int(args.num_of_scales)
+
     for gan in gans:
         aeer = []
+        accs = []
+        aeer_seeds = []
+        aacc_seeds = []
+
+        transforms, normalize = get_transforms(
+            args,
+            f"{data_prefix}_{gan}",
+            features,
+            device,
+            wavelet,
+            normalization=args.mean == 0.0,
+            pbar=args.pbar,
+        )
         for c_gan in c_gans:
             print(f"Evaluating {gan} on {c_gan}...", flush=True)
             res_acc = []
             res_eer = []
-            res_eer_thresh = []
 
             test_data_dir = f"{data_prefix}_{c_gan}"
 
-            _, _, test_data_set = create_data_loaders(
-                test_data_dir,
-                batch_size,
-                False,
-                num_workers,
-            )
+            set_name = "_test"
+            test_data_set = LearnWavefakeDataset(test_data_dir + set_name)
 
             test_data_loader = DataLoader(
                 test_data_set,
@@ -174,17 +175,12 @@ def main() -> None:
                 shuffle=False,
                 num_workers=num_workers,
             )
+
             for seed in seeds:
                 print(f"seed: {seed}")
+                model_dir = f'{"_".join(model_path)}_{gan}_{str(seed)}.pt'
 
                 set_seed(seed)
-                model_path = f"./log/fake_{wavelet_name}_{features}_{hop_length}_{sample_rate}_{window_size}_"
-                model_path += (
-                    f"{num_of_scales}_{int(f_min)}-{int(f_max)}_0.7_{gan}_0.0001_"
-                )
-                model_path += (
-                    f"{batch_size}_{nclasses}_10e_{model_name}_{adapt_wav}_{seed}.pt"
-                )
 
                 model = get_model(
                     wavelet=wavelet,
@@ -196,42 +192,58 @@ def main() -> None:
                     sample_rate=sample_rate,
                     num_of_scales=num_of_scales,
                     flattend_size=flattend_size,
-                    stft=args.stft,
+                    stft=args.transform == "stft",
                     features=features,
                     hop_length=hop_length,
+                    in_channels=2 if args.loss_less else 1,
+                    channels=channels,
                 )
-                old_state_dict = torch.load(model_path)
+                old_state_dict = torch.load(model_dir)
                 model.load_state_dict(old_state_dict)
 
                 model.to(device)
 
-                acc, fpr, tpr, eer, eer_threshold = classify_dataset(
+                acc, eer = val_test_loop(
                     test_data_loader,
                     model,
-                    make_binary_labels=True,
+                    transforms=transforms,
+                    normalize=normalize,
+                    batch_size=batch_size,
+                    name=c_gan,
+                    pbar=args.pbar,
                 )
 
-                plot_roc(fpr, tpr, gan, c_gan, model_path, plot_path)
-
                 res_acc.append(acc)
-                res_eer.append(eer.item())
-                res_eer_thresh.append(eer_threshold.item())
+                res_eer.append(eer)
             res_dict = {}
             res_dict["max_acc"] = np.max(res_acc)
             res_dict["mean_acc"] = np.mean(res_acc)
             res_dict["std_acc"] = np.std(res_acc)
-            res_dict["min_eer"] = (np.min(res_eer), np.min(res_eer_thresh))
-            res_dict["mean_eer"] = (np.mean(res_eer), np.mean(res_eer_thresh))
-            res_dict["std_eer"] = (np.std(res_eer), np.std(res_eer_thresh))
+            res_dict["min_eer"] = np.min(res_eer)
+            res_dict["mean_eer"] = np.mean(res_eer)
+            res_dict["std_eer"] = np.std(res_eer)
             gan_acc_dict[f"{gan}-{c_gan}"] = res_dict
-            aeer.append(res_dict["mean_eer"][0])
-        mean_eers[gan] = (np.mean(aeer), np.std(aeer))
+            aeer.append(res_dict["mean_eer"])
+            accs.append(res_dict["mean_acc"])
+            aeer_seeds.append(res_eer)
+            aacc_seeds.append(res_acc)
+        allres_eer_seeds[gan] = np.asarray(aeer_seeds)
+        allres_acc_seeds[gan] = np.asarray(aacc_seeds)
+        if allres_acc_seeds[gan].shape[0] > 1:
+            accs_arr = allres_acc_seeds[gan].mean(0)
+            aeer_arr = allres_eer_seeds[gan].mean(0)
+        else:
+            accs_arr = allres_acc_seeds[gan]
+            aeer_arr = allres_eer_seeds[gan]
+        mean_eers[gan] = (aeer_arr.mean(), aeer_arr.mean(), aeer_arr.min())
+        mean_accs[gan] = (accs_arr.mean(), accs_arr.mean(), accs_arr.max())
     gan_acc_dict["aEER"] = mean_eers
+    gan_acc_dict["aACC"] = mean_accs
+    gan_acc_dict["allres_eer"] = allres_eer_seeds
+    gan_acc_dict["allres_acc"] = allres_acc_seeds
 
     print(gan_acc_dict)
-    time_now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
 
-    print(wavelet)
     for gan in gans:
         for c_gan in c_gans:
             ind = f"{gan}-{c_gan}"
@@ -239,28 +251,21 @@ def main() -> None:
             pr_str += f", mean {100 * gan_acc_dict[ind]['mean_acc']:.3f} +- "
             pr_str += f"{100 * gan_acc_dict[ind]['std_acc']:.3f} %"
             print(pr_str)
-            pr_str = f"{ind}: eer: min {gan_acc_dict[ind]['min_eer'][0]:.5f},"
-            pr_str += f" mean {gan_acc_dict[ind]['mean_eer'][0]:.5f} +- "
-            pr_str += f"{gan_acc_dict[ind]['std_eer'][0]:.5f}"
+            pr_str = f"{ind}: eer: min {gan_acc_dict[ind]['min_eer']:.5f},"
+            pr_str += f" mean {gan_acc_dict[ind]['mean_eer']:.5f} +- "
+            pr_str += f"{gan_acc_dict[ind]['std_eer']:.5f}"
             print(pr_str)
-            pr_str = f"{ind}: eer thresh: min {gan_acc_dict[ind]['min_eer'][1]:.5f},"
-            pr_str += f" mean {gan_acc_dict[ind]['mean_eer'][1]:.5f} +- "
-            pr_str += f"{gan_acc_dict[ind]['std_eer'][1]:.5f}"
-            print(pr_str)
-        print(f"average eer for {gan}: {gan_acc_dict['aEER'][gan]}")
-
-    pickle.dump(
-        gan_acc_dict,
-        open(
-            f"log/results/results_all_{wavelet_name}_{model_name}_{sample_rate}_{time_now}.pkl",
-            "wb",
-        ),
-    )
+        print_results(gan_acc_dict["allres_eer"][gan], gan_acc_dict["allres_acc"][gan])
 
 
 def _parse_args():
     """Parse cmd line args for evaluating audio classification models."""
     parser = argparse.ArgumentParser(description="Eval models.")
+    parser.add_argument(
+        "--model-path-prefix",
+        type=str,
+        help="Prefix of model path (without '_seed.pt').",
+    )
     parser.add_argument(
         "--batch-size",
         type=int,
@@ -336,6 +341,9 @@ def _parse_args():
             "hifigan",
             "waveglow",
             "pwg",
+            "bigvgan",
+            "bigvganl",
+            "avocodo",
             "all",
         ],
         help="model postfix specifying the gan in the trainingset.",
@@ -352,6 +360,9 @@ def _parse_args():
             "hifigan",
             "waveglow",
             "pwg",
+            "bigvgan",
+            "bigvganl",
+            "avocodo",
             "all",
         ],
         help="model postfix specifying the gan in the trainingset for cross validation.",
@@ -368,6 +379,7 @@ def _parse_args():
             "onednet",
             "learndeepnet",
             "learnnet",
+            "lcnn",
         ],
         default="learndeepnet",
         help="The model type. Default: learndeepnet.",
@@ -378,11 +390,53 @@ def _parse_args():
         help="If differentiable wavelets shall be used.",
     )
     parser.add_argument(
-        "--stft",
+        "--pbar",
         action="store_true",
-        help="If stft be used instead of cwt.",
+        help="enables progress bars",
     )
-
+    parser.add_argument(
+        "--calc-normalization",
+        action="store_true",
+        help="calculate normalization for debugging purposes.",
+    )
+    parser.add_argument(
+        "--log-scale",
+        action="store_true",
+        help="If differentiable wavelets shall be used.",
+    )
+    parser.add_argument(
+        "--power",
+        type=float,
+        default=2.0,
+        help="Calculate power spectrum of given factor (for stft and packets) (default: 2.0).",
+    )
+    parser.add_argument(
+        "--loss-less",
+        action="store_true",
+        help="if sign pattern is to be used as second channel.",
+    )
+    parser.add_argument(
+        "--mean",
+        type=float,
+        default=0,
+        help="Pre calculated mean. (default: 0)",
+    )
+    parser.add_argument(
+        "--std",
+        type=float,
+        default=1,
+        help="Pre calculated std. (default: 1)",
+    )
+    parser.add_argument(
+        "--transform",
+        choices=[
+            "stft",
+            "cwt",
+            "packets",
+        ],
+        default="stft",
+        help="Use different transformations.",
+    )
     parser.add_argument(
         "--hop-length",
         type=int,

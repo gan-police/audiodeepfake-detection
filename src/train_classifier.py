@@ -2,288 +2,25 @@
 import argparse
 import os
 import pickle
-from typing import Any, Optional
 
-import numpy as np
 import torch
-from pywt import ContinuousWavelet
+from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
-from .data_loader import LearnWavefakeDataset, WelfordEstimator
-from .models import LearnDeepTestNet, LearnNet, OneDNet, save_model
-from .optimizer import AdamCWT
+from .data_loader import LearnWavefakeDataset
+from .eval_models import val_test_loop
+from .models import get_model, save_model
 from .ptwt_continuous_transform import get_diff_wavelet
-
-
-def _parse_args():
-    """Parse cmd line args for training an audio classifier."""
-    parser = argparse.ArgumentParser(description="Train an audio classifier")
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=128,
-        help="input batch size for testing (default: 128)",
-    )
-    parser.add_argument(
-        "--learning-rate",
-        type=float,
-        default=1e-3,
-        help="learning rate for optimizer (default: 1e-3)",
-    )
-    parser.add_argument(
-        "--weight-decay",
-        type=float,
-        default=0.0001,
-        help="weight decay for optimizer (default: 0.0001)",
-    )
-    parser.add_argument(
-        "--epochs", type=int, default=10, help="number of epochs (default: 10)"
-    )
-    parser.add_argument(
-        "--validation-interval",
-        type=int,
-        default=200,
-        help="number of training steps after which the model is tested on the validation data set (default: 200)",
-    )
-    parser.add_argument(
-        "--num-of-scales",
-        type=int,
-        default=150,
-        help="number of scales used in training set. (default: 150)",
-    )
-    parser.add_argument(
-        "--wavelet",
-        type=str,
-        default="cmor3.3-4.17",
-        help="Wavelet to use in cwt. (default: cmor3.3-4.17)",
-    )
-    parser.add_argument(
-        "--sample-rate",
-        type=int,
-        default=22050,
-        help="Sample rate of audio. (default: 22050)",
-    )
-    parser.add_argument(
-        "--window-size",
-        type=int,
-        default=11025,
-        help="Sample rate of audio. (default: 11025)",
-    )
-    parser.add_argument(
-        "--f-min",
-        type=float,
-        default=1000,
-        help="Minimum frequency to analyze in Hz. (default: 1000)",
-    )
-    parser.add_argument(
-        "--f-max",
-        type=float,
-        default=9500,
-        help="Maximum frequency to analyze in Hz. (default: 9500)",
-    )
-    parser.add_argument(
-        "--hop-length",
-        type=int,
-        default=1,
-        help="Hop length in transformation. (default: 1)",
-    )
-    parser.add_argument(
-        "--data-prefix",
-        type=str,
-        default="../data/fake",
-        help="shared prefix of the data paths (default: ../data/fake)",
-    )
-    parser.add_argument(
-        "--nclasses", type=int, default=2, help="number of classes (default: 2)"
-    )
-    parser.add_argument(
-        "--seed", type=int, default=0, help="the random seed pytorch works with."
-    )
-    parser.add_argument(
-        "--flattend-size",
-        type=int,
-        default=21888,
-        help="dense layer input size (default: 21888)",
-    )
-    parser.add_argument(
-        "--model",
-        choices=[
-            "onednet",
-            "learndeepnet",
-            "learnnet",
-        ],
-        default="learndeepnet",
-        help="The model type. Default: learndeepnet.",
-    )
-    parser.add_argument(
-        "--adapt-wavelet",
-        action="store_true",
-        help="If differentiable wavelets shall be used.",
-    )
-
-    parser.add_argument(
-        "--tensorboard",
-        action="store_true",
-        help="enables a tensorboard visualization.",
-    )
-    parser.add_argument(
-        "--pbar",
-        action="store_true",
-        help="enables progress bars",
-    )
-    parser.add_argument(
-        "--calc-normalization",
-        action="store_true",
-        help="calculate normalization for debugging purposes.",
-    )
-    parser.add_argument(
-        "--stft",
-        action="store_true",
-        help="Use stft instead of cwt in transformation.",
-    )
-    parser.add_argument(
-        "--features",
-        choices=["lfcc", "delta", "doubledelta", "all", "none"],
-        default="none",
-        help="Use features like lfcc, its first and second derivatives or all of them. \
-            Delta and Dooubledelta include lfcc computing. Default: none.",
-    )
-    parser.add_argument(
-        "--num-workers",
-        type=int,
-        default=2,
-        help="Number of worker processes started by the test and validation data loaders (default: 2)",
-    )
-    parser.add_argument(
-        "--ckpt-every",
-        type=int,
-        default=500,
-        help="Save model after a fixed number of steps. (default: 500)",
-    )
-    return parser.parse_args()
-
-
-def set_seed(seed: int):
-    """Fix PRNG seed for reproducable experiments."""
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-    os.environ["PYTHONHASHSEED"] = str(seed)
-
-
-def val_test_loop(
-    data_loader,
-    model: torch.nn.Module,
-    loss_fun,
-    make_binary_labels: bool = False,
-    pbar: bool = False,
-) -> tuple[float, Any]:
-    """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
-
-    Args:
-        data_loader (DataLoader): A DataLoader loading the data set on which the performance should be measured,
-            e.g. a test or validation set in a data split.
-        model (torch.nn.Module): The model to evaluate.
-        loss_fun: The loss function, which is used to measure the loss of the model on the data set
-        make_binary_labels (bool): If flag is set, we only classify binarily, i.e. whether an audio is real or fake.
-            In this case, the label 0 encodes 'real'. All other labels are cosidered fake data, and are set to 1.
-
-    Returns:
-        Tuple[float, Any]: The measured accuracy and loss of the model on the data set.
-    """
-    with torch.no_grad():
-        model.eval()
-        val_total = 0
-
-        val_ok = 0.0
-        for val_batch in iter(data_loader):
-            batch_audios = val_batch[data_loader.dataset.key].cuda(non_blocking=True)
-            batch_labels = val_batch["label"].cuda(non_blocking=True)
-            out = model(batch_audios)
-            if make_binary_labels:
-                batch_labels[batch_labels > 0] = 1
-            val_loss = loss_fun(torch.squeeze(out), batch_labels)
-            ok_mask = torch.eq(torch.max(out, dim=-1)[1], batch_labels)
-            val_ok += torch.sum(ok_mask).item()
-            val_total += batch_labels.shape[0]
-        val_acc = val_ok / val_total
-        print("acc", val_acc, "ok", val_ok, "total", val_total)
-    return val_acc, val_loss
-
-
-def get_model(
-    wavelet: ContinuousWavelet,
-    model_name: str,
-    nclasses: int = 2,
-    batch_size: int = 128,
-    f_min: float = 1000,
-    f_max: float = 9500,
-    sample_rate: int = 22050,
-    num_of_scales: int = 150,
-    flattend_size: int = 21888,
-    stft: bool = False,
-    features: str = "none",
-    hop_length: int = 1,
-    raw_input: Optional[bool] = True,
-) -> LearnDeepTestNet | OneDNet | LearnNet:
-    """Get torch module model with given parameters."""
-    if model_name == "learndeepnet":
-        model = LearnDeepTestNet(
-            classes=nclasses,
-            wavelet=wavelet,
-            f_min=f_min,
-            f_max=f_max,
-            sample_rate=sample_rate,
-            num_of_scales=num_of_scales,
-            batch_size=batch_size,
-            raw_input=raw_input,
-            flattend_size=flattend_size,
-            stft=stft,
-            features=features,
-            hop_length=hop_length,
-        )  # type: ignore
-    elif model_name == "learnnet":
-        model = LearnNet(
-            classes=nclasses,
-            wavelet=wavelet,
-            f_min=f_min,
-            f_max=f_max,
-            sample_rate=sample_rate,
-            num_of_scales=num_of_scales,
-            batch_size=batch_size,
-            raw_input=raw_input,
-            flattend_size=flattend_size,
-            stft=stft,
-            hop_length=hop_length,
-        )  # type: ignore
-    elif model_name == "onednet":
-        model = OneDNet(
-            classes=nclasses,
-            wavelet=wavelet,
-            f_min=f_min,
-            f_max=f_max,
-            sample_rate=sample_rate,
-            num_of_scales=num_of_scales,
-            batch_size=batch_size,
-            raw_input=raw_input,
-            flattend_size=flattend_size,
-            stft=stft,
-            hop_length=hop_length,
-        )  # type: ignore
-    return model
+from .utils import add_noise, contrast, set_seed
+from .wavelet_math import get_transforms
 
 
 def create_data_loaders(
     data_prefix: str,
-    batch_size: int,
-    normal: bool,
-    num_workers: int,
+    batch_size: int = 64,
+    num_workers: int = 2,
 ) -> tuple:
     """Create the data loaders needed for training.
 
@@ -292,56 +29,14 @@ def create_data_loaders(
     Args:
         data_prefix (str): Where to look for the data.
         batch_size (int): preferred training batch size.
-        normal (bool): True if mean and std need to be calculated again.
         num_workers (int): Number of workers for validation and testing.
 
     Returns:
         dataloaders (tuple): train_data_loader, val_data_loader, test_data_set
     """
-    data_set_list = []
-    key = "audio"
-    if normal:
-        with torch.no_grad():
-            train_data_set = LearnWavefakeDataset(
-                data_prefix + "_train",
-                key=key,
-            )
-            print("Computing mean and std...")
-            welford = WelfordEstimator()
-            ds_length = train_data_set.__len__()
-            for aud_no in range(ds_length):
-                if aud_no % 10000 == 0:
-                    print(f"Computed {aud_no} files")
-                welford.update(train_data_set.__getitem__(aud_no)["audio"])
-            mean_new, std_new = welford.finalize()
-        print("mean", mean_new.mean(), "std:", std_new.mean())
-        with open(f"{data_prefix}_train/mean_std.pkl", "wb") as f:
-            pickle.dump([mean_new.cpu().numpy(), std_new.cpu().numpy()], f)
-
-    with open(f"{data_prefix}_train/mean_std.pkl", "rb") as file:
-        mean, std = pickle.load(file)
-        mean = torch.from_numpy(mean.astype(np.float32))
-        std = torch.from_numpy(std.astype(np.float32))
-
-    train_data_set = LearnWavefakeDataset(
-        data_prefix + "_train",
-        mean=mean,
-        std=std,
-        key=key,
-    )
-    val_data_set = LearnWavefakeDataset(
-        data_prefix + "_val",
-        mean=mean,
-        std=std,
-        key=key,
-    )
-    test_data_set = LearnWavefakeDataset(
-        data_prefix + "_test",
-        mean=mean,
-        std=std,
-        key=key,
-    )
-    data_set_list.append((train_data_set, val_data_set, test_data_set))
+    train_data_set = LearnWavefakeDataset(data_prefix + "_train")
+    val_data_set = LearnWavefakeDataset(data_prefix + "_val")
+    test_data_set = LearnWavefakeDataset(data_prefix + "_test")
 
     train_data_loader = DataLoader(
         train_data_set,
@@ -354,9 +49,8 @@ def create_data_loaders(
         shuffle=False,
         num_workers=num_workers,
     )
-    test_data_sets: Any = test_data_set
 
-    return train_data_loader, val_data_loader, test_data_sets
+    return train_data_loader, val_data_loader, test_data_set
 
 
 def main():
@@ -370,17 +64,20 @@ def main():
 
     Raises:
         NotImplementedError: If wrong features are combined with the wrong model.
+        ValueError: If stft is started with signed log scaling.
     """
     args = _parse_args()
     print(args)
-
-    if not os.path.exists("./log/"):
-        os.makedirs("./log/")
+    base_dir = "./exp/log4/"
+    if not os.path.exists(base_dir + "/models"):
+        os.makedirs(base_dir + "/models")
+    if not os.path.exists(base_dir + "/tensorboard"):
+        os.makedirs(base_dir + "/tensorboard")
 
     if args.f_max > args.sample_rate / 2:
         print("Warning: maximum analyzed frequency is above nyquist rate.")
 
-    if args.features != "none" and args.model != "learndeepnet":
+    if args.features != "none" and args.model != "lcnn":
         raise NotImplementedError(
             f"LFCC features are currently not implemented for {args.model}."
         )
@@ -388,12 +85,23 @@ def main():
     path_name = args.data_prefix.split("/")[-1].split("_")
 
     ckpt_every = args.ckpt_every
+    transform = args.transform
+    features = args.features
+    sample_rate = args.sample_rate
+    known_gen_name = path_name[4]
 
-    model_file = "./log/" + path_name[0] + "_"
-    if not args.stft:
-        model_file += str(args.wavelet)
-    else:
+    if transform == "cwt":
+        print("Warning: cwt not tested.")
+    elif transform == "stft" and args.loss_less:
+        raise ValueError("Sign channel not possible for stft due to complex data type.")
+
+    model_file = base_dir + "models/" + path_name[0] + "_"
+    if transform == "cwt":
+        model_file += "cwt" + str(args.wavelet)
+    elif transform == "stft":
         model_file += "stft"
+    elif transform == "packets":
+        model_file += "packets" + str(args.wavelet)
     model_file += (
         "_"
         + str(args.features)
@@ -412,9 +120,9 @@ def main():
         + "_"
         + path_name[3]
         + "_"
-        + path_name[4]
-        + "_"
         + str(args.learning_rate)
+        + "_"
+        + str(args.weight_decay)
         + "_"
         + str(args.batch_size)
         + "_"
@@ -423,8 +131,16 @@ def main():
         + f"{args.epochs}e"
         + "_"
         + str(args.model)
+        + "_signs"
+        + str(args.loss_less)
+        + "_augc"
+        + str(args.aug_contrast)
+        + "_augn"
+        + str(args.aug_noise)
+        + "_power"
+        + str(args.power)
         + "_"
-        + str(args.adapt_wavelet)
+        + known_gen_name
         + "_"
         + str(args.seed)
     )
@@ -435,23 +151,46 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     torch.multiprocessing.set_start_method("spawn")
 
-    make_binary_labels = args.nclasses == 2
-
     wavelet = get_diff_wavelet(args.wavelet)
-    wavelet.bandwidth_par.requires_grad = args.adapt_wavelet
-    wavelet.center_par.requires_grad = args.adapt_wavelet
+    if wavelet is not None:
+        wavelet.bandwidth_par.requires_grad = args.adapt_wavelet
+        wavelet.center_par.requires_grad = args.adapt_wavelet
 
     train_data_loader, val_data_loader, test_data_set = create_data_loaders(
         args.data_prefix,
         args.batch_size,
-        args.calc_normalization,
         args.num_workers,
     )
+
+    if args.unknown_prefix is not None:
+        cross_set_val = LearnWavefakeDataset(args.unknown_prefix + "_val")
+        cross_set_test = LearnWavefakeDataset(args.unknown_prefix + "_test")
+        cross_loader_val = DataLoader(
+            cross_set_val,
+            batch_size=int(args.batch_size),
+            shuffle=False,
+            num_workers=int(args.num_workers),
+        )
+        cross_loader_test = DataLoader(
+            cross_set_test,
+            batch_size=int(args.batch_size),
+            shuffle=False,
+            num_workers=int(args.num_workers),
+        )
 
     validation_list = []
     loss_list = []
     accuracy_list = []
     step_total = 0
+
+    if "doubledelta" in features:
+        channels = 60
+    elif "delta" in features:
+        channels = 40
+    elif "lfcc" in features:
+        channels = 20
+    else:
+        channels = int(args.num_of_scales)
 
     model = get_model(
         wavelet=wavelet,
@@ -460,89 +199,95 @@ def main():
         batch_size=args.batch_size,
         f_min=args.f_min,
         f_max=args.f_max,
-        sample_rate=args.sample_rate,
+        sample_rate=sample_rate,
         num_of_scales=args.num_of_scales,
         flattend_size=args.flattend_size,
-        stft=args.stft,
-        features=args.features,
+        stft=args.transform == "stft",
+        features=features,
         hop_length=args.hop_length,
+        adapt_wavelet=args.adapt_wavelet,
+        in_channels=2 if args.loss_less else 1,
+        channels=channels,
     )
     model.to(device)
 
     if args.tensorboard:
-        writer_str = "runs/"
-        writer_str += "params_test2/"
+        writer_str = base_dir + "/tensorboard/"
         writer_str += f"{args.model}/"
-        writer_str += f"{args.batch_size}/"
-        writer_str += f"{args.wavelet}/"
-        writer_str += f"{args.f_min}-"
-        writer_str += f"{args.f_max}/"
+        writer_str += f"{args.transform}/"
+        if transform == "cwt" or transform == "packets":
+            writer_str += f"{args.wavelet}/"
         writer_str += f"{args.features}/"
-        writer_str += f"{args.num_of_scales}/"
-        writer_str += f"{args.adapt_wavelet}/"
-        writer_str += f"{path_name[9]}/"
+        writer_str += f"{args.batch_size}_"
         writer_str += f"{args.learning_rate}_"
         writer_str += f"{args.weight_decay}_"
-        writer_str += f"{args.epochs}_"
+        writer_str += f"{args.epochs}/"
+        writer_str += f"{args.f_min}-"
+        writer_str += f"{args.f_max}/"
+        writer_str += f"{args.num_of_scales}/"
+        writer_str += f"signs{args.loss_less}/"
+        writer_str += f"augc{args.aug_contrast}/"
+        writer_str += f"augn{args.aug_noise}/"
+        writer_str += f"power{args.power}/"
+        writer_str += f"{known_gen_name}/"
         writer_str += f"{args.seed}"
         writer = SummaryWriter(writer_str, max_queue=100)
 
     loss_fun = torch.nn.CrossEntropyLoss()
 
-    optimizer = AdamCWT(
+    optimizer = Adam(
         model.parameters(),
         lr=args.learning_rate,
         weight_decay=args.weight_decay,
+    )
+
+    transforms, normalize = get_transforms(
+        args,
+        args.data_prefix,
+        features,
+        device,
+        wavelet,
+        args.calc_normalization,
+        pbar=args.pbar,
     )
 
     for e in tqdm(
         range(args.epochs), desc="Epochs", unit="epochs", disable=not args.pbar
     ):
         # iterate over training data.
-        for it, batch in enumerate(
-            tqdm(
-                iter(train_data_loader),
-                desc="Training",
-                unit="batches",
-                disable=not args.pbar,
-            )
-        ):
+        bar = tqdm(
+            iter(train_data_loader),
+            desc="training cnn",
+            total=len(train_data_loader),
+            unit="batches",
+            disable=not args.pbar,
+        )
+        print(f"+------------------- Epoch {e+1} -------------------+")
+        for it, batch in enumerate(bar):
             model.train()
-            optimizer.zero_grad()
             batch_audios = batch[train_data_loader.dataset.key].cuda(non_blocking=True)
+            batch_labels = (batch["label"].cuda() != 0).type(torch.long)
 
-            batch_labels = batch["label"].cuda(non_blocking=True)
-            if make_binary_labels:
-                batch_labels[batch_labels > 0] = 1
+            if args.aug_contrast:
+                batch_audios = contrast(batch_audios)
+            if args.aug_noise:
+                batch_audios = add_noise(batch_audios)
 
-            out = model(batch_audios)
-            loss = loss_fun(torch.squeeze(out), batch_labels)
-            ok_mask = torch.eq(torch.max(out, dim=-1)[1], batch_labels)
-            acc = torch.sum(ok_mask.type(torch.float32)) / len(batch_labels)
+            optimizer.zero_grad()
+            with torch.no_grad():
+                freq_time_dt = transforms(batch_audios)
+                freq_time_dt_norm = normalize(freq_time_dt)
 
-            if it % 10 == 0:
-                prt_str = f"e {e} it {it} total {step_total} loss {loss.item()} acc {acc.item()}"
-                if not args.stft:
-                    prt_str += " bandwidth "
-                    prt_str += str(
-                        round(
-                            model.state_dict()["transform.wavelet.bandwidth_par"].item()
-                            ** 2,
-                            5,
-                        )
-                    )
-                    prt_str += " center freq "
-                    prt_str += str(
-                        round(
-                            model.state_dict()["transform.wavelet.center_par"].item()
-                            ** 2,
-                            5,
-                        )
-                    )
-                print(prt_str, flush=True)
-                torch.cuda.empty_cache()
+            out = model(freq_time_dt_norm)
+            loss = loss_fun(out, batch_labels)
+            acc = (
+                torch.sum((torch.argmax(out, -1) == (batch_labels != 0).cuda()))
+                / args.batch_size
+            )
 
-            if it % ckpt_every == 0:
+            bar.set_description(f"ce-cost: {loss.item():2.8f}, acc: {acc.item():2.2f}")
+
+            if it % ckpt_every == 0 and it > 0:
                 save_model_epoch(model_file, model)
 
             loss.backward()
@@ -558,22 +303,42 @@ def main():
                     writer.add_graph(model, batch_audios)
 
             # iterate over val batches.
+            if step_total % 800 == 0:
+                print(f"step {step_total}")
+                print(f"e {e}")
             if step_total % args.validation_interval == 0:
-                val_acc, val_loss = val_test_loop(
-                    val_data_loader,
-                    model,
-                    loss_fun,
-                    make_binary_labels=make_binary_labels,
+                val_acc, val_eer = val_test_loop(
+                    data_loader=val_data_loader,
+                    model=model,
+                    batch_size=args.batch_size,
+                    normalize=normalize,
+                    transforms=transforms,
                     pbar=args.pbar,
+                    name="known",
                 )
                 validation_list.append([step_total, e, val_acc])
                 if validation_list[-1] == 1.0:
                     print("val acc ideal stopping training.", flush=True)
                     break
 
+                if args.unknown_prefix is not None:
+                    cr_val_acc, cr_val_eer = val_test_loop(
+                        data_loader=cross_loader_val,
+                        model=model,
+                        batch_size=args.batch_size,
+                        normalize=normalize,
+                        transforms=transforms,
+                        pbar=args.pbar,
+                        name="unknown",
+                    )
+
                 if args.tensorboard:
-                    writer.add_scalar("loss/validation", val_loss, step_total)
                     writer.add_scalar("accuracy/validation", val_acc, step_total)
+                    writer.add_scalar("eer/validation", val_eer, step_total)
+                    writer.add_scalar(
+                        "accuracy/cross_validation", cr_val_acc, step_total
+                    )
+                    writer.add_scalar("eer/cross_validation", cr_val_eer, step_total)
 
         if args.tensorboard:
             writer.add_scalar("epochs", e, step_total)
@@ -593,18 +358,32 @@ def main():
         num_workers=args.num_workers,
     )
     with torch.no_grad():
-        test_acc, test_loss = val_test_loop(
-            test_data_loader,
-            model,
-            loss_fun,
-            make_binary_labels=make_binary_labels,
+        test_acc, test_eer = val_test_loop(
+            data_loader=test_data_loader,
+            model=model,
+            batch_size=args.batch_size,
+            normalize=normalize,
+            transforms=transforms,
             pbar=not args.pbar,
+            name="known",
         )
+        if args.unknown_prefix is not None:
+            cr_test_acc, cr_test_eer = val_test_loop(
+                data_loader=cross_loader_test,
+                model=model,
+                batch_size=args.batch_size,
+                normalize=normalize,
+                transforms=transforms,
+                pbar=not args.pbar,
+                name="unknown",
+            )
         print("test acc", test_acc)
 
     if args.tensorboard:
         writer.add_scalar("accuracy/test", test_acc, step_total)
-        writer.add_scalar("loss/test", test_loss, step_total)
+        writer.add_scalar("eer/test", test_eer, step_total)
+        writer.add_scalar("accuracy/cross_test", cr_test_acc, step_total)
+        writer.add_scalar("eer/cross_test", cr_test_eer, step_total)
 
     _save_stats(
         model_file,
@@ -657,6 +436,214 @@ def _save_stats(
     )
     pickle.dump(res, open(stats_file, "wb"))
     print(stats_file, " saved.")
+
+
+def _parse_args():
+    """Parse cmd line args for training an audio classifier."""
+    parser = argparse.ArgumentParser(description="Train an audio classifier")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=128,
+        help="input batch size for testing (default: 128)",
+    )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=0.0001,
+        help="learning rate for optimizer (default: 0.0001)",
+    )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=0.01,
+        help="weight decay for optimizer (default: 0.01)",
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=10, help="number of epochs (default: 10)"
+    )
+
+    parser.add_argument(
+        "--transform",
+        choices=[
+            "stft",
+            "cwt",
+            "packets",
+        ],
+        default="stft",
+        help="Use stft instead of cwt in transformation.",
+    )
+    parser.add_argument(
+        "--features",
+        choices=["lfcc", "delta", "doubledelta", "none"],
+        default="none",
+        help="Use features like lfcc, first and second derivatives. \
+            Delta and Dooubledelta include lfcc computing. Default: none.",
+    )
+    parser.add_argument(
+        "--num-of-scales",
+        type=int,
+        default=256,
+        help="number of scales used in training set. (default: 256)",
+    )
+    parser.add_argument(
+        "--wavelet",
+        type=str,
+        default="sym8",
+        help="Wavelet to use in wavelet transformations. (default: sym8)",
+    )
+    parser.add_argument(
+        "--sample-rate",
+        type=int,
+        default=22050,
+        help="Sample rate of audio. (default: 22050)",
+    )
+    parser.add_argument(
+        "--window-size",
+        type=int,
+        default=11025,
+        help="Window size of audio. (default: 11025)",
+    )
+    parser.add_argument(
+        "--f-min",
+        type=float,
+        default=1000,
+        help="Minimum frequency to analyze in Hz. (default: 1000)",
+    )
+    parser.add_argument(
+        "--f-max",
+        type=float,
+        default=11025,
+        help="Maximum frequency to analyze in Hz. (default: 11025)",
+    )
+    parser.add_argument(
+        "--hop-length",
+        type=int,
+        default=1,
+        help="Hop length in cwt and stft. (default: 100).",
+    )
+    parser.add_argument(
+        "--adapt-wavelet",
+        action="store_true",
+        help="If differentiable wavelets shall be used.",
+    )
+
+    parser.add_argument(
+        "--log-scale",
+        action="store_true",
+        help="Log-scale transformed audio.",
+    )
+    parser.add_argument(
+        "--power",
+        type=float,
+        default=2.0,
+        help="Calculate power spectrum of given factor (for stft and packets) (default: 2.0).",
+    )
+    parser.add_argument(
+        "--loss-less",
+        action="store_true",
+        help="If sign pattern is to be used as second channel, only works for packets.",
+    )
+    parser.add_argument(
+        "--aug-contrast",
+        action="store_true",
+        help="Use augmentation method contrast.",
+    )
+    parser.add_argument(
+        "--aug-noise",
+        action="store_true",
+        help="Use augmentation method contrast.",
+    )
+
+    parser.add_argument(
+        "--calc-normalization",
+        action="store_true",
+        help="calculate normalization for debugging purposes.",
+    )
+    parser.add_argument(
+        "--mean",
+        type=float,
+        default=0,
+        help="Pre calculated mean. (default: 0)",
+    )
+    parser.add_argument(
+        "--std",
+        type=float,
+        default=1,
+        help="Pre calculated std. (default: 1)",
+    )
+
+    parser.add_argument(
+        "--data-prefix",
+        type=str,
+        default="../data/fake",
+        help="Shared prefix of the data paths (default: ../data/fake).",
+    )
+    parser.add_argument(
+        "--unknown-prefix",
+        type=str,
+        help="Shared prefix of the unknown source data paths (default: none).",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="The random seed pytorch and numpy works with (default: 0).",
+    )
+    parser.add_argument(
+        "--flattend-size",
+        type=int,
+        default=21888,
+        help="Dense layer input size (default: 21888).",
+    )
+    parser.add_argument(
+        "--model",
+        choices=[
+            "onednet",
+            "learndeepnet",
+            "learnnet",
+            "lcnn",
+        ],
+        default="lcnn",
+        help="The model type (default: lcnn).",
+    )
+    parser.add_argument(
+        "--nclasses",
+        type=int,
+        default=2,
+        help="Number of output classes in model (default: 2).",
+    )
+
+    parser.add_argument(
+        "--tensorboard",
+        action="store_true",
+        help="enables a tensorboard visualization.",
+    )
+    parser.add_argument(
+        "--pbar",
+        action="store_true",
+        help="enables progress bars",
+    )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=2,
+        help="Number of worker processes started by the test and validation data loaders (default: 2)",
+    )
+    parser.add_argument(
+        "--validation-interval",
+        type=int,
+        default=200,
+        help="number of training steps after which the model is tested "
+        " on the validation data set (default: 200)",
+    )
+    parser.add_argument(
+        "--ckpt-every",
+        type=int,
+        default=500,
+        help="Save model after a fixed number of steps. (default: 500)",
+    )
+    return parser.parse_args()
 
 
 if __name__ == "__main__":

@@ -322,3 +322,6 @@ logs/
 log/
 saved_models/
 experiments/
+exp/
+scripts/print_nice.py
+*.zip
