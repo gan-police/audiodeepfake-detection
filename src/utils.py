@@ -47,15 +47,15 @@ def print_results(res_eer, res_acc):
             res_acc[5],
             res_acc[9],
             res_acc[10],
-            res_eer[11],
+            res_acc[11],
         ]
     ).mean(0)
     str_all += f"&${round(res_acc.mean(0).max()*100, 2)}$ & "
-    str_all += rf"${round(res_acc.mean()*100, 2)} \pm {round(res_acc.mean(0).std()*100, 2)}$ &"
-    str_wf += f"&${round(wavefake.max()*100, 2)}$ & "
-    str_wf += (
-        rf"${round(wavefake.mean()*100, 2)} \pm {round(wavefake.std()*100, 2)}$ &"
+    str_all += (
+        rf"${round(res_acc.mean()*100, 2)} \pm {round(res_acc.mean(0).std()*100, 2)}$ &"
     )
+    str_wf += f"&${round(wavefake.max()*100, 2)}$ & "
+    str_wf += rf"${round(wavefake.mean()*100, 2)} \pm {round(wavefake.std()*100, 2)}$ &"
     wavefake = np.stack(
         [
             res_eer[0],

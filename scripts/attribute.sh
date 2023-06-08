@@ -17,9 +17,9 @@ conda activate py310
 python -m src.integrated_gradients \
     --plot-path "./plots/attribution" \
     --target-label 1 \
-    --times 15000 \
+    --times 128 \
     --data-prefix "${HOME}/data/run4/fake_22050_22050_0.7" \
-    --model-path-prefix ./exp/log3/models/fake_stft_none_100_22050_22050_256_1-11025_0.7_0.0001_0.01_128_2_10e_lcnn_signsFalse \
+    --model-path-prefix ./exp/log3/models/fake_packetssym8_none_100_22050_22050_256_1-11025_0.7_0.0001_0.01_128_2_10e_lcnn_signsTrue \
     --model "lcnn"  \
     --batch-size 128 \
     --wavelet sym8 \
@@ -30,9 +30,10 @@ python -m src.integrated_gradients \
     --sample-rate 22050 \
     --features none \
     --hop-length 100 \
-    --seed 0 \
-    --transform stft \
+    --seed 3 \
+    --transform packets \
     --log-scale \
+    --loss-less \
     --power 2.0 \
     --gans "fbmelgan" \
     --pbar

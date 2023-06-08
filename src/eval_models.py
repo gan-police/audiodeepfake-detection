@@ -62,6 +62,8 @@ def val_test_loop(
     count_dict = {}
     y_list = []
     out_list = []
+    correct_labels = []
+    predicted_labels: list = []
     for val_batch in bar:
         with torch.no_grad():
             freq_time_dt = transforms(val_batch["audio"].cuda())
@@ -70,6 +72,8 @@ def val_test_loop(
             out = model(freq_time_dt_norm)
             out_max = torch.argmax(out, -1)
             ok_mask = out_max == (val_batch["label"] != 0).cuda()
+            correct_labels.extend((val_batch["label"].cuda()).type(torch.long))
+            predicted_labels.extend(out_max.cpu())
             ok_sum += sum(ok_mask).cpu().numpy().astype(int)
             total += batch_size
             bar.set_description(f"{name} - acc: {ok_sum/total:2.8f}")
@@ -85,6 +89,7 @@ def val_test_loop(
 
             y_list.append((val_batch["label"] != 0))
             out_list.append(out_max.cpu())
+
     common_keys = ok_dict.keys() & count_dict.keys()
     print(
         f"{name} - ",

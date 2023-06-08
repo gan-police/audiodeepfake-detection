@@ -2,11 +2,10 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=prep_ds
-#SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log3/prep/prep_all_%j.out
-#SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log3/prep/prep_all_%j.err
+#SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log4/slurm/prep/prep_all_%j.out
+#SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log4/slurm/prep/prep_all_%j.err
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=A40devel
-#SBATCH -x node-02
 
 source ${HOME}/.bashrc
 

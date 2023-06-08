@@ -4,8 +4,8 @@ import pickle
 from pathlib import Path
 from typing import Optional
 
-import matplotlib.pyplot as plt
 import matplotlib.colors as colors
+import matplotlib.pyplot as plt
 import numpy as np
 import tikzplotlib as tikz
 import torch
@@ -122,6 +122,7 @@ def main() -> None:
             pbar=args.pbar,
         )
         set_name = "_test"
+        test_data_dir = "/home/s6kogase/data/run5/fake_22050_22050_0.7_all"
         test_data_set = LearnWavefakeDataset(test_data_dir + set_name)
 
         test_data_loader = DataLoader(
@@ -134,7 +135,6 @@ def main() -> None:
         postfix = f'{"_".join(model_path)}_{gan}'
         postfix += f"_target{target}_x{times*batch_size}"
         postfix = postfix.split("/")[-1]
-        length = float(times // batch_size)
         bar = tqdm(
             iter(test_data_loader),
             desc="attribute",
@@ -248,15 +248,15 @@ def main() -> None:
         t = np.linspace(0, seconds, int(seconds // (1 / sample_rate)))
         bins = np.int64(num_of_scales)
         n = list(range(int(bins)))
-        freqs = (sample_rate / 2) * (n / bins)
+        freqs = (sample_rate / 2) * (n / bins)  # type: ignore
 
-        x_ticks = np.flipud(list(range(inital.shape[-1]))[:: inital.shape[-1] // 10])
-        x_labels = np.flipud(np.around(np.linspace(min(t), max(t), inital.shape[-1]), 2)[
+        x_ticks = list(range(inital.shape[-1]))[:: inital.shape[-1] // 10]
+        x_labels = np.around(np.linspace(min(t), max(t), inital.shape[-1]), 2)[
             :: inital.shape[-1] // 10
-        ])
+        ]
 
-        y_ticks = np.flipud(n[:: freqs.shape[0] // 10])
-        y_labels = np.flipud(np.around(freqs[:: freqs.shape[0] // 10] / 1000, 1))
+        y_ticks = n[:: freqs.shape[0] // 10]
+        y_labels = np.around(freqs[:: freqs.shape[0] // 10] / 1000, 1)
 
         im_plot(
             freq_time_dt[0].squeeze(0).cpu().detach().numpy(),
@@ -312,7 +312,6 @@ def bar_plot(data, x_ticks, x_labels, path):
         height=np.flipud(data),
         color="crimson",
     )
-
     save_plot(path)
 
 
@@ -339,7 +338,7 @@ def im_plot(
     axs.set_yticklabels(y_labels)
     fig.colorbar(im, ax=axs)
     fig.set_dpi(200)
-    #axs.invert_yaxis()
+    axs.invert_yaxis()
 
     save_plot(path)
 

@@ -68,7 +68,7 @@ def main():
     """
     args = _parse_args()
     print(args)
-    base_dir = "./exp/log3/"
+    base_dir = "./exp/log4/"
     if not os.path.exists(base_dir + "/models"):
         os.makedirs(base_dir + "/models")
     if not os.path.exists(base_dir + "/tensorboard"):
@@ -303,6 +303,9 @@ def main():
                     writer.add_graph(model, batch_audios)
 
             # iterate over val batches.
+            if step_total % 800 == 0:
+                print(f"step {step_total}")
+                print(f"e {e}")
             if step_total % args.validation_interval == 0:
                 val_acc, val_eer = val_test_loop(
                     data_loader=val_data_loader,
