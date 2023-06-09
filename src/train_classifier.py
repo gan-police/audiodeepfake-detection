@@ -68,7 +68,7 @@ def main():
     """
     args = _parse_args()
     print(args)
-    base_dir = "./exp/log4/"
+    base_dir = "./exp/log5"
     if not os.path.exists(base_dir + "/models"):
         os.makedirs(base_dir + "/models")
     if not os.path.exists(base_dir + "/tensorboard"):
@@ -89,13 +89,13 @@ def main():
     features = args.features
     sample_rate = args.sample_rate
     known_gen_name = path_name[4]
-
+    loss_less = False if args.loss_less == "False" else True
     if transform == "cwt":
         print("Warning: cwt not tested.")
-    elif transform == "stft" and args.loss_less:
+    elif transform == "stft" and loss_less:
         raise ValueError("Sign channel not possible for stft due to complex data type.")
 
-    model_file = base_dir + "models/" + path_name[0] + "_"
+    model_file = base_dir + "/models/" + path_name[0] + "_"
     if transform == "cwt":
         model_file += "cwt" + str(args.wavelet)
     elif transform == "stft":
@@ -132,7 +132,7 @@ def main():
         + "_"
         + str(args.model)
         + "_signs"
-        + str(args.loss_less)
+        + str(loss_less)
         + "_augc"
         + str(args.aug_contrast)
         + "_augn"
@@ -206,7 +206,7 @@ def main():
         features=features,
         hop_length=args.hop_length,
         adapt_wavelet=args.adapt_wavelet,
-        in_channels=2 if args.loss_less else 1,
+        in_channels=2 if loss_less else 1,
         channels=channels,
     )
     model.to(device)
@@ -225,7 +225,7 @@ def main():
         writer_str += f"{args.f_min}-"
         writer_str += f"{args.f_max}/"
         writer_str += f"{args.num_of_scales}/"
-        writer_str += f"signs{args.loss_less}/"
+        writer_str += f"signs{loss_less}/"
         writer_str += f"augc{args.aug_contrast}/"
         writer_str += f"augn{args.aug_noise}/"
         writer_str += f"power{args.power}/"
@@ -541,7 +541,11 @@ def _parse_args():
     )
     parser.add_argument(
         "--loss-less",
-        action="store_true",
+        choices=[
+            "True",
+            "False",
+        ],
+        default="False",
         help="If sign pattern is to be used as second channel, only works for packets.",
     )
     parser.add_argument(

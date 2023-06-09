@@ -2,8 +2,8 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=prep_ds
-#SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/out/prep_all_%j.out
-#SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/out/prep_all_%j.err
+#SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log5/slurm/prep/prep_leaveout_%A_%a.out
+#SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log5/slurm/prep/prep_leaveout_%A_%a.err
 #SBATCH --cpus-per-task=8
 #SBATCH --time=02:00:00
 #SBATCH --partition=A40short

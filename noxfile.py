@@ -20,7 +20,7 @@ def run_test(session) -> None:
     """Run tests."""
     session.install("-r", "requirements.txt")
     session.install("pytest")
-    session.run("pytest", "tests")
+    session.run("pytest", "tests", external=True)
 
 
 @nox.session(name="lint", python=["3.10"])

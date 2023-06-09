@@ -156,7 +156,7 @@ def main() -> None:
             features,
             device,
             wavelet,
-            normalization=args.mean == 0.0,
+            normalization=args.calc_normalization,
             pbar=args.pbar,
         )
         for c_gan in c_gans:
@@ -195,7 +195,7 @@ def main() -> None:
                     stft=args.transform == "stft",
                     features=features,
                     hop_length=hop_length,
-                    in_channels=2 if args.loss_less else 1,
+                    in_channels=2 if args.loss_less == "True" else 1,
                     channels=channels,
                 )
                 old_state_dict = torch.load(model_dir)
@@ -412,8 +412,12 @@ def _parse_args():
     )
     parser.add_argument(
         "--loss-less",
-        action="store_true",
-        help="if sign pattern is to be used as second channel.",
+        choices=[
+            "True",
+            "False",
+        ],
+        default="False",
+        help="Ff sign pattern is to be used as second channel.",
     )
     parser.add_argument(
         "--mean",

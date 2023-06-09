@@ -2,10 +2,10 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=prep_ds
-#SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log4/slurm/prep/prep_single_%A_%a.out
-#SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log4/slurm/prep/prep_single_%A_%a.err
+#SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log5/slurm/prep/prep_single_%A_%a.out
+#SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log5/slurm/prep/prep_single_%A_%a.err
 #SBATCH --cpus-per-task=8
-#SBATCH --partition=A40devel
+#SBATCH --partition=A40short
 
 # Prepare all files of all GAN architectures in combination with the real audio
 # dataset. The resulting files are resampled but not transformed yet to make
@@ -32,7 +32,7 @@ python -m src.prepare_datasets \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --fakedir "${HOME}/data/fake/${datasets[${i}]}" \
     --directory "${HOME}/data/fake" \
-    --target-dir /home/s6kogase/data/run5/ &
+    --target-dir /home/s6kogase/data/run6/ &
 done
 
 echo "Goodbye at $(date)."

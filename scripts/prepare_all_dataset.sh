@@ -2,8 +2,8 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=prep_ds
-#SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log4/slurm/prep/prep_all_%j.out
-#SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log4/slurm/prep/prep_all_%j.err
+#SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log5/slurm/prep/prep_all_%j.out
+#SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log5/slurm/prep/prep_all_%j.err
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=A40devel
 
@@ -24,6 +24,6 @@ python -m src.prepare_datasets \
     --max-samples 1751144850 \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --directory "${HOME}/data/fake" \
-    --target-dir /home/s6kogase/data/run5/
+    --target-dir /home/s6kogase/data/run6/
 
 echo "Goodbye at $(date)."
