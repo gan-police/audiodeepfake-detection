@@ -1,5 +1,6 @@
 """Evaluate models with accuracy and eer metric."""
 import argparse
+from collections import defaultdict
 from typing import Any
 
 import numpy as np
@@ -34,9 +35,10 @@ def val_test_loop(
     normalize: torch.nn.Sequential,
     transforms: torch.nn.Sequential,
     batch_size: int,
+    label_names: np.ndarray,
     name: str = "",
     pbar: bool = False,
-) -> tuple[float, Any]:
+) -> tuple[float, Any, np.ndarray]:
     """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
 
     Args:
@@ -64,6 +66,7 @@ def val_test_loop(
     out_list = []
     correct_labels = []
     predicted_labels: list = []
+    predicted_dict = defaultdict(list)
     for val_batch in bar:
         with torch.no_grad():
             freq_time_dt = transforms(val_batch["audio"].cuda())
@@ -89,6 +92,17 @@ def val_test_loop(
 
             y_list.append((val_batch["label"] != 0))
             out_list.append(out_max.cpu())
+            for k, v in zip(label_names[val_batch["label"]], out_max.cpu()):
+                predicted_dict[k].append(v)
+
+    matrix = np.zeros((len(label_names), 2), dtype=int)
+    for label_idx, label in enumerate(label_names):
+        predicted_label = np.array(predicted_dict[label])
+
+        for class_idx in range(2):
+            matrix[label_idx, class_idx] = len(
+                predicted_label[predicted_label == class_idx]
+            )
 
     common_keys = ok_dict.keys() & count_dict.keys()
     print(
@@ -100,7 +114,7 @@ def val_test_loop(
     outs = torch.cat(out_list).numpy()
     eer = calculate_eer(ys, outs)
     print(f"{name} - eer: {eer:2.8f}, Val acc: {ok_sum/total:2.8f}")
-    return ok_sum / total, eer
+    return ok_sum / total, eer, matrix
 
 
 def main() -> None:
@@ -129,6 +143,25 @@ def main() -> None:
     features = args.features
     hop_length = args.hop_length
 
+    label_names = np.array(
+        [
+            "ljspeech",
+            "melgan",
+            "hifigan",
+            "mbmelgan",
+            "fbmelgan",
+            "waveglow",
+            "pwg",
+            "lmelgan",
+            "avocodo",
+            "bigvgan",
+            "bigvganl",
+            "conformer",
+            "jsutmbmelgan",
+            "jsutpwg",
+        ]
+    )
+
     gan_acc_dict = {}
     mean_eers = {}
     mean_accs = {}
@@ -156,9 +189,12 @@ def main() -> None:
             features,
             device,
             wavelet,
-            normalization=args.mean == 0.0,
+            normalization=args.calc_normalization,
             pbar=args.pbar,
         )
+
+        # matrix = np.zeros((len(label_names), len(label_names)), dtype=int)
+
         for c_gan in c_gans:
             print(f"Evaluating {gan} on {c_gan}...", flush=True)
             res_acc = []
@@ -195,7 +231,7 @@ def main() -> None:
                     stft=args.transform == "stft",
                     features=features,
                     hop_length=hop_length,
-                    in_channels=2 if args.loss_less else 1,
+                    in_channels=2 if args.loss_less == "True" else 1,
                     channels=channels,
                 )
                 old_state_dict = torch.load(model_dir)
@@ -203,7 +239,7 @@ def main() -> None:
 
                 model.to(device)
 
-                acc, eer = val_test_loop(
+                acc, eer, _s_matrix = val_test_loop(
                     test_data_loader,
                     model,
                     transforms=transforms,
@@ -211,6 +247,7 @@ def main() -> None:
                     batch_size=batch_size,
                     name=c_gan,
                     pbar=args.pbar,
+                    label_names=label_names,
                 )
 
                 res_acc.append(acc)
@@ -412,8 +449,12 @@ def _parse_args():
     )
     parser.add_argument(
         "--loss-less",
-        action="store_true",
-        help="if sign pattern is to be used as second channel.",
+        choices=[
+            "True",
+            "False",
+        ],
+        default="False",
+        help="Ff sign pattern is to be used as second channel.",
     )
     parser.add_argument(
         "--mean",

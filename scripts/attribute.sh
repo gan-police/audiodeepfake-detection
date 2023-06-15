@@ -2,8 +2,8 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=attribute
-#SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log3/slurm/ig/ig_%j.out
-#SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log3/slurm/ig/ig_%j.err
+#SBATCH --output=exp/log5/slurm/ig/ig_%j.out
+#SBATCH --error=exp/log5/slurm/ig/ig_%j.err
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=A40short
@@ -18,8 +18,8 @@ python -m src.integrated_gradients \
     --plot-path "./plots/attribution" \
     --target-label 1 \
     --times 128 \
-    --data-prefix "${HOME}/data/run4/fake_22050_22050_0.7" \
-    --model-path-prefix ./exp/log3/models/fake_packetssym8_none_100_22050_22050_256_1-11025_0.7_0.0001_0.01_128_2_10e_lcnn_signsTrue \
+    --data-prefix "${HOME}/data/run6/fake_22050_22050_0.7" \
+    --model-path-prefix ./exp/log5/models/fake_packetssym8_none_100_22050_22050_256_1-11025_0.7_0.0001_0.01_128_2_10e_lcnn_signsTrue \
     --model "lcnn"  \
     --batch-size 128 \
     --wavelet sym8 \

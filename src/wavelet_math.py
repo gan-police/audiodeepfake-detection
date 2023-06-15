@@ -314,7 +314,7 @@ def get_transforms(
             wavelet_str=args.wavelet,
             max_lev=int(log(args.num_of_scales, 2)),
             log_scale=args.features == "none" and args.log_scale,
-            loss_less=args.loss_less,
+            loss_less=False if args.loss_less == "False" else True,
             power=args.power,
         )
 

@@ -5,7 +5,7 @@ import numpy as np
 
 from src.data_loader import LearnWavefakeDataset
 
-path = "/home/s6kogase/data/run5"  # Replace with the path to the directory you want to count the files for
+path = "/home/s6kogase/data/run6"  # Replace with the path to the directory you want to count the files for
 
 for end in ["_val", "_test", "_train"]:
     len_list = []

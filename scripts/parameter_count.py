@@ -6,7 +6,7 @@ from src.train_classifier import get_model
 
 def main() -> None:
     """Define wavelet, count parameters."""
-    wavelet = get_diff_wavelet("cmor4.6-0.87")
+    wavelet = get_diff_wavelet("sym8")
 
     models = ["lcnn"]
     sample_rate = 22050
