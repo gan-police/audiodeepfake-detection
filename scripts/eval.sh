@@ -2,8 +2,8 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=eval
-#SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log5/slurm/eval/eval_%j.out
-#SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log5/slurm/eval/eval_%j.err
+#SBATCH --output=exp/log5/slurm/eval/eval_%j.out
+#SBATCH --error=exp/log5/slurm/eval/eval_%j.err
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=A40devel

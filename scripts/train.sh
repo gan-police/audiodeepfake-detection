@@ -4,9 +4,9 @@
 #SBATCH --job-name=train_cnn
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH --partition=A40short
-#SBATCH --output=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log5/slurm/train/train_lcnn_packets_fbmelgan_%A_%a.out
-#SBATCH --error=/home/s6kogase/work/wavelet-audiodeepfake-detection/exp/log5/slurm/train/train_lcnn_packets_fbmelgan_%A_%a.err
+#SBATCH --partition=A40devel
+#SBATCH --output=exp/log5/slurm/train/train_lcnn_packets_fbmelgan_%A_%a.out
+#SBATCH --error=exp/log5/slurm/train/train_lcnn_packets_fbmelgan_%A_%a.err
 #SBATCH --array=0-4
 
 source ${HOME}/.bashrc
