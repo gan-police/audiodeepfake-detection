@@ -131,17 +131,13 @@ def main() -> None:
     gans = args.train_gans
     c_gans = args.crosseval_gans
     seeds = args.seeds
-    sample_rate = args.sample_rate
     model_name = args.model
     batch_size = args.batch_size
     flattend_size = args.flattend_size
     nclasses = args.nclasses
-    f_min = args.f_min
-    f_max = args.f_max
     num_of_scales = args.num_of_scales
     data_prefix = args.data_prefix
     features = args.features
-    hop_length = args.hop_length
 
     label_names = np.array(
         [
@@ -219,18 +215,10 @@ def main() -> None:
                 set_seed(seed)
 
                 model = get_model(
-                    wavelet=wavelet,
                     model_name=model_name,
                     nclasses=nclasses,
-                    batch_size=batch_size,
-                    f_min=f_min,
-                    f_max=f_max,
-                    sample_rate=sample_rate,
                     num_of_scales=num_of_scales,
                     flattend_size=flattend_size,
-                    stft=args.transform == "stft",
-                    features=features,
-                    hop_length=hop_length,
                     in_channels=2 if args.loss_less == "True" else 1,
                     channels=channels,
                 )

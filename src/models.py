@@ -1,15 +1,10 @@
 """Models for classification of audio deepfakes."""
 import sys
-from typing import Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torchaudio
-from pywt import ContinuousWavelet
-from torchaudio.transforms import ComputeDeltas
-
-from .wavelet_math import LFCC, CWTLayer, STFTLayer
 
 
 def contrast(waveform: torch.Tensor) -> torch.Tensor:
@@ -115,75 +110,23 @@ class LCNN(nn.Module):
         return "LCNN"
 
 
-class LearnDeepTestNet(nn.Module):
+class LearnDeepNet(nn.Module):
     """Deep CNN with 2D convolutions for detecting audio deepfakes."""
 
     def __init__(
         self,
-        wavelet,
         classes: int = 2,
-        f_min: float = 2000,
-        f_max: float = 4000,
-        num_of_scales: int = 150,
-        sample_rate: int = 8000,
-        batch_size: int = 256,
         flattend_size: int = 21888,
-        stft: bool = False,
-        features: str = "none",
-        hop_length: int = 64,
-        raw_input: Optional[bool] = True,
-        adapt_wavelet: bool = False,
+        in_channels: int = 32,
     ) -> None:
         """Define network sturcture."""
-        super(LearnDeepTestNet, self).__init__()
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        freqs = torch.linspace(f_max, f_min, num_of_scales, device=device) / sample_rate
-        self.flattend_size = flattend_size
-        self.raw_input = raw_input
-        self.features = features
+        super(LearnDeepNet, self).__init__()
 
-        # only set log scale if raw cwt or stft are used
-        if "lfcc" in features or "delta" in features or "all" in features:
-            self.pre_log = False
-            if "all" in features:
-                channels = 60
-            else:
-                channels = 20
-        else:
-            self.pre_log = True
-            channels = 32
-
-        if stft:
-            self.transform = STFTLayer(  # type: ignore
-                n_fft=num_of_scales * 2 - 1,
-                hop_length=hop_length,
-                log_scale=self.pre_log,
-            )
-        else:
-            self.transform = CWTLayer(  # type: ignore
-                wavelet=wavelet,
-                freqs=freqs,
-                hop_length=hop_length,
-                log_scale=self.pre_log,
-                adapt_wavelet=adapt_wavelet,
-            )
-
-        self.lfcc = LFCC(
-            sample_rate=sample_rate,
-            f_min=f_min,
-            f_max=f_max,
-            num_of_scales=num_of_scales,
-        )
-        self.delta = ComputeDeltas()
-
-        self.cnn1 = nn.Sequential(
-            nn.Conv2d(1, channels, kernel_size=3, stride=2),
-            nn.BatchNorm2d(channels),
+        self.cnn = nn.Sequential(
+            nn.Conv2d(1, in_channels, kernel_size=3, stride=1),
+            nn.BatchNorm2d(in_channels),
             nn.ReLU(),
-            nn.Conv2d(channels, 32, kernel_size=3, stride=2),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=2),
+            nn.Conv2d(in_channels, 32, kernel_size=3, stride=1),
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=2),
@@ -195,185 +138,27 @@ class LearnDeepTestNet(nn.Module):
             nn.Conv2d(128, 128, kernel_size=3, stride=2),
             nn.BatchNorm2d(128),
             nn.ReLU(),
-        )
-
-        self.cnn2 = nn.Sequential(
-            nn.Conv2d(1, channels, kernel_size=5, stride=1),
-            nn.BatchNorm2d(channels),
-            nn.ReLU(),
-            nn.Conv2d(channels, 32, kernel_size=5, stride=2),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-        )
-
-        self.fc = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(self.flattend_size, classes),
-        )
-
-        # LCNN from AVSpoofChallenge 2021
-        self.lcnn = nn.Sequential(
-            nn.Conv2d(1, 64, 5, 1, padding=2),
-            MaxFeatureMap2D(),
-            nn.MaxPool2d(2, 2),
-            nn.Conv2d(32, 64, 1, 1, padding=0),
-            MaxFeatureMap2D(),
-            nn.BatchNorm2d(32, affine=False),
-            nn.Conv2d(32, 96, 3, 1, padding=1),
-            MaxFeatureMap2D(),
-            nn.MaxPool2d(2, 2),
-            nn.BatchNorm2d(48, affine=False),
-            nn.Conv2d(48, 96, 1, 1, padding=0),
-            MaxFeatureMap2D(),
-            nn.BatchNorm2d(48, affine=False),
-            nn.Conv2d(48, 128, 3, 1, padding=1),
-            MaxFeatureMap2D(),
-            nn.MaxPool2d(2, 2),
-            nn.Conv2d(64, 128, 1, 1, padding=0),
-            MaxFeatureMap2D(),
-            nn.BatchNorm2d(64, affine=False),
-            nn.Conv2d(64, 64, 3, 1, padding=1),
-            MaxFeatureMap2D(),
-            nn.BatchNorm2d(32, affine=False),
-            nn.Conv2d(32, 64, 1, 1, padding=0),
-            MaxFeatureMap2D(),
-            nn.BatchNorm2d(32, affine=False),
-            nn.Conv2d(32, 64, 3, 1, padding=1),
-            MaxFeatureMap2D(),
-            nn.MaxPool2d(2, 2),
+            nn.AvgPool2d(2),
             nn.Dropout(0.7),
         )
 
-        self.lstm = nn.Sequential(
-            BLSTMLayer((channels // 16) * 32, (channels // 16) * 32),
-            BLSTMLayer((channels // 16) * 32, (channels // 16) * 32),
-        )
-
-        self.out = nn.Linear((channels // 16) * 32, classes)
-        self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
-
-    def forward(self, x) -> torch.Tensor:
-        """Forward pass."""
-        if self.raw_input:
-            x = self.transform(x)
-
-        if not self.pre_log:
-            lfcc = self.lfcc(x)
-            x = lfcc
-
-        if "delta" in self.features or "all" in self.features:
-            delta = self.delta(lfcc)
-            x = delta
-
-        if "double" in self.features or "all" in self.features:
-            doubledelta = self.delta(delta)
-            x = doubledelta
-
-        if "all" in self.features:
-            x = torch.hstack(
-                (
-                    lfcc.squeeze(),
-                    delta.squeeze(),
-                    doubledelta.squeeze(),
-                )
-            ).unsqueeze(1)
-
-        if self.pre_log:
-            x = self.cnn1(x)
-            x = self.fc(x)
-        else:
-            x = self.lcnn(x.permute(0, 1, 3, 2))
-            x = x.permute(0, 2, 1, 3).contiguous()
-            shape = x.shape
-            x = self.lstm(x.view(shape[0], shape[1], -1))
-            x = self.out(x).mean(1)
-
-        return self.logsoftmax(x)
-
-    def get_name(self) -> str:
-        """Return custom string identifier."""
-        return "LearnDeepTestNet"
-
-
-class LearnNet(nn.Module):
-    """Deep CNN with 2D convolutions for detecting audio deepfakes.
-
-    A little less params than LearnDeepTestNet.
-    """
-
-    def __init__(
-        self,
-        wavelet,
-        classes: int = 2,
-        f_min: float = 2000,
-        f_max: float = 4000,
-        num_of_scales: int = 150,
-        sample_rate: int = 8000,
-        batch_size: int = 256,
-        flattend_size: int = 39168,
-        stft: bool = False,
-        hop_length: int = 1,
-        raw_input: Optional[bool] = True,
-    ) -> None:
-        """Define network sturcture."""
-        super(LearnNet, self).__init__()
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        freqs = torch.linspace(f_max, f_min, num_of_scales, device=device) / sample_rate
-        self.flattend_size = flattend_size
-        self.raw_input = raw_input
-
-        if stft:
-            self.transform = STFTLayer(
-                n_fft=num_of_scales * 2 - 1,
-                hop_length=hop_length,
-            )  # type: ignore
-        else:
-            self.transform = CWTLayer(  # type: ignore
-                wavelet=wavelet,
-                freqs=freqs,
-                hop_length=hop_length,
-            )
-
-        self.cnn = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3, stride=2),
-            nn.BatchNorm2d(
-                32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True
-            ),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=2),
-            nn.BatchNorm2d(
-                32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True
-            ),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=3),
-            nn.BatchNorm2d(
-                64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True
-            ),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=3),
-            nn.BatchNorm2d(
-                128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True
-            ),
-            nn.ReLU(),
-            nn.AvgPool2d(2, 2),
-        )
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(self.flattend_size, classes, bias=True),
+            nn.Linear(flattend_size, classes),
         )
+
         self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        if self.raw_input:
-            x = self.transform(x)
         x = self.cnn(x)
         x = self.fc(x)
+
         return self.logsoftmax(x)
 
     def get_name(self) -> str:
         """Return custom string identifier."""
-        return "LearnNet"
+        return "LearnDeepNet"
 
 
 class OneDNet(nn.Module):
@@ -381,42 +166,18 @@ class OneDNet(nn.Module):
 
     def __init__(
         self,
-        wavelet,
         classes: int = 2,
-        f_min: float = 1000,
-        f_max: float = 9500,
-        num_of_scales: int = 150,
-        sample_rate: int = 22050,
-        batch_size: int = 128,
-        stride: int = 2,
-        flattend_size: int = 5440,
-        stft: bool = False,
-        hop_length: int = 1,
-        raw_input: Optional[bool] = True,
+        flattend_size: int = 21888,
+        in_channels: int = 32,
+        num_of_scales: int = 256,
+        stride: int = 1,
     ) -> None:
         """Define network structure."""
         super().__init__()
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        freqs = torch.linspace(f_max, f_min, num_of_scales, device=device) / sample_rate
-
-        self.flattend_size = flattend_size
-        self.raw_input = raw_input
-
-        if stft:
-            self.transform = STFTLayer(
-                n_fft=num_of_scales * 2 - 1,
-                hop_length=hop_length,
-            )  # type: ignore
-        else:
-            self.transform = CWTLayer(  # type: ignore
-                wavelet=wavelet,
-                freqs=freqs,
-                hop_length=hop_length,
-            )
 
         self.cnn = nn.Sequential(
-            nn.Conv1d(num_of_scales, 32, kernel_size=53, stride=stride),
-            nn.BatchNorm1d(32),
+            nn.Conv1d(num_of_scales, in_channels, kernel_size=20, stride=stride),
+            nn.BatchNorm1d(in_channels),
             nn.ReLU(),
             nn.Conv1d(32, 32, kernel_size=3, stride=stride),
             nn.BatchNorm1d(32),
@@ -434,19 +195,17 @@ class OneDNet(nn.Module):
             nn.BatchNorm1d(64),
             nn.ReLU(),
             nn.AvgPool1d(2),
+            nn.Dropout(0.7),
         )
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(self.flattend_size, classes),  # 1184, 128, 4992, 9984
+            nn.Linear(flattend_size, classes),
         )
         self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        if self.raw_input:
-            x = self.transform(x)
-        x = x.squeeze(1)
-        x = self.cnn(x)
+        x = self.cnn(x.squeeze())
         x = self.fc(x)
         return self.logsoftmax(x)
 
@@ -535,39 +294,19 @@ class BLSTMLayer(nn.Module):
 
 
 def get_model(
-    wavelet: ContinuousWavelet,
     model_name: str,
     nclasses: int = 2,
-    batch_size: int = 128,
-    f_min: float = 1000,
-    f_max: float = 9500,
-    sample_rate: int = 22050,
-    num_of_scales: int = 150,
+    num_of_scales: int = 256,
     flattend_size: int = 21888,
-    stft: bool = False,
-    features: str = "none",
-    hop_length: int = 1,
-    raw_input: Optional[bool] = True,
-    adapt_wavelet: bool = False,
     in_channels: int = 1,
     channels: int = 32,
-) -> LearnDeepTestNet | OneDNet | LearnNet:
+) -> LearnDeepNet | OneDNet:
     """Get torch module model with given parameters."""
     if model_name == "learndeepnet":
-        model = LearnDeepTestNet(
+        model = LearnDeepNet(
             classes=nclasses,
-            wavelet=wavelet,
-            f_min=f_min,
-            f_max=f_max,
-            sample_rate=sample_rate,
-            num_of_scales=num_of_scales,
-            batch_size=batch_size,
-            raw_input=raw_input,
             flattend_size=flattend_size,
-            stft=stft,
-            features=features,
-            hop_length=hop_length,
-            adapt_wavelet=adapt_wavelet,
+            in_channels=in_channels,
         )  # type: ignore
     elif model_name == "lcnn":
         model = LCNN(
@@ -575,33 +314,11 @@ def get_model(
             in_channels=in_channels,
             lstm_channels=channels,
         )  # type: ignore
-    elif model_name == "learnnet":
-        model = LearnNet(
-            classes=nclasses,
-            wavelet=wavelet,
-            f_min=f_min,
-            f_max=f_max,
-            sample_rate=sample_rate,
-            num_of_scales=num_of_scales,
-            batch_size=batch_size,
-            raw_input=raw_input,
-            flattend_size=flattend_size,
-            stft=stft,
-            hop_length=hop_length,
-        )  # type: ignore
     elif model_name == "onednet":
         model = OneDNet(
             classes=nclasses,
-            wavelet=wavelet,
-            f_min=f_min,
-            f_max=f_max,
-            sample_rate=sample_rate,
             num_of_scales=num_of_scales,
-            batch_size=batch_size,
-            raw_input=raw_input,
             flattend_size=flattend_size,
-            stft=stft,
-            hop_length=hop_length,
         )  # type: ignore
     return model
 
