@@ -16,13 +16,9 @@ class TestModels(unittest.TestCase):
     """Testing different classes and functions of models."""
 
     def test_dimensions(self) -> None:
-        wavelet = get_diff_wavelet("cmor4.6-0.87")
-        sample_rate = 22050
-        window_size = 11025
-
-        models = ["learndeepnet", "onednet", "learnnet"]
-        f_sizes = [21888, 5440, 39168]
+        models = ["learndeepnet", "onednet", "lcnn"]
+        f_sizes = [9600, 2304, 0]
         # Todo: make this test a bit more universal...
         for i in range(len(models)):
-            model = get_model(wavelet, models[i], sample_rate=sample_rate, flattend_size=f_sizes[i])
-            summary(model, (1, window_size), verbose=0)
+            model = get_model(models[i], flattend_size=f_sizes[i], num_of_scales=256, channels=256)
+            summary(model, (1, 256, 101), verbose=0)

@@ -88,9 +88,13 @@ def main():
     ckpt_every = args.ckpt_every
     transform = args.transform
     features = args.features
-    sample_rate = args.sample_rate
     known_gen_name = path_name[4]
     loss_less = False if args.loss_less == "False" else True
+
+    if args.model == "onednet" and loss_less:
+        raise NotImplementedError(
+            "OneDNet does not work together with the sign channel."
+        )
 
     label_names = np.array(
         [
@@ -113,7 +117,7 @@ def main():
     elif transform == "stft" and loss_less:
         raise ValueError("Sign channel not possible for stft due to complex data type.")
 
-    model_file = base_dir + "/models/" + path_name[0] + "_"
+    model_file = base_dir + "/models/test3/" + path_name[0] + "_"
     if transform == "cwt":
         model_file += "cwt" + str(args.wavelet)
     elif transform == "stft":
@@ -211,19 +215,10 @@ def main():
         channels = int(args.num_of_scales)
 
     model = get_model(
-        wavelet=wavelet,
         model_name=args.model,
         nclasses=args.nclasses,
-        batch_size=args.batch_size,
-        f_min=args.f_min,
-        f_max=args.f_max,
-        sample_rate=sample_rate,
         num_of_scales=args.num_of_scales,
         flattend_size=args.flattend_size,
-        stft=args.transform == "stft",
-        features=features,
-        hop_length=args.hop_length,
-        adapt_wavelet=args.adapt_wavelet,
         in_channels=2 if loss_less else 1,
         channels=channels,
     )
@@ -258,6 +253,14 @@ def main():
         lr=args.learning_rate,
         weight_decay=args.weight_decay,
     )
+
+    if args.use_scheduler:
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            factor=0.5,
+            patience=2,
+            verbose=True,
+        )
 
     transforms, normalize = get_transforms(
         args,
@@ -356,6 +359,20 @@ def main():
                         "accuracy/cross_validation", cr_val_acc, step_total
                     )
                     writer.add_scalar("eer/cross_validation", cr_val_eer, step_total)
+
+        if args.unknown_prefix is not None:
+            cr_val_acc, cr_val_eer, _ = val_test_loop(
+                data_loader=cross_loader_val,
+                model=model,
+                batch_size=args.batch_size,
+                normalize=normalize,
+                transforms=transforms,
+                pbar=args.pbar,
+                name="unknown",
+                label_names=label_names,
+            )
+            if args.use_scheduler:
+                scheduler.step(cr_val_eer)
 
         if args.tensorboard:
             writer.add_scalar("epochs", e, step_total)
@@ -481,12 +498,16 @@ def _parse_args():
     parser.add_argument(
         "--epochs", type=int, default=10, help="number of epochs (default: 10)"
     )
+    parser.add_argument(
+        "--use-scheduler",
+        action="store_true",
+        help="If plateau scheduler should be used.",
+    )
 
     parser.add_argument(
         "--transform",
         choices=[
             "stft",
-            "cwt",
             "packets",
         ],
         default="stft",
@@ -624,7 +645,6 @@ def _parse_args():
         choices=[
             "onednet",
             "learndeepnet",
-            "learnnet",
             "lcnn",
         ],
         default="lcnn",

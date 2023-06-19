@@ -16,31 +16,35 @@ echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
 module load CUDA/11.7.0
 conda activate py310
 
+echo -e "Training..."
+
 python -m src.train_classifier \
     --batch-size 128 \
-    --learning-rate 0.0001 \
+    --learning-rate 0.0003 \
     --weight-decay 0.01   \
     --epochs 10 \
-    --validation-interval 10000    \
+    --use-scheduler \
+    --validation-interval 10000\
     --data-prefix "${HOME}/data/run6/fake_22050_22050_0.7_$2" \
     --unknown-prefix "${HOME}/data/run6/fake_22050_22050_0.7_all" \
     --nclasses 2 \
     --seed $SLURM_ARRAY_TASK_ID \
-    --model lcnn  \
+    --model onednet  \
     --transform $1 \
     --num-of-scales $3 \
     --wavelet $4 \
     --power $5 \
     --loss-less $6 \
+    --flattend-size $7 \
     --hop-length 100 \
     --log-scale \
     --f-min 1 \
     --f-max 11025 \
-    --calc-normalization \
     --window-size 22050 \
     --sample-rate 22050 \
     --features none \
     --num-workers 2 \
-    --tensorboard
+    --pbar 
 
+echo -e "Training process finished."
 echo "Goodbye at $(date)."
