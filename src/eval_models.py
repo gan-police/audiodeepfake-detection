@@ -1,124 +1,28 @@
 """Evaluate models with accuracy and eer metric."""
 import argparse
-from collections import defaultdict
-from typing import Any
+import os
+import sys
 
 import numpy as np
 import torch
-from scipy.interpolate import interp1d
-from scipy.optimize import brentq
-from sklearn.metrics import roc_curve
+from torch.distributed import destroy_process_group
 from torch.utils.data import DataLoader
-from tqdm import tqdm
+from torch.utils.data.distributed import DistributedSampler
 
-from .data_loader import LearnWavefakeDataset
-from .models import get_model
-from .ptwt_continuous_transform import get_diff_wavelet
-from .utils import print_results, set_seed
-from .wavelet_math import get_transforms
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
 
-
-def calculate_eer(y_true, y_score):
-    """Return the equal error rate for a binary classifier output.
-
-    Based on:
-    https://github.com/scikit-learn/scikit-learn/issues/15247
-    """
-    fpr, tpr, _ = roc_curve(y_true, y_score, pos_label=1)
-    eer = brentq(lambda x: 1.0 - x - interp1d(fpr, tpr)(x), 0.0, 1.0)
-    return eer
-
-
-def val_test_loop(
-    data_loader,
-    model: torch.nn.Module,
-    normalize: torch.nn.Sequential,
-    transforms: torch.nn.Sequential,
-    batch_size: int,
-    label_names: np.ndarray,
-    name: str = "",
-    pbar: bool = False,
-) -> tuple[float, Any, np.ndarray]:
-    """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
-
-    Args:
-        data_loader (DataLoader): A DataLoader loading the data set on which the performance should be measured,
-            e.g. a test or validation set in a data split.
-        model (torch.nn.Module): The model to evaluate.
-        normalize (torch.nn.Sequential): The modules to normalize the input data.
-        transforms (torch.nn.Sequential): The modules to transform the input data (e.g. packets/stft+lfcc).
-        batch_size (int): Batch size of training process.
-        name (str): Name for tqdm bar (default: "").
-        pbar (bool): Disable/Enable tqdm bar (default: False).
-
-    Returns:
-        Tuple[float, Any]: The measured accuracy and eer of the model on the data set.
-    """
-    ok_sum = 0
-    total = 0
-    bar = tqdm(
-        iter(data_loader), desc="validate", total=len(data_loader), disable=not pbar
-    )
-    model.eval()
-    ok_dict = {}
-    count_dict = {}
-    y_list = []
-    out_list = []
-    correct_labels = []
-    predicted_labels: list = []
-    predicted_dict = defaultdict(list)
-    for val_batch in bar:
-        with torch.no_grad():
-            freq_time_dt = transforms(val_batch["audio"].cuda())
-            freq_time_dt_norm = normalize(freq_time_dt)
-
-            out = model(freq_time_dt_norm)
-            out_max = torch.argmax(out, -1)
-            ok_mask = out_max == (val_batch["label"] != 0).cuda()
-            correct_labels.extend((val_batch["label"].cuda()).type(torch.long))
-            predicted_labels.extend(out_max.cpu())
-            ok_sum += sum(ok_mask).cpu().numpy().astype(int)
-            total += batch_size
-            bar.set_description(f"{name} - acc: {ok_sum/total:2.8f}")
-            for lbl, okl in zip(val_batch["label"], ok_mask):
-                if lbl.item() not in ok_dict:
-                    ok_dict[lbl.item()] = [okl]
-                else:
-                    ok_dict[lbl.item()].append(okl)
-                if lbl.item() not in count_dict:
-                    count_dict[lbl.item()] = 1
-                else:
-                    count_dict[lbl.item()] += 1
-
-            y_list.append((val_batch["label"] != 0))
-            out_list.append(out_max.cpu())
-            for k, v in zip(label_names[val_batch["label"]], out_max.cpu()):
-                predicted_dict[k].append(v)
-
-    matrix = np.zeros((len(label_names), 2), dtype=int)
-    for label_idx, label in enumerate(label_names):
-        predicted_label = np.array(predicted_dict[label])
-
-        for class_idx in range(2):
-            matrix[label_idx, class_idx] = len(
-                predicted_label[predicted_label == class_idx]
-            )
-
-    common_keys = ok_dict.keys() & count_dict.keys()
-    print(
-        f"{name} - ",
-        [(key, (sum(ok_dict[key]) / count_dict[key]).item()) for key in common_keys],
-    )
-
-    ys = torch.cat(y_list).numpy()
-    outs = torch.cat(out_list).numpy()
-    eer = calculate_eer(ys, outs)
-    print(f"{name} - eer: {eer:2.8f}, Val acc: {ok_sum/total:2.8f}")
-    return ok_sum / total, eer, matrix
+from src.data_loader import LearnWavefakeDataset
+from src.models import get_model
+from src.ptwt_continuous_transform import get_diff_wavelet
+from src.train_classifier import Trainer, ddp_setup
+from src.utils import print_results, set_seed
+from src.wavelet_math import get_transforms
 
 
 def main() -> None:
     """Evaluate all models with different seeds on given gans."""
+    ddp_setup()
     args = _parse_args()
     print(args)
 
@@ -127,7 +31,6 @@ def main() -> None:
     model_path = (args.model_path_prefix).split("_")
 
     wavelet = get_diff_wavelet(args.wavelet)
-    num_workers = args.num_workers
     gans = args.train_gans
     c_gans = args.crosseval_gans
     seeds = args.seeds
@@ -186,10 +89,8 @@ def main() -> None:
             device,
             wavelet,
             normalization=args.calc_normalization,
-            pbar=args.pbar,
+            pbar=not args.pbar,
         )
-
-        # matrix = np.zeros((len(label_names), len(label_names)), dtype=int)
 
         for c_gan in c_gans:
             print(f"Evaluating {gan} on {c_gan}...", flush=True)
@@ -205,7 +106,8 @@ def main() -> None:
                 test_data_set,
                 batch_size,
                 shuffle=False,
-                num_workers=num_workers,
+                pin_memory=True,
+                sampler=DistributedSampler(test_data_set, shuffle=False),
             )
 
             for seed in seeds:
@@ -222,24 +124,22 @@ def main() -> None:
                     in_channels=2 if args.loss_less == "True" else 1,
                     channels=channels,
                 )
-                old_state_dict = torch.load(model_dir)
-                model.load_state_dict(old_state_dict)
 
-                model.to(device)
-
-                acc, eer, _s_matrix = val_test_loop(
-                    test_data_loader,
-                    model,
-                    transforms=transforms,
+                trainer = Trainer(
+                    model=model,
+                    test_data_loader=test_data_loader,
                     normalize=normalize,
-                    batch_size=batch_size,
-                    name=c_gan,
-                    pbar=args.pbar,
+                    transforms=transforms,
+                    snapshot_path=model_dir,
+                    args=args,
                     label_names=label_names,
                 )
 
-                res_acc.append(acc)
-                res_eer.append(eer)
+                trainer.load_snapshot(model_dir)
+                test_acc, test_eer, _, _ = trainer.testing()
+
+                res_acc.append(test_acc)
+                res_eer.append(test_eer)
             res_dict = {}
             res_dict["max_acc"] = np.max(res_acc)
             res_dict["mean_acc"] = np.mean(res_acc)
@@ -266,6 +166,8 @@ def main() -> None:
     gan_acc_dict["aACC"] = mean_accs
     gan_acc_dict["allres_eer"] = allres_eer_seeds
     gan_acc_dict["allres_acc"] = allres_acc_seeds
+
+    destroy_process_group()
 
     print(gan_acc_dict)
 
@@ -338,6 +240,17 @@ def _parse_args():
         type=str,
         help="shared prefix of the data paths",
     )
+
+    parser.add_argument(
+        "--unknown-prefix",
+        type=str,
+        help="Shared prefix of the unknown source data paths (default: none).",
+    )
+    parser.add_argument(
+        "--tensorboard",
+        action="store_true",
+        help="enables a tensorboard visualization.",
+    )
     parser.add_argument(
         "--plot-path",
         type=str,
@@ -403,16 +316,10 @@ def _parse_args():
         choices=[
             "onednet",
             "learndeepnet",
-            "learnnet",
             "lcnn",
         ],
-        default="learndeepnet",
-        help="The model type. Default: learndeepnet.",
-    )
-    parser.add_argument(
-        "--adapt-wavelet",
-        action="store_true",
-        help="If differentiable wavelets shall be used.",
+        default="lcnn",
+        help="The model type. Default: lcnn.",
     )
     parser.add_argument(
         "--pbar",
@@ -447,20 +354,21 @@ def _parse_args():
     parser.add_argument(
         "--mean",
         type=float,
-        default=0,
+        nargs="+",
+        default=[0],
         help="Pre calculated mean. (default: 0)",
     )
     parser.add_argument(
         "--std",
         type=float,
-        default=1,
+        nargs="+",
+        default=[1],
         help="Pre calculated std. (default: 1)",
     )
     parser.add_argument(
         "--transform",
         choices=[
             "stft",
-            "cwt",
             "packets",
         ],
         default="stft",
@@ -478,12 +386,6 @@ def _parse_args():
         default="none",
         help="Use features like lfcc, its first and second derivatives or all of them. \
               Delta and Dooubledelta include lfcc computing. Default: none.",
-    )
-    parser.add_argument(
-        "--num-workers",
-        type=int,
-        default=2,
-        help="Number of worker processes started by the test and validation data loaders (default: 2)",
     )
     return parser.parse_args()
 

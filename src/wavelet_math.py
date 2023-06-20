@@ -15,67 +15,6 @@ from torchaudio.transforms import AmplitudeToDB, ComputeDeltas, Spectrogram
 from tqdm import tqdm
 
 from .data_loader import LearnWavefakeDataset, WelfordEstimator
-from .ptwt_continuous_transform import cwt
-
-
-class CWTLayer(torch.nn.Module):
-    """A base class for learnable Continuous Wavelets."""
-
-    def __init__(
-        self,
-        wavelet,
-        freqs: torch.Tensor,
-        hop_length: int = 1,
-        log_scale: bool = True,
-        log_offset: float = 1e-12,
-        adapt_wavelet: bool = False,
-    ):
-        """Initialize wavelet config.
-
-        Args:
-            wavelet: Wavelet used for continuous wavelet transform.
-            freqs (torch.Tensor): Tensor holding desired frequencies to be calculated
-                                  in CWT.
-            log_scale (bool): Sets wether transformed audios are log scaled.
-                              Default: True.
-            log_offset (float): Offset for log scaling. (Default: 1e-12)
-        """
-        super().__init__()
-        self.freqs = freqs
-        self.log_scale = log_scale
-        self.wavelet = wavelet
-        self.log_offset = log_offset
-        self.hop_length = hop_length
-        self.scales = (self.wavelet.center.cpu() / self.freqs).detach()
-        # self.scales = torch.linspace(1.0, 32.0, freqs.shape[0]).detach()
-        self.adapt_wavelet = adapt_wavelet
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """Transform input into scale-time-representation.
-
-        Returns:
-            torch.Tensor: Scale-time transformed input tensor with dimensions
-                (batch_size, channels, number of scales (freqs.shape[0]), time)
-        """
-        if self.adapt_wavelet:
-            # recompute scales if wavelet changes
-            self.scales = (self.wavelet.center.cpu() / self.freqs).detach()
-
-        x = input.squeeze(1)
-        sig = cwt(x, self.scales, self.wavelet)
-        sig = torch.abs(sig) ** 2
-
-        if self.log_scale:
-            sig = torch.log(sig + self.log_offset)
-
-        sig = sig.to(torch.float32)
-
-        sig = sig.permute(1, 0, 2)
-        scalgram = torch.unsqueeze(sig, dim=1)
-
-        scalgram = scalgram[:, :, :, :: self.hop_length]
-
-        return scalgram
 
 
 class STFTLayer(torch.nn.Module):
@@ -297,18 +236,6 @@ def get_transforms(
             log_scale=args.features == "none" and args.log_scale,
             power=args.power,
         ).cuda()
-    elif args.transform == "cwt":
-        freqs = (
-            torch.linspace(args.f_max, args.f_min, args.num_of_scales, device=device)
-            / args.sample_rate
-        )
-        transform = CWTLayer(  # type: ignore
-            wavelet=wavelet,
-            freqs=freqs,
-            hop_length=args.hop_length,
-            log_scale=args.features == "none" and args.log_scale,
-        )
-
     elif args.transform == "packets":
         transform = Packets(  # type: ignore
             wavelet_str=args.wavelet,
@@ -339,7 +266,11 @@ def get_transforms(
     if normalization:
         print("computing mean and std values.", flush=True)
         dataset = LearnWavefakeDataset(data_prefix + "_train")
-        norm_dataset_loader = torch.utils.data.DataLoader(dataset, batch_size=8000)
+        norm_dataset_loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=8000,
+            shuffle=False,
+        )
         welford = WelfordEstimator()
         with torch.no_grad():
             for batch in tqdm(
