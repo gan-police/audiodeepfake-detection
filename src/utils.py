@@ -1,5 +1,6 @@
 """Set utility functions."""
 import os
+from argparse import ArgumentParser
 
 import numpy as np
 import torch
@@ -16,6 +17,210 @@ def set_seed(seed: int):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
     os.environ["PYTHONHASHSEED"] = str(seed)
+
+
+def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
+    """Set default training and evaluation wide parser arguments."""
+    parser.add_argument(
+        "--log-dir",
+        type=str,
+        default="./exp/log",
+        help="Shared prefix of the data paths (default: ./exp/log).",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=128,
+        help="input batch size for testing (default: 128)",
+    )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=0.0001,
+        help="learning rate for optimizer (default: 0.0001)",
+    )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=0.01,
+        help="weight decay for optimizer (default: 0.01)",
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=10, help="number of epochs (default: 10)"
+    )
+    parser.add_argument(
+        "--transform",
+        choices=[
+            "stft",
+            "packets",
+        ],
+        default="stft",
+        help="Use stft instead of cwt in transformation.",
+    )
+    parser.add_argument(
+        "--features",
+        choices=["lfcc", "delta", "doubledelta", "none"],
+        default="none",
+        help="Use features like lfcc, first and second derivatives. \
+            Delta and Dooubledelta include lfcc computing. Default: none.",
+    )
+    parser.add_argument(
+        "--num-of-scales",
+        type=int,
+        default=256,
+        help="number of scales used in training set. (default: 256)",
+    )
+    parser.add_argument(
+        "--wavelet",
+        type=str,
+        default="sym8",
+        help="Wavelet to use in wavelet transformations. (default: sym8)",
+    )
+    parser.add_argument(
+        "--sample-rate",
+        type=int,
+        default=22050,
+        help="Sample rate of audio. (default: 22050)",
+    )
+    parser.add_argument(
+        "--window-size",
+        type=int,
+        default=11025,
+        help="Window size of audio. (default: 11025)",
+    )
+    parser.add_argument(
+        "--f-min",
+        type=float,
+        default=1000,
+        help="Minimum frequency to analyze in Hz. (default: 1000)",
+    )
+    parser.add_argument(
+        "--f-max",
+        type=float,
+        default=11025,
+        help="Maximum frequency to analyze in Hz. (default: 11025)",
+    )
+    parser.add_argument(
+        "--hop-length",
+        type=int,
+        default=1,
+        help="Hop length in cwt and stft. (default: 100).",
+    )
+    parser.add_argument(
+        "--log-scale",
+        action="store_true",
+        help="Log-scale transformed audio.",
+    )
+    parser.add_argument(
+        "--power",
+        type=float,
+        default=2.0,
+        help="Calculate power spectrum of given factor (for stft and packets) (default: 2.0).",
+    )
+    parser.add_argument(
+        "--loss-less",
+        choices=[
+            "True",
+            "False",
+        ],
+        default="False",
+        help="If sign pattern is to be used as second channel, only works for packets.",
+    )
+    parser.add_argument(
+        "--aug-contrast",
+        action="store_true",
+        help="Use augmentation method contrast.",
+    )
+    parser.add_argument(
+        "--aug-noise",
+        action="store_true",
+        help="Use augmentation method contrast.",
+    )
+
+    parser.add_argument(
+        "--calc-normalization",
+        action="store_true",
+        help="calculate normalization for debugging purposes.",
+    )
+    parser.add_argument(
+        "--mean",
+        type=float,
+        nargs="+",
+        default=[0],
+        help="Pre calculated mean. (default: 0)",
+    )
+    parser.add_argument(
+        "--std",
+        type=float,
+        nargs="+",
+        default=[1],
+        help="Pre calculated std. (default: 1)",
+    )
+    parser.add_argument(
+        "--data-prefix",
+        type=str,
+        default="../data/fake",
+        help="Shared prefix of the data paths (default: ../data/fake).",
+    )
+    parser.add_argument(
+        "--unknown-prefix",
+        type=str,
+        help="Shared prefix of the unknown source data paths (default: none).",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="The random seed pytorch and numpy works with (default: 0).",
+    )
+    parser.add_argument(
+        "--flattend-size",
+        type=int,
+        default=9600,
+        help="Dense layer input size (default: 9600).",
+    )
+    parser.add_argument(
+        "--model",
+        choices=[
+            "onednet",
+            "learndeepnet",
+            "lcnn",
+        ],
+        default="lcnn",
+        help="The model type (default: lcnn).",
+    )
+    parser.add_argument(
+        "--nclasses",
+        type=int,
+        default=2,
+        help="Number of output classes in model (default: 2).",
+    )
+
+    parser.add_argument(
+        "--tensorboard",
+        action="store_true",
+        help="enables a tensorboard visualization.",
+    )
+    parser.add_argument(
+        "--pbar",
+        action="store_true",
+        help="enables progress bars",
+    )
+    parser.add_argument(
+        "--validation-interval",
+        type=int,
+        default=1,
+        help="Number of training epochs after which the model is being tested "
+        " on the validation data set. (default: 1)",
+    )
+    parser.add_argument(
+        "--ckpt-every",
+        type=int,
+        default=1,
+        help="Save model after a fixed number of epochs. (default: 1)",
+    )
+
+    return parser
 
 
 def contrast(waveform: torch.Tensor) -> torch.Tensor:
