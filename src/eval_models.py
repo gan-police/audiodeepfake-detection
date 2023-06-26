@@ -6,8 +6,7 @@ import sys
 import numpy as np
 import torch
 from torch.distributed import destroy_process_group
-from torch.utils.data import DataLoader
-from torch.utils.data.distributed import DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
@@ -16,7 +15,7 @@ from src.data_loader import LearnWavefakeDataset
 from src.models import get_model
 from src.ptwt_continuous_transform import get_diff_wavelet
 from src.train_classifier import Trainer, ddp_setup
-from src.utils import print_results, set_seed
+from src.utils import add_default_parser_args, print_results, set_seed
 from src.wavelet_math import get_transforms
 
 
@@ -33,7 +32,7 @@ def main() -> None:
     wavelet = get_diff_wavelet(args.wavelet)
     gans = args.train_gans
     c_gans = args.crosseval_gans
-    seeds = args.seeds
+    seeds = args.eval_seeds
     model_name = args.model
     batch_size = args.batch_size
     flattend_size = args.flattend_size
@@ -107,7 +106,9 @@ def main() -> None:
                 batch_size,
                 shuffle=False,
                 pin_memory=True,
-                sampler=DistributedSampler(test_data_set, shuffle=False),
+                sampler=DistributedSampler(
+                    test_data_set, shuffle=False, seed=args.seed
+                ),
             )
 
             for seed in seeds:
@@ -194,74 +195,7 @@ def _parse_args():
         help="Prefix of model path (without '_seed.pt').",
     )
     parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=128,
-        help="input batch size for testing (default: 128)",
-    )
-    parser.add_argument(
-        "--window-size",
-        type=int,
-        default=11025,
-        help="window size of samples in dataset (default: 11025)",
-    )
-    parser.add_argument(
-        "--num-of-scales",
-        type=int,
-        default=150,
-        help="number of scales used in training set. (default: 150)",
-    )
-    parser.add_argument(
-        "--wavelet",
-        type=str,
-        default="cmor3.3-4.17",
-        help="Wavelet to use in cwt. (default: cmor3.3-4.17)",
-    )
-    parser.add_argument(
-        "--sample-rate",
-        type=int,
-        default=22050,
-        help="Sample rate of audio. (default: 22050)",
-    )
-    parser.add_argument(
-        "--f-min",
-        type=float,
-        default=1000,
-        help="Minimum frequency to analyze in Hz. (default: 1000)",
-    )
-    parser.add_argument(
-        "--f-max",
-        type=float,
-        default=9500,
-        help="Maximum frequency to analyze in Hz. (default: 9500)",
-    )
-    parser.add_argument(
-        "--data-prefix",
-        type=str,
-        help="shared prefix of the data paths",
-    )
-
-    parser.add_argument(
-        "--unknown-prefix",
-        type=str,
-        help="Shared prefix of the unknown source data paths (default: none).",
-    )
-    parser.add_argument(
-        "--tensorboard",
-        action="store_true",
-        help="enables a tensorboard visualization.",
-    )
-    parser.add_argument(
-        "--plot-path",
-        type=str,
-        default="./plots/eval/",
-        help="path for plotting roc and auc",
-    )
-    parser.add_argument(
-        "--nclasses", type=int, default=2, help="number of classes (default: 2)"
-    )
-    parser.add_argument(
-        "--seeds",
+        "--eval-seeds",
         type=int,
         nargs="+",
         default=[0, 1, 2, 3, 4],
@@ -305,88 +239,8 @@ def _parse_args():
         ],
         help="model postfix specifying the gan in the trainingset for cross validation.",
     )
-    parser.add_argument(
-        "--flattend-size",
-        type=int,
-        default=21888,
-        help="dense layer input size (default: 21888)",
-    )
-    parser.add_argument(
-        "--model",
-        choices=[
-            "onednet",
-            "learndeepnet",
-            "lcnn",
-        ],
-        default="lcnn",
-        help="The model type. Default: lcnn.",
-    )
-    parser.add_argument(
-        "--pbar",
-        action="store_true",
-        help="enables progress bars",
-    )
-    parser.add_argument(
-        "--calc-normalization",
-        action="store_true",
-        help="calculate normalization for debugging purposes.",
-    )
-    parser.add_argument(
-        "--log-scale",
-        action="store_true",
-        help="If differentiable wavelets shall be used.",
-    )
-    parser.add_argument(
-        "--power",
-        type=float,
-        default=2.0,
-        help="Calculate power spectrum of given factor (for stft and packets) (default: 2.0).",
-    )
-    parser.add_argument(
-        "--loss-less",
-        choices=[
-            "True",
-            "False",
-        ],
-        default="False",
-        help="Ff sign pattern is to be used as second channel.",
-    )
-    parser.add_argument(
-        "--mean",
-        type=float,
-        nargs="+",
-        default=[0],
-        help="Pre calculated mean. (default: 0)",
-    )
-    parser.add_argument(
-        "--std",
-        type=float,
-        nargs="+",
-        default=[1],
-        help="Pre calculated std. (default: 1)",
-    )
-    parser.add_argument(
-        "--transform",
-        choices=[
-            "stft",
-            "packets",
-        ],
-        default="stft",
-        help="Use different transformations.",
-    )
-    parser.add_argument(
-        "--hop-length",
-        type=int,
-        default=1,
-        help="Hop length in transformation. (default: 1)",
-    )
-    parser.add_argument(
-        "--features",
-        choices=["lfcc", "delta", "doubledelta", "all", "none"],
-        default="none",
-        help="Use features like lfcc, its first and second derivatives or all of them. \
-              Delta and Dooubledelta include lfcc computing. Default: none.",
-    )
+    parser = add_default_parser_args(parser)
+
     return parser.parse_args()
 
 

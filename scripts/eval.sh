@@ -2,9 +2,9 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=eval
-#SBATCH --gres=gpu:3
-#SBATCH --cpus-per-task=8
-#SBATCH --partition=A40short
+#SBATCH --gres=gpu:8
+#SBATCH --cpus-per-task=32
+#SBATCH --partition=A100short
 #SBATCH --output=exp/log5/slurm/eval/eval_%j.out
 #SBATCH --error=exp/log5/slurm/eval/eval_%j.err
 
@@ -28,11 +28,12 @@ echo -e "Evaluating..."
 srun torchrun \
 --standalone \
 --nnodes 1 \
---nproc_per_node 3 \
+--nproc_per_node 8 \
 --rdzv_id $RANDOM \
 --rdzv_backend c10d \
 --rdzv_endpoint $head_node_ip:29400 \
 src/eval_models.py \
+    --log-dir "./exp/log5" \
     --data-prefix "${HOME}/data/run6/fake_22050_22050_0.7" \
     --model-path-prefix $1 \
     --transform $2 \
@@ -48,10 +49,9 @@ src/eval_models.py \
     --sample-rate 22050 \
     --features none \
     --hop-length 100 \
-    --seed 0 \
+    --eval-seeds 0 1 2 3 4 \
     --log-scale \
-    --mean -13.404 -0.00025377 \
-    --std 4.8680 1.0000 \
+    --calc-normalization \
     --train-gans "fbmelgan" \
     --crosseval-gans "lmelgan" "mbmelgan" "melgan" "hifigan" "waveglow" "pwg" "bigvgan" "bigvganl" "avocodo" "conformer" "jsutmbmelgan" "jsutpwg"
 

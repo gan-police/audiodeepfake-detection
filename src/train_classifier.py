@@ -1,9 +1,7 @@
 """Source code to train audio deepfake detectors in wavelet space."""
 import argparse
 import os
-import pickle
 import sys
-from collections import defaultdict
 
 import numpy as np
 import torch
@@ -24,7 +22,7 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 from src.data_loader import LearnWavefakeDataset
 from src.models import get_model, save_model
 from src.ptwt_continuous_transform import get_diff_wavelet
-from src.utils import add_noise, contrast, set_seed
+from src.utils import add_default_parser_args, add_noise, contrast, set_seed
 from src.wavelet_math import get_transforms
 
 
@@ -103,6 +101,7 @@ class Trainer:
         """Initialize trainer."""
         self.local_rank = int(os.environ["LOCAL_RANK"])
         self.global_rank = int(os.environ["RANK"])
+        self.world_size = torch.cuda.device_count()
 
         if model is not None:
             self.model = model
@@ -203,7 +202,7 @@ class Trainer:
         count_dict = {}
         y_list = []
         out_list = []
-        predicted_dict = defaultdict(list)
+        # predicted_dict = defaultdict(list)
         for val_batch in bar:
             with torch.no_grad():
                 freq_time_dt = self.transforms(val_batch["audio"].to(self.local_rank))
@@ -211,48 +210,90 @@ class Trainer:
 
                 out = self.model(freq_time_dt_norm)
                 out_max = torch.argmax(out, -1)
-                ok_mask = out_max == (val_batch["label"].to(self.local_rank) != 0)
+                y = val_batch["label"].to(self.local_rank) != 0
+                ok_mask = out_max == y
                 ok_sum += sum(ok_mask).cpu().numpy().astype(int)
-                total += self.args.batch_size
-                bar.set_description(f"{name} - acc: {ok_sum/total:2.8f}")
+                total += len(y)
+                bar.set_description(
+                    f"[GPU{self.global_rank}] {name} - acc: {ok_sum/total:2.8f}"
+                )
                 for lbl, okl in zip(val_batch["label"], ok_mask):
                     if lbl.item() not in ok_dict:
-                        ok_dict[lbl.item()] = [okl]
+                        ok_dict[lbl.item()] = [okl.cpu()]
                     else:
-                        ok_dict[lbl.item()].append(okl)
+                        ok_dict[lbl.item()].append(okl.cpu())
                     if lbl.item() not in count_dict:
                         count_dict[lbl.item()] = 1
                     else:
                         count_dict[lbl.item()] += 1
 
-                y_list.append((val_batch["label"] != 0))
-                out_list.append(out_max.cpu())
-                for k, v in zip(self.label_names[val_batch["label"]], out_max.cpu()):
-                    predicted_dict[k].append(v)
+                y_list.append(y)
+                out_list.append(out_max)
+                # for k, v in zip(self.label_names[val_batch["label"]], out_max.cpu()):
+                #     predicted_dict[k].append(v)
 
         matrix = np.zeros((len(self.label_names), 2), dtype=int)
-        for label_idx, label in enumerate(self.label_names):
-            predicted_label = np.array(predicted_dict[label])
+        # for label_idx, label in enumerate(self.label_names):
+        #     predicted_label = np.array(predicted_dict[label])
 
-            for class_idx in range(2):
-                matrix[label_idx, class_idx] = len(
-                    predicted_label[predicted_label == class_idx]
-                )
+        #     for class_idx in range(2):
+        #        matrix[label_idx, class_idx] = len(
+        #            predicted_label[predicted_label == class_idx]
+        #        )
 
         common_keys = ok_dict.keys() & count_dict.keys()
-        print(
-            f"{name} - ",
-            [
-                (key, (sum(ok_dict[key]) / count_dict[key]).item())
-                for key in common_keys
-            ],
-        )
 
-        ys = torch.cat(y_list).numpy()
-        outs = torch.cat(out_list).numpy()
-        eer = self.calculate_eer(ys, outs)
-        print(f"{name} - eer: {eer:2.8f}, Val acc: {ok_sum/total:2.8f}")
-        return ok_sum / total, eer, matrix
+        ys = torch.cat(y_list).to(self.local_rank)  # type: ignore
+        outs = torch.cat(out_list).to(self.local_rank)  # type: ignore
+
+        # gather ys, outs, ok_sum, total
+        ys_gathered = torch.zeros(
+            self.world_size * len(ys), dtype=torch.bool, device=self.local_rank
+        )  # type: ignore
+        outs_gathered = torch.zeros(
+            self.world_size * len(outs), dtype=torch.int64, device=self.local_rank
+        )  # type: ignore
+        ok_sum_gathered = [None for _ in range(self.world_size)]  # type: ignore
+        total_gathered = [None for _ in range(self.world_size)]  # type: ignore
+        ok_dict_gathered = [None for _ in range(self.world_size)]  # type: ignore
+        count_dict_gathered = [None for _ in range(self.world_size)]  # type: ignore
+
+        torch.distributed.all_gather_into_tensor(ys_gathered, ys)
+        torch.distributed.all_gather_into_tensor(outs_gathered, outs)
+        torch.distributed.all_gather_object(ok_sum_gathered, ok_sum)
+        torch.distributed.all_gather_object(total_gathered, total)
+        torch.distributed.all_gather_object(ok_dict_gathered, ok_dict)
+        torch.distributed.all_gather_object(count_dict_gathered, count_dict)
+
+        if self.local_rank == 0 and self.global_rank == 0:
+            # import pdb; pdb.set_trace()
+            print(
+                f"{name} - ",
+                [
+                    (
+                        key,
+                        (
+                            sum([sum(ok_dict_g[key]) for ok_dict_g in ok_dict_gathered])  # type: ignore
+                            / sum(
+                                [
+                                    count_dict_g[key]  # type: ignore
+                                    for count_dict_g in count_dict_gathered
+                                ]  # type: ignore
+                            )
+                        ),
+                    )
+                    for key in common_keys
+                ],
+            )  # type: ignore
+            eer = self.calculate_eer(
+                ys_gathered.cpu().numpy(), outs_gathered.cpu().numpy()
+            )
+            print(
+                f"{name} - eer: {eer:2.8f}, Val acc: {sum(ok_sum_gathered)/sum(total_gathered):2.8f}"  # type: ignore
+            )
+        else:
+            eer = 0
+        return sum(ok_sum_gathered) / sum(total_gathered), eer, matrix  # type: ignore
 
     def _run_test(self) -> tuple[float, float, float | None, float | None]:
         self.model.eval()
@@ -271,6 +312,7 @@ class Trainer:
             else:
                 cr_test_eer = cr_test_acc = None  # type: ignore
             print("test acc", test_acc)
+            print("test eer", test_eer)
 
         if self.args.tensorboard:
             self.writer.add_scalar("accuracy/test", test_acc, self.step_total)  # type: ignore
@@ -307,7 +349,6 @@ class Trainer:
             pbar=self.args.pbar,
             name="known",
         )
-        self.validation_list.append([self.step_total, epoch, val_acc])
 
         if self.args.unknown_prefix is not None:
             cr_val_acc, cr_val_eer, _ = self.val_test_loop(
@@ -389,20 +430,14 @@ class Trainer:
         ):
             self._run_epoch(epoch)
 
-            if (
-                self.global_rank == 0
-                and self.local_rank == 0
-                and epoch % self.args.ckpt_every == 0
-            ):
-                self._save_snapshot(epoch)
-
-            # iterate over val batches.
-            if (
-                self.global_rank == 0
-                and self.local_rank == 0
-                and epoch % self.args.validation_interval == 0
-            ):
+            if self.global_rank == 0 and self.local_rank == 0:
+                if epoch % self.args.ckpt_every == 0:
+                    self._save_snapshot(epoch)
+            if epoch % self.args.validation_interval == 0 and epoch < max_epochs:
                 self._run_validation(epoch)
+            if epoch == max_epochs:
+                print("Training done, now testing...")
+                self.testing()
 
     def testing(self) -> tuple[float, float, float | None, float | None]:
         """Iterate over test set."""
@@ -427,11 +462,13 @@ def main():
 
     args = _parse_args()
     print(args)
-    base_dir = "./exp/log5"
+    base_dir = args.log_dir
     if not os.path.exists(base_dir + "/models"):
         os.makedirs(base_dir + "/models")
     if not os.path.exists(base_dir + "/tensorboard"):
         os.makedirs(base_dir + "/tensorboard")
+    if not os.path.exists(base_dir + "/norms"):
+        os.makedirs(base_dir + "/norms")
 
     if args.f_max > args.sample_rate / 2:
         print("Warning: maximum analyzed frequency is above nyquist rate.")
@@ -632,8 +669,6 @@ def main():
     trainer.train(args.epochs)
     print(trainer.validation_list)
 
-    trainer.testing()
-
     if args.tensorboard:
         writer.close()
 
@@ -647,233 +682,10 @@ def save_model_epoch(model_file, model) -> str:
     return model_file
 
 
-def _save_stats(
-    model_file: str,
-    loss_list: list,
-    accuracy_list: list,
-    validation_list: list,
-    test_acc: float,
-    args,
-    iterations_per_epoch: int,
-) -> None:
-    stats_file = model_file + ".pkl"
-    try:
-        res = pickle.load(open(stats_file, "rb"))
-    except OSError as e:
-        res = []
-        print(
-            e,
-            "stats.pickle does not exist, creating a new file.",
-        )
-    res.append(
-        {
-            "train_loss": loss_list,
-            "train_acc": accuracy_list,
-            "val_acc": validation_list,
-            "test_acc": test_acc,
-            "args": args,
-            "iterations_per_epoch": iterations_per_epoch,
-        }
-    )
-    pickle.dump(res, open(stats_file, "wb"))
-    print(stats_file, " saved.")
-
-
 def _parse_args():
     """Parse cmd line args for training an audio classifier."""
     parser = argparse.ArgumentParser(description="Train an audio classifier")
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=128,
-        help="input batch size for testing (default: 128)",
-    )
-    parser.add_argument(
-        "--learning-rate",
-        type=float,
-        default=0.0001,
-        help="learning rate for optimizer (default: 0.0001)",
-    )
-    parser.add_argument(
-        "--weight-decay",
-        type=float,
-        default=0.01,
-        help="weight decay for optimizer (default: 0.01)",
-    )
-    parser.add_argument(
-        "--epochs", type=int, default=10, help="number of epochs (default: 10)"
-    )
-    parser.add_argument(
-        "--transform",
-        choices=[
-            "stft",
-            "packets",
-        ],
-        default="stft",
-        help="Use stft instead of cwt in transformation.",
-    )
-    parser.add_argument(
-        "--features",
-        choices=["lfcc", "delta", "doubledelta", "none"],
-        default="none",
-        help="Use features like lfcc, first and second derivatives. \
-            Delta and Dooubledelta include lfcc computing. Default: none.",
-    )
-    parser.add_argument(
-        "--num-of-scales",
-        type=int,
-        default=256,
-        help="number of scales used in training set. (default: 256)",
-    )
-    parser.add_argument(
-        "--wavelet",
-        type=str,
-        default="sym8",
-        help="Wavelet to use in wavelet transformations. (default: sym8)",
-    )
-    parser.add_argument(
-        "--sample-rate",
-        type=int,
-        default=22050,
-        help="Sample rate of audio. (default: 22050)",
-    )
-    parser.add_argument(
-        "--window-size",
-        type=int,
-        default=11025,
-        help="Window size of audio. (default: 11025)",
-    )
-    parser.add_argument(
-        "--f-min",
-        type=float,
-        default=1000,
-        help="Minimum frequency to analyze in Hz. (default: 1000)",
-    )
-    parser.add_argument(
-        "--f-max",
-        type=float,
-        default=11025,
-        help="Maximum frequency to analyze in Hz. (default: 11025)",
-    )
-    parser.add_argument(
-        "--hop-length",
-        type=int,
-        default=1,
-        help="Hop length in cwt and stft. (default: 100).",
-    )
-    parser.add_argument(
-        "--log-scale",
-        action="store_true",
-        help="Log-scale transformed audio.",
-    )
-    parser.add_argument(
-        "--power",
-        type=float,
-        default=2.0,
-        help="Calculate power spectrum of given factor (for stft and packets) (default: 2.0).",
-    )
-    parser.add_argument(
-        "--loss-less",
-        choices=[
-            "True",
-            "False",
-        ],
-        default="False",
-        help="If sign pattern is to be used as second channel, only works for packets.",
-    )
-    parser.add_argument(
-        "--aug-contrast",
-        action="store_true",
-        help="Use augmentation method contrast.",
-    )
-    parser.add_argument(
-        "--aug-noise",
-        action="store_true",
-        help="Use augmentation method contrast.",
-    )
-
-    parser.add_argument(
-        "--calc-normalization",
-        action="store_true",
-        help="calculate normalization for debugging purposes.",
-    )
-    parser.add_argument(
-        "--mean",
-        type=float,
-        nargs="+",
-        default=[0],
-        help="Pre calculated mean. (default: 0)",
-    )
-    parser.add_argument(
-        "--std",
-        type=float,
-        nargs="+",
-        default=[1],
-        help="Pre calculated std. (default: 1)",
-    )
-    parser.add_argument(
-        "--data-prefix",
-        type=str,
-        default="../data/fake",
-        help="Shared prefix of the data paths (default: ../data/fake).",
-    )
-    parser.add_argument(
-        "--unknown-prefix",
-        type=str,
-        help="Shared prefix of the unknown source data paths (default: none).",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=0,
-        help="The random seed pytorch and numpy works with (default: 0).",
-    )
-    parser.add_argument(
-        "--flattend-size",
-        type=int,
-        default=9600,
-        help="Dense layer input size (default: 9600).",
-    )
-    parser.add_argument(
-        "--model",
-        choices=[
-            "onednet",
-            "learndeepnet",
-            "lcnn",
-        ],
-        default="lcnn",
-        help="The model type (default: lcnn).",
-    )
-    parser.add_argument(
-        "--nclasses",
-        type=int,
-        default=2,
-        help="Number of output classes in model (default: 2).",
-    )
-
-    parser.add_argument(
-        "--tensorboard",
-        action="store_true",
-        help="enables a tensorboard visualization.",
-    )
-    parser.add_argument(
-        "--pbar",
-        action="store_true",
-        help="enables progress bars",
-    )
-    parser.add_argument(
-        "--validation-interval",
-        type=int,
-        default=1,
-        help="Number of training epochs after which the model is being tested "
-        " on the validation data set. (default: 1)",
-    )
-    parser.add_argument(
-        "--ckpt-every",
-        type=int,
-        default=1,
-        help="Save model after a fixed number of epochs. (default: 1)",
-    )
+    parser = add_default_parser_args(parser)
     return parser.parse_args()
 
 

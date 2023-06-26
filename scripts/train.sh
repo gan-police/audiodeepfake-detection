@@ -2,12 +2,12 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=train
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:8
 #SBATCH --cpus-per-task=32
-#SBATCH --partition=A40short
+#SBATCH --partition=A100short
 #SBATCH --output=exp/log5/slurm/train/train_%A_%a.out
 #SBATCH --error=exp/log5/slurm/train/train_%A_%a.err
-#SBATCH --array=0
+#SBATCH --array=0-4
 
 source ${HOME}/.bashrc
 
@@ -29,16 +29,17 @@ echo -e "Training..."
 srun torchrun \
 --standalone \
 --nnodes 1 \
---nproc_per_node 4 \
+--nproc_per_node 8 \
 --rdzv_id $SLURM_JOB_ID \
 --rdzv_backend c10d \
 --rdzv_endpoint $head_node_ip:29400 \
 src/train_classifier.py \
+    --log-dir "./exp/log5" \
     --batch-size 128 \
-    --learning-rate 0.0003 \
-    --weight-decay 0.02   \
+    --learning-rate 0.0001 \
+    --weight-decay 0.01   \
     --epochs 10 \
-    --validation-interval 2 \
+    --validation-interval 1 \
     --ckpt-every 1 \
     --data-prefix "${HOME}/data/run6/fake_22050_22050_0.7_$2" \
     --unknown-prefix "${HOME}/data/run6/fake_22050_22050_0.7_all" \
@@ -58,8 +59,7 @@ src/train_classifier.py \
     --window-size 22050 \
     --sample-rate 22050 \
     --features none \
-    --mean -13.404 -0.00025377 \
-    --std 4.8680 1.0000
+    --calc-normalization
 
 echo -e "Training process finished."
 echo "Goodbye at $(date)."

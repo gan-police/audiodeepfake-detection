@@ -3,9 +3,12 @@
 The idea is to provide functionality to make the cwt useful
 for audio analysis and gan-content recognition.
 """
+import os
+import pickle
 from math import log
 from typing import Optional
 
+import numpy as np
 import ptwt
 import pywt
 import torch
@@ -263,7 +266,21 @@ def get_transforms(
     if "doubledelta" in features:
         transforms.append(ComputeDeltas())
 
-    if normalization:
+    norm_dir = (
+        args.log_dir
+        + "/norms/"
+        + args.data_prefix.replace("/", "_")
+        + "_"
+        + args.wavelet
+    )
+
+    if os.path.exists(f"{norm_dir}_mean_std.pkl"):
+        print("Loading pre calculated mean and std from file.")
+        with open(f"{norm_dir}_mean_std.pkl", "rb") as file:
+            mean, std = pickle.load(file)
+            mean = torch.from_numpy(mean.astype(np.float32)).to(device)
+            std = torch.from_numpy(std.astype(np.float32)).to(device)
+    elif normalization:
         print("computing mean and std values.", flush=True)
         dataset = LearnWavefakeDataset(data_prefix + "_train")
         norm_dataset_loader = torch.utils.data.DataLoader(
@@ -282,7 +299,10 @@ def get_transforms(
                 freq_time_dt = transforms(batch["audio"].cuda())
                 welford.update(freq_time_dt.permute(0, 3, 2, 1))
             mean, std = welford.finalize()
+            with open(f"{norm_dir}_mean_std.pkl", "wb") as f:
+                pickle.dump([mean.cpu().numpy(), std.cpu().numpy()], f)
     else:
+        print("Using default mean and std.")
         mean = torch.tensor(args.mean, device=device)
         std = torch.tensor(args.std, device=device)
     print("mean", mean, "std:", std)

@@ -5,7 +5,7 @@
 #SBATCH --job-name=train_cnn
 #SBATCH --gres=gpu:4
 #SBATCH --ntasks-per-node=4
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=8
 #SBATCH --partition=A40short
 #SBATCH --output=exp/log5/slurm/train/train_lcnn_packets_fbmelgan_%A_%a.out
 #SBATCH --error=exp/log5/slurm/train/train_lcnn_packets_fbmelgan_%A_%a.err
