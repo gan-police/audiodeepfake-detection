@@ -265,6 +265,8 @@ def get_transforms(
     if "doubledelta" in features:
         transforms.append(ComputeDeltas())
 
+    loss_less = "_loss_less" if args.loss_less == "True" else ""
+
     norm_dir = (
         args.log_dir
         + "/norms/"
@@ -277,10 +279,7 @@ def get_transforms(
         + str(args.num_of_scales)
         + "_"
         + str(args.power)
-        + "_"
-        + "loss_less"
-        if args.loss_less
-        else ""
+        + loss_less
     )
 
     if os.path.exists(f"{norm_dir}_mean_std.pkl"):

@@ -37,12 +37,12 @@ src/train_classifier.py \
     --log-dir "./exp/log5" \
     --batch-size 128 \
     --learning-rate 0.0001 \
-    --weight-decay 0.01   \
+    --weight-decay 0.001   \
     --epochs 10 \
     --validation-interval 1 \
     --ckpt-every 1 \
-    --data-prefix "${HOME}/data/run6_16000/fake_22050_22050_0.7_$2" \
-    --unknown-prefix "${HOME}/data/run6_16000/fake_22050_22050_0.7_all" \
+    --data-prefix "${HOME}/data/run6/fake_22050_22050_0.7_$2" \
+    --unknown-prefix "${HOME}/data/run6/fake_22050_22050_0.7_all" \
     --nclasses 2 \
     --seed $SLURM_ARRAY_TASK_ID \
     --model lcnn  \
@@ -55,9 +55,9 @@ src/train_classifier.py \
     --hop-length 100 \
     --log-scale \
     --f-min 1 \
-    --f-max 8000 \
-    --window-size 16000 \
-    --sample-rate 16000 \
+    --f-max 11025 \
+    --window-size 22050 \
+    --sample-rate 22050 \
     --features none \
     --calc-normalization \
     --pbar

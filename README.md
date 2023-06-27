@@ -40,6 +40,8 @@ We utilize two datasets that appeared in previous work:
 
 - [LJSpeech 1.1](https://keithito.com/LJ-Speech-Dataset/)
 - [WaveFake](https://zenodo.org/record/5642694)
+- [ASVSpoof 2021 DeepFake Evaluation Dataset](https://zenodo.org/record/4835108)
+- [ASVSpoof 2019 Logical Access Dataset](https://datashare.ed.ac.uk/handle/10283/3336)
 
 ### GAN Architectures
 We utilize pre-trained models from the following repositories:

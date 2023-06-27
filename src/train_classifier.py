@@ -332,10 +332,10 @@ class Trainer:
         )
         if self.global_rank == 0:
             print(f"+------------------- Epoch {e+1} -------------------+", flush=True)
-        b_sz = len(next(iter(self.train_data_loader))["audio"])
-        print(
-            f"[GPU{self.global_rank}] Epoch {e+1} | Batchsize: {b_sz} | Steps: {len(self.train_data_loader)}"
-        )
+        # b_sz = len(next(iter(self.train_data_loader))["audio"])
+        # print(
+        #     f"[GPU{self.global_rank}] Epoch {e+1} | Batchsize: {b_sz} | Steps: {len(self.train_data_loader)}"
+        # )
         self.train_data_loader.sampler.set_epoch(e)
         for _it, batch in enumerate(self.bar):
             self.model.train()
@@ -432,9 +432,9 @@ class Trainer:
             if self.global_rank == 0 and self.local_rank == 0:
                 if epoch % self.args.ckpt_every == 0:
                     self._save_snapshot(epoch)
-            if epoch % self.args.validation_interval == 0 and epoch < max_epochs:
+            if epoch % self.args.validation_interval == 0:
                 self._run_validation(epoch)
-            if epoch == max_epochs:
+            if epoch == max_epochs - 1:
                 print("Training done, now testing...")
                 self.testing()
 
