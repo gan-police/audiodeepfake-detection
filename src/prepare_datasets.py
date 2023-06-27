@@ -471,8 +471,10 @@ def split_dataset_random(
         )
         result_list_new = []
         frames_list_new = []
-        result_list_new.append(np.asarray([[], [], result_list[0][2]]))
-        frames_list_new.append(np.asarray([[], [], frames_list[0][2]]))
+        # real
+        result_list_new.append(np.asarray([[], [], result_list[0][2]], dtype=object))
+        frames_list_new.append(np.asarray([[], [], frames_list[0][2]], dtype=object))
+        # fake
         result_list_new.append(np.asarray([[], [], test_list_f], dtype=object))
         frames_list_new.append(np.asarray([[], [], test_list_w], dtype=object))
         result_list = result_list_new
