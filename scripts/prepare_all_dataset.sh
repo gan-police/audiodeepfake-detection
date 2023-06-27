@@ -24,6 +24,6 @@ python -m src.prepare_datasets \
     --max-samples 1751144850 \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --directory "${HOME}/data/fake" \
-    --target-dir "${HOME}/data/run6/"
+    --target-dir $1
 
 echo "Goodbye at $(date)."

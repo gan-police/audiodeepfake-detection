@@ -21,7 +21,6 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 
 from src.data_loader import LearnWavefakeDataset
 from src.models import get_model, save_model
-from src.ptwt_continuous_transform import get_diff_wavelet
 from src.utils import add_default_parser_args, add_noise, contrast, set_seed
 from src.wavelet_math import get_transforms
 
@@ -563,7 +562,6 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     # torch.multiprocessing.set_start_method("spawn")
 
-    wavelet = get_diff_wavelet(args.wavelet)
     train_data_loader, val_data_loader, test_data_loader = create_data_loaders(
         args.data_prefix,
         args.batch_size,
@@ -645,7 +643,6 @@ def main():
         args.data_prefix,
         features,
         device,
-        wavelet,
         args.calc_normalization,
         pbar=args.pbar,
     )

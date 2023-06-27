@@ -5,7 +5,7 @@
 #SBATCH --output=exp/log5/slurm/prep/prep_single_%A_%a.out
 #SBATCH --error=exp/log5/slurm/prep/prep_single_%A_%a.err
 #SBATCH --cpus-per-task=8
-#SBATCH --partition=A40short
+#SBATCH --partition=A40devel
 
 # Prepare all files of all GAN architectures in combination with the real audio
 # dataset. The resulting files are resampled but not transformed yet to make
@@ -14,12 +14,12 @@
 source ${HOME}/.bashrc
 
 echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
-echo "Preparing single binary classification dataset."
+echo "Preparing test binary classification dataset."
 conda activate py310
 
-datasets=("B_melgan" "C_hifigan"  "D_mbmelgan" "E_fbmelgan" "F_waveglow" "G_pwg" "H_lmelgan" "I_avocodo"  "J_bigvgan"  "K_bigvganl")
+datasets=("L_conformer" "M_jsutmbmelgan" "N_jsutpwg")
 
-for i in {0..9};
+for i in {0..2};
 do
 python -m src.prepare_datasets \
     --train-size 0.7 \
@@ -30,8 +30,8 @@ python -m src.prepare_datasets \
     --sample-rate 22050 \
     --max-samples 1751144850 \
     --realdir "${HOME}/data/real/A_ljspeech" \
-    --fakedir "${HOME}/data/fake/${datasets[${i}]}" \
     --directory "${HOME}/data/fake" \
+    --testdir "${HOME}/data/fake_test/${datasets[${i}]}" \
     --target-dir $1 &
 declare "pid${i}"=$!
 done
@@ -39,12 +39,5 @@ done
 wait $pid0
 wait $pid1
 wait $pid2
-wait $pid3
-wait $pid4
-wait $pid5
-wait $pid6
-wait $pid7
-wait $pid8
-wait $pid9
 
 echo "Goodbye at $(date)."

@@ -14,7 +14,6 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from .data_loader import LearnWavefakeDataset
-from .ptwt_continuous_transform import get_diff_wavelet
 from .train_classifier import get_model
 from .utils import set_seed
 from .wavelet_math import get_transforms
@@ -66,7 +65,6 @@ def main() -> None:
 
     model_path = (args.model_path_prefix).split("_")
 
-    wavelet = get_diff_wavelet(args.wavelet)
     num_workers = args.num_workers
     plot_path = args.plot_path
     gans = args.gans
@@ -114,7 +112,6 @@ def main() -> None:
             f"{data_prefix}_{gan}",
             features,
             device,
-            wavelet,
             normalization=args.mean == 0.0,
             pbar=args.pbar,
         )

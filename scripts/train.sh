@@ -7,7 +7,7 @@
 #SBATCH --partition=A100short
 #SBATCH --output=exp/log5/slurm/train/train_%A_%a.out
 #SBATCH --error=exp/log5/slurm/train/train_%A_%a.err
-#SBATCH --array=0-4
+#SBATCH --array=0
 
 source ${HOME}/.bashrc
 
@@ -26,10 +26,10 @@ conda activate py310
 
 echo -e "Training..."
 
-srun torchrun \
+torchrun \
 --standalone \
 --nnodes 1 \
---nproc_per_node 8 \
+--nproc_per_node 6 \
 --rdzv_id $SLURM_JOB_ID \
 --rdzv_backend c10d \
 --rdzv_endpoint $head_node_ip:29400 \
@@ -41,8 +41,8 @@ src/train_classifier.py \
     --epochs 10 \
     --validation-interval 1 \
     --ckpt-every 1 \
-    --data-prefix "${HOME}/data/run6/fake_22050_22050_0.7_$2" \
-    --unknown-prefix "${HOME}/data/run6/fake_22050_22050_0.7_all" \
+    --data-prefix "${HOME}/data/run6_16000/fake_22050_22050_0.7_$2" \
+    --unknown-prefix "${HOME}/data/run6_16000/fake_22050_22050_0.7_all" \
     --nclasses 2 \
     --seed $SLURM_ARRAY_TASK_ID \
     --model lcnn  \
@@ -55,11 +55,12 @@ src/train_classifier.py \
     --hop-length 100 \
     --log-scale \
     --f-min 1 \
-    --f-max 11025 \
-    --window-size 22050 \
-    --sample-rate 22050 \
+    --f-max 8000 \
+    --window-size 16000 \
+    --sample-rate 16000 \
     --features none \
-    --calc-normalization
+    --calc-normalization \
+    --pbar
 
 echo -e "Training process finished."
 echo "Goodbye at $(date)."

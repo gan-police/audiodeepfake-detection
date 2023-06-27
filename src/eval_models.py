@@ -13,7 +13,6 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 
 from src.data_loader import LearnWavefakeDataset
 from src.models import get_model
-from src.ptwt_continuous_transform import get_diff_wavelet
 from src.train_classifier import Trainer, ddp_setup
 from src.utils import add_default_parser_args, print_results, set_seed
 from src.wavelet_math import get_transforms
@@ -29,7 +28,6 @@ def main() -> None:
 
     model_path = (args.model_path_prefix).split("_")
 
-    wavelet = get_diff_wavelet(args.wavelet)
     gans = args.train_gans
     c_gans = args.crosseval_gans
     seeds = args.eval_seeds
@@ -86,9 +84,8 @@ def main() -> None:
             f"{data_prefix}_{gan}",
             features,
             device,
-            wavelet,
             normalization=args.calc_normalization,
-            pbar=not args.pbar,
+            pbar=args.pbar,
         )
 
         for c_gan in c_gans:
