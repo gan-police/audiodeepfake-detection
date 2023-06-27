@@ -587,7 +587,6 @@ def pre_process_folder(
         target_dir = Path(args.target_dir) / folder_name
     else:
         target_dir = data_dir.parent / folder_name
-    target_dir.mkdir(parents=True, exist_ok=True)
 
     if only_test is not None:
         _, _, test_list = split_dataset_random(

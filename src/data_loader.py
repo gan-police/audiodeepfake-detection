@@ -88,7 +88,7 @@ class LearnWavefakeDataset(Dataset):
         if len(self.file_lst) == 0:
             raise ValueError("empty directory")
         if self.file_lst[-1].name != "labels.npy":
-            raise ValueError("unexpected file name")
+            raise ValueError("unexpected file name for label file.")
         self.labels = np.load(self.file_lst[-1])
         self.audios = np.array(self.file_lst[:-1])
         self.key = key

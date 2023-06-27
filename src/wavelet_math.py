@@ -227,7 +227,6 @@ def get_transforms(
     data_prefix,
     features,
     device,
-    wavelet,
     normalization,
     pbar: bool = False,
 ) -> tuple[torch.nn.Sequential, torch.nn.Sequential]:
@@ -271,7 +270,17 @@ def get_transforms(
         + "/norms/"
         + args.data_prefix.replace("/", "_")
         + "_"
+        + args.transform
+        + "_"
         + args.wavelet
+        + "_"
+        + str(args.num_of_scales)
+        + "_"
+        + str(args.power)
+        + "_"
+        + "loss_less"
+        if args.loss_less
+        else ""
     )
 
     if os.path.exists(f"{norm_dir}_mean_std.pkl"):

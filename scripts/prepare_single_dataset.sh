@@ -19,7 +19,7 @@ conda activate py310
 
 datasets=("B_melgan" "C_hifigan"  "D_mbmelgan" "E_fbmelgan" "F_waveglow" "G_pwg" "H_lmelgan" "I_avocodo"  "J_bigvgan"  "K_bigvganl")
 
-for i in {0..10};
+for i in {0..9};
 do
 python -m src.prepare_datasets \
     --train-size 0.7 \
@@ -32,7 +32,19 @@ python -m src.prepare_datasets \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --fakedir "${HOME}/data/fake/${datasets[${i}]}" \
     --directory "${HOME}/data/fake" \
-    --target-dir "${HOME}/data/run6/"
+    --target-dir $1 &
+declare "pid${i}"=$!
 done
+
+wait $pid0
+wait $pid1
+wait $pid2
+wait $pid3
+wait $pid4
+wait $pid5
+wait $pid6
+wait $pid7
+wait $pid8
+wait $pid9
 
 echo "Goodbye at $(date)."

@@ -110,11 +110,14 @@ The dataset preparation script accepts additional arguments. For example, it is 
 
 We recommend to use the scripts `scripts/prepare_single_dataset.sh`, `scripts/prepare_all_dataset.sh` and `scripts/prepare_test_dataset.sh`.
 
-Important: After preparing all folders run `python scripts/clean_up.py` to make sure that all dataset splits contain the same amount of positive and negative labels. Make sure to set `path` to the target directory from above (it should only contain the output folders from the step before ending with `_test`, `_val` and `_all`). Check if the script executed properly with
+Important: After preparing all folders run `python -m scripts.clean_up` to make sure that all dataset splits contain the same amount of positive and negative labels. Make sure to set `path` to the target directory from above (it should only contain the output folders from the step before ending with `_test`, `_val` and `_all`). Check if the script executed properly with
 ```shell
 for folder in *_train; do echo "$folder: $(find "$folder" -maxdepth 1 -type f | wc -l)"; done
 ```
 Find all folders to contain the same amount of files.
+
+#### Downsample audio files
+If you want to resample audio files for training on a smaller sample rate, change `src.downsample` to fit your needs and run `scripts/downsample.sh`.
 
 ### Training the Classifier
 

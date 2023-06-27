@@ -14,7 +14,7 @@
 source ${HOME}/.bashrc
 
 echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
-echo "Preparing single binary classification dataset."
+echo "Preparing test binary classification dataset."
 conda activate py310
 
 datasets=("L_conformer" "M_jsutmbmelgan" "N_jsutpwg")
@@ -32,7 +32,12 @@ python -m src.prepare_datasets \
     --realdir "${HOME}/data/real/A_ljspeech" \
     --directory "${HOME}/data/fake" \
     --testdir "${HOME}/data/fake_test/${datasets[${i}]}" \
-    --target-dir "${HOME}/data/run6/"
+    --target-dir $1 &
+declare "pid${i}"=$!
 done
+
+wait $pid0
+wait $pid1
+wait $pid2
 
 echo "Goodbye at $(date)."
