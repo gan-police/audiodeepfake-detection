@@ -424,9 +424,7 @@ class Trainer:
     def train(self, max_epochs: int) -> None:
         """Train model."""
         self._check_model_init()
-        for epoch in tqdm(
-            range(max_epochs), desc="Epochs", unit="epochs", disable=not self.args.pbar
-        ):
+        for epoch in range(max_epochs):
             self._run_epoch(epoch)
 
             if self.global_rank == 0 and self.local_rank == 0:

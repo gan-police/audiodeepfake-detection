@@ -13,3 +13,4 @@ tensorboard
 torchmetrics
 captum
 tqdm
+optuna

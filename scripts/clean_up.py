@@ -34,6 +34,9 @@ def main():
                 len_list.append(dataset.labels[dataset.labels == 0].shape[0])
                 dir_list.append(folder_path)
 
+        if len(len_list) == 0:
+            continue
+
         minimum = min(len_list)
         print(f"minimum {minimum}")
         for i in range(0, len(len_list), 2):

@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torchaudio
+from torchsummary import summary
 
 
 def contrast(waveform: torch.Tensor) -> torch.Tensor:
@@ -341,3 +342,63 @@ def initialize_model(model: torch.nn.Module, path) -> torch.nn.Module:
         path: file path of the storage file
     """
     return model.load_state_dict(torch.load(path))
+
+
+def parse_sequential(model_str, input_shape) -> nn.Sequential | bool:
+    """Parse given model into torch.nn.Module."""
+    layers = []
+
+    for layer_str in model_str:
+        layer_parts = layer_str.split()
+        try:
+            layer_type = getattr(nn, layer_parts[0])
+        except AttributeError:
+            if layer_parts[0] == "MaxFeatureMap2D":
+                layer_type = MaxFeatureMap2D
+            elif layer_parts[0] == "BLSTLayer":
+                layer_type = BLSTMLayer
+            else:
+                return False
+
+        layer_args = [int(arg) for arg in layer_parts[1:]]
+        layer = layer_type(*layer_args)
+        layers.append(layer)
+
+    model = nn.Sequential(*layers)
+    dim_check = check_dimensions(model, input_shape)
+
+    if not dim_check:
+        return False
+    else:
+        return model
+
+
+def check_dimensions(
+    model,
+    input_shape,
+    verbose: bool = False,
+) -> bool:
+    """Check if model is valid for given dimensions."""
+    try:
+        summary(model, input_shape)
+    except RuntimeError as e:
+        if verbose:
+            print(f"Error: {e}")
+        return False
+
+    return True
+
+
+if __name__ == "__main__":
+    input_shape = (1, 256, 101)
+
+    model_data = [
+        "Conv2d 1 32 3 2",
+        "Conv2d 32 64 3 1",
+        "Flatten",
+        "Linear 96768 2",
+        "ReLU",
+        "Softmax 1",
+    ]
+
+    parse_sequential(model_data, input_shape)
