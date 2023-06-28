@@ -308,6 +308,7 @@ def split_dataset_random(
     test_folder: Optional[Path] = None,
     equal_distr: bool = False,
     max_len: Optional[int] = None,
+    file_type: str = "wav",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Get shuffled dataset windows and paths with equally distributed labels.
 
@@ -341,12 +342,12 @@ def split_dataset_random(
     # noqa: DAR401
     """
     if max_len is None:
-        lengths = []
+        lengths = []  # type: ignore
         sizes = []
         for folder in folder_list_all:
             print("Counting ", folder)
             length = 0
-            file_list = list(folder.glob("./*.wav"))
+            file_list = list(folder.glob(f"./*.{file_type}"))
             sizes.append(len(file_list))
             for i in range(len(file_list)):
                 leng = torchaudio.info(file_list[i]).num_frames
@@ -356,6 +357,8 @@ def split_dataset_random(
                 length += leng - (leng % window_size)
                 if i % 10000 == 0 and i > 0:
                     print(i)
+                    if len(lengths) > 0 and length > min(lengths):
+                        break
             lengths.append(length)
 
         single_lengths = []
@@ -363,7 +366,7 @@ def split_dataset_random(
             print("Counting ", folder)
             for folder in folder_list:
                 length = 0
-                file_list = list(folder.glob("./*.wav"))
+                file_list = list(folder.glob(f"./*.{file_type}"))
                 for i in range(len(file_list)):
                     leng = torchaudio.info(file_list[i]).num_frames
                     if leng < window_size:
@@ -372,6 +375,8 @@ def split_dataset_random(
                     length += leng - (leng % window_size)
                     if i % 10000 == 0 and i > 0:
                         print(i)
+                        if len(lengths) > 0 and length > min(lengths):
+                            break
                 single_lengths.append(length)
         else:
             single_lengths = lengths
@@ -415,7 +420,7 @@ def split_dataset_random(
 
     for folder in folder_list:
         print(f"splitting folder {folder}", flush=True)
-        file_list = list(folder.glob("./*.wav"))
+        file_list = list(folder.glob(f"./*.{file_type}"))
         if len(file_list) == 0:
             raise ValueError("File list does not contain any files.")
         last_ind = 0
@@ -463,7 +468,7 @@ def split_dataset_random(
 
     if test_folder is not None:
         print(f"splitting folder {test_folder}", flush=True)
-        file_list = list(test_folder.glob("./*.wav"))
+        file_list = list(test_folder.glob(f"./*.{file_type}"))
         if len(file_list) == 0:
             raise ValueError("File list does not contain any files.")
         test_list_f, test_list_w, last_ind = get_frames(
@@ -523,6 +528,7 @@ def pre_process_folder(
     sample_rate: int = 22_050,
     equal_distr: bool = False,
     binary_classification: bool = False,
+    file_type: str = "wav",
 ) -> None:
     """Preprocess a folder containing sub-directories with audios from different sources.
 
@@ -600,6 +606,7 @@ def pre_process_folder(
             test_folder=Path(only_test),
             equal_distr=equal_distr,
             max_len=max_samples,
+            file_type=file_type,
         )  # type: ignore
         process_folders(
             preprocessing_batch_size,
@@ -618,6 +625,7 @@ def pre_process_folder(
             folder_list_all=folder_list_all,
             equal_distr=equal_distr,
             max_len=max_samples,
+            file_type=file_type,
         )  # type: ignore
         process_folders(
             preprocessing_batch_size,
@@ -655,6 +663,8 @@ def process_folders(
             binary_classification=binary_classification,
         )
         print("validation set stored")
+    else:
+        os.mkdir(f"{target_dir}_val")
 
     print("processing test set.", flush=True)
     if test_list is not None:
@@ -669,6 +679,8 @@ def process_folders(
             binary_classification=binary_classification,
         )
         print("test set stored", flush=True)
+    else:
+        os.mkdir(f"{target_dir}_test")
 
     print("processing training set.", flush=True)
     if train_list is not None:
@@ -683,6 +695,8 @@ def process_folders(
             binary_classification=binary_classification,
         )
         print("training set stored", flush=True)
+    else:
+        os.mkdir(f"{target_dir}_train")
 
 
 def parse_args():
@@ -725,6 +739,12 @@ def parse_args():
         "--testdir",
         type=str,
         help="The folder with the gan generated audio only for testing. Select only a single one.",
+    )
+    parser.add_argument(
+        "--filetype",
+        type=str,
+        default="wav",
+        help="Audio file type. (default: wav).",
     )
     parser.add_argument(
         "--train-size",
@@ -802,4 +822,5 @@ if __name__ == "__main__":
         max_samples=args.max_samples,
         equal_distr=args.equal_distr,
         binary_classification=args.binary,
+        file_type=args.filetype,
     )

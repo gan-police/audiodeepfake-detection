@@ -29,20 +29,20 @@ echo -e "Training..."
 torchrun \
 --standalone \
 --nnodes 1 \
---nproc_per_node 6 \
+--nproc_per_node 8 \
 --rdzv_id $SLURM_JOB_ID \
 --rdzv_backend c10d \
 --rdzv_endpoint $head_node_ip:29400 \
 src/train_classifier.py \
     --log-dir "./exp/log5" \
     --batch-size 128 \
-    --learning-rate 0.0001 \
+    --learning-rate 0.0003 \
     --weight-decay 0.001   \
     --epochs 10 \
     --validation-interval 1 \
     --ckpt-every 1 \
-    --data-prefix "${HOME}/data/run6/fake_22050_22050_0.7_$2" \
-    --unknown-prefix "${HOME}/data/run6/fake_22050_22050_0.7_all" \
+    --data-prefix "/home/s6kogase/data/asvspoof21_run1/audios_16000_8000_0.7_$2" \
+    --unknown-prefix "/home/s6kogase/data/asvspoof19_run1/audios_16000_8000_0.7_fake" \
     --nclasses 2 \
     --seed $SLURM_ARRAY_TASK_ID \
     --model lcnn  \
@@ -55,9 +55,9 @@ src/train_classifier.py \
     --hop-length 100 \
     --log-scale \
     --f-min 1 \
-    --f-max 11025 \
-    --window-size 22050 \
-    --sample-rate 22050 \
+    --f-max 8000 \
+    --window-size 8000 \
+    --sample-rate 16000 \
     --features none \
     --calc-normalization \
     --pbar
