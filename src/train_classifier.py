@@ -21,7 +21,14 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 
 from src.data_loader import CrossWavefakeDataset, LearnWavefakeDataset
 from src.models import get_model, save_model
-from src.utils import add_default_parser_args, add_noise, contrast, set_seed
+from src.utils import (
+    DotDict,
+    add_default_parser_args,
+    add_noise,
+    contrast,
+    init_grid,
+    set_seed,
+)
 from src.wavelet_math import get_transforms
 
 
@@ -86,7 +93,6 @@ class Trainer:
         args,
         normalize,
         transforms,
-        label_names,
         test_data_loader: DataLoader,
         model: torch.nn.Module | None = None,
         train_data_loader: DataLoader | None = None,
@@ -121,7 +127,6 @@ class Trainer:
         self.normalize = normalize
         self.transforms = transforms
         self.writer = writer
-        self.label_names = label_names
 
         self.bar = None
 
@@ -129,6 +134,7 @@ class Trainer:
         self.loss_list: list = []
         self.accuracy_list: list = []
         self.step_total: int = 0
+        self.test_results: tuple = ()
 
     def init_model(self, model) -> None:
         """Initialize model.
@@ -179,7 +185,7 @@ class Trainer:
         data_loader,
         name: str = "",
         pbar: bool = False,
-    ) -> tuple[float, float, np.ndarray]:
+    ) -> tuple[float, float]:
         """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
 
         Args:
@@ -228,17 +234,6 @@ class Trainer:
 
                 y_list.append(y)
                 out_list.append(out_max)
-                # for k, v in zip(self.label_names[val_batch["label"]], out_max.cpu()):
-                #     predicted_dict[k].append(v)
-
-        matrix = np.zeros((len(self.label_names), 2), dtype=int)
-        # for label_idx, label in enumerate(self.label_names):
-        #     predicted_label = np.array(predicted_dict[label])
-
-        #     for class_idx in range(2):
-        #        matrix[label_idx, class_idx] = len(
-        #            predicted_label[predicted_label == class_idx]
-        #        )
 
         common_keys = ok_dict.keys() & count_dict.keys()
 
@@ -287,29 +282,31 @@ class Trainer:
             eer = self.calculate_eer(
                 ys_gathered.cpu().numpy(), outs_gathered.cpu().numpy()
             )
+            val_acc = sum(ok_sum_gathered) / sum(total_gathered)  # type: ignore
             print(
-                f"{name} - eer: {eer:2.8f}, Val acc: {sum(ok_sum_gathered)/sum(total_gathered):2.8f}"  # type: ignore
+                f"{name} - eer: {eer:2.4f}, Val acc: {val_acc*100:2.2f} %"  # type: ignore
             )
         else:
             eer = 0
-        return sum(ok_sum_gathered) / sum(total_gathered), eer, matrix  # type: ignore
+            val_acc = 0
+        return val_acc, eer  # type: ignore
 
-    def _run_test(self) -> tuple[float, float, float | None, float | None]:
+    def _run_test(self) -> tuple[float, float, float, float]:
         self.model.eval()
         with torch.no_grad():
-            test_acc, test_eer, _ = self.val_test_loop(
+            test_acc, test_eer = self.val_test_loop(
                 data_loader=self.test_data_loader,
                 pbar=self.args.pbar,
                 name="test known",
             )
             if self.args.unknown_prefix is not None or self.args.cross_dir is not None:
-                cr_test_acc, cr_test_eer, _ = self.val_test_loop(
+                cr_test_acc, cr_test_eer = self.val_test_loop(
                     data_loader=self.cross_loader_test,
                     pbar=self.args.pbar,
                     name="test unknown",
                 )
             else:
-                cr_test_eer = cr_test_acc = None  # type: ignore
+                cr_test_eer = cr_test_acc = 0
 
         if self.args.tensorboard:
             self.writer.add_scalar("accuracy/test", test_acc, self.step_total)  # type: ignore
@@ -341,14 +338,14 @@ class Trainer:
 
     def _run_validation(self, epoch):
         """Iterate over validation data."""
-        val_acc, val_eer, _ = self.val_test_loop(
+        val_acc, val_eer = self.val_test_loop(
             data_loader=self.val_data_loader,
             pbar=self.args.pbar,
             name="val known",
         )
 
         if self.args.unknown_prefix is not None or self.args.cross_dir is not None:
-            cr_val_acc, cr_val_eer, _ = self.val_test_loop(
+            cr_val_acc, cr_val_eer = self.val_test_loop(
                 data_loader=self.cross_loader_val,
                 pbar=self.args.pbar,
                 name="val unknown",
@@ -426,18 +423,34 @@ class Trainer:
             self._run_epoch(epoch)
 
             if self.global_rank == 0 and self.local_rank == 0:
-                if epoch % self.args.ckpt_every == 0:
+                if epoch + 1 % self.args.ckpt_every == 0:
                     self._save_snapshot(epoch)
-            if epoch % self.args.validation_interval == 0:
+            if epoch + 1 % self.args.validation_interval == 0:
                 self._run_validation(epoch)
             if epoch == max_epochs - 1:
-                print("Training done, now testing...")
-                self.testing()
+                if self.global_rank == 0 and self.local_rank == 0:
+                    print("Training done, now testing...")
+                test_results = self.testing()
+                self.test_results = test_results
+                if self.global_rank == 0 and self.local_rank == 0:
+                    print(
+                        f"test results: known acc {test_results[0]*100:2.2f} %, \
+                        known eer {test_results[1]:.3f}, \
+                        unknown acc {test_results[2]*100:2.2f} %, \
+                        unknown eer {test_results[3]:.3f}"
+                    )
 
-    def testing(self) -> tuple[float, float, float | None, float | None]:
+    def testing(self) -> tuple[float, float, float, float]:
         """Iterate over test set."""
         self._check_model_init()
         return self._run_test()
+
+
+def is_lead() -> bool:
+    """Check if current process is lead rank."""
+    if int(os.environ["LOCAL_RANK"]) == 0 and int(os.environ["RANK"]) == 0:
+        return True
+    return False
 
 
 def main():
@@ -452,11 +465,14 @@ def main():
     Raises:
         NotImplementedError: If wrong features are combined with the wrong model.
         ValueError: If stft is started with signed log scaling.
+        TypeError: If there went something wrong with the results.
     """
     ddp_setup()
 
-    args = _parse_args()
-    print(args)
+    parsed_args = _parse_args()
+    args = DotDict(vars(parsed_args))
+    # print(parsed_args)
+
     base_dir = args.log_dir
     if not os.path.exists(base_dir + "/models"):
         os.makedirs(base_dir + "/models")
@@ -465,218 +481,258 @@ def main():
     if not os.path.exists(base_dir + "/norms"):
         os.makedirs(base_dir + "/norms")
 
-    if args.f_max > args.sample_rate / 2:
-        print("Warning: maximum analyzed frequency is above nyquist rate.")
+    num_exp = 1
+    exp_results = {}
+    if args.enable_gs:
+        if is_lead():
+            print("--------------- Starting grid search -----------------")
+        griderator = init_grid(num_exp=3)
+        num_exp = griderator.get_len()
 
-    if args.features != "none" and args.model != "lcnn":
-        raise NotImplementedError(
-            f"LFCC features are currently not implemented for {args.model}."
-        )
+    for _exp_number in range(num_exp):
+        if args.enable_gs:
+            if is_lead():
+                # import pdb; pdb.set_trace()
+                print("---------------------------------------------------------")
+                print(
+                    f"starting new experiments with {griderator.grid_values[griderator.current]}"
+                )
+                print("---------------------------------------------------------")
+            args, _ = griderator.update_step(args)
 
-    path_name = args.data_prefix.split("/")[-1].split("_")
+        if args.f_max > args.sample_rate / 2:
+            print("Warning: maximum analyzed frequency is above nyquist rate.")
 
-    transform = args.transform
-    features = args.features
-    known_gen_name = path_name[4]
-    loss_less = False if args.loss_less == "False" else True
-
-    if args.model == "onednet" and loss_less:
-        raise NotImplementedError(
-            "OneDNet does not work together with the sign channel."
-        )
-
-    label_names = np.array(
-        [
-            "ljspeech",
-            "melgan",
-            "hifigan",
-            "mbmelgan",
-            "fbmelgan",
-            "waveglow",
-            "pwg",
-            "lmelgan",
-            "avocodo",
-            "bigvgan",
-            "bigvganl",
-        ]
-    )
-
-    if transform == "stft" and loss_less:
-        raise ValueError("Sign channel not possible for stft due to complex data type.")
-
-    model_file = base_dir + "/models/test4/" + path_name[0] + "_"
-    if transform == "stft":
-        model_file += "stft"
-    elif transform == "packets":
-        model_file += "packets" + str(args.wavelet)
-    model_file += (
-        "_"
-        + str(args.features)
-        + "_"
-        + str(args.hop_length)
-        + "_"
-        + str(args.sample_rate)
-        + "_"
-        + str(args.window_size)
-        + "_"
-        + str(args.num_of_scales)
-        + "_"
-        + str(int(args.f_min))
-        + "-"
-        + str(int(args.f_max))
-        + "_"
-        + path_name[3]
-        + "_"
-        + str(args.learning_rate)
-        + "_"
-        + str(args.weight_decay)
-        + "_"
-        + str(args.batch_size)
-        + "_"
-        + str(args.nclasses)
-        + "_"
-        + f"{args.epochs}e"
-        + "_"
-        + str(args.model)
-        + "_signs"
-        + str(loss_less)
-        + "_augc"
-        + str(args.aug_contrast)
-        + "_augn"
-        + str(args.aug_noise)
-        + "_power"
-        + str(args.power)
-        + "_"
-        + known_gen_name
-        + "_"
-        + str(args.seed)
-    )
-
-    # fix the seed in the interest of reproducible results.
-    set_seed(args.seed)
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    # torch.multiprocessing.set_start_method("spawn")
-
-    train_data_loader, val_data_loader, test_data_loader = create_data_loaders(
-        args.data_prefix,
-        args.batch_size,
-        args.seed,
-    )
-
-    if args.unknown_prefix is not None or args.cross_dir is not None:
-        if args.cross_dir is not None:
-            cross_set_test = CrossWavefakeDataset(
-                base_path=args.cross_dir,
-                prefix=args.cross_prefix,
-                sources=args.cross_sources,
+        if args.features != "none" and args.model != "lcnn":
+            raise NotImplementedError(
+                f"LFCC features are currently not implemented for {args.model}."
             )
-            cross_set_val = CrossWavefakeDataset(
-                base_path=args.cross_dir,
-                prefix=args.cross_prefix,
-                sources=args.cross_sources,
-                limit=1000,
+
+        path_name = args.data_prefix.split("/")[-1].split("_")
+
+        transform = args.transform
+        features = args.features
+        known_gen_name = path_name[4]
+        loss_less = False if args.loss_less == "False" else True
+
+        if args.model == "onednet" and loss_less:
+            raise NotImplementedError(
+                "OneDNet does not work together with the sign channel."
+            )
+
+        if transform == "stft" and loss_less:
+            raise ValueError(
+                "Sign channel not possible for stft due to complex data type."
+            )
+
+        model_file = base_dir + "/models/test4/" + path_name[0] + "_"
+        if transform == "stft":
+            model_file += "stft"
+        elif transform == "packets":
+            model_file += "packets" + str(args.wavelet)
+        model_file += (
+            "_"
+            + str(args.features)
+            + "_"
+            + str(args.hop_length)
+            + "_"
+            + str(args.sample_rate)
+            + "_"
+            + str(args.window_size)
+            + "_"
+            + str(args.num_of_scales)
+            + "_"
+            + str(int(args.f_min))
+            + "-"
+            + str(int(args.f_max))
+            + "_"
+            + path_name[3]
+            + "_"
+            + str(args.learning_rate)
+            + "_"
+            + str(args.weight_decay)
+            + "_"
+            + str(args.batch_size)
+            + "_"
+            + str(args.nclasses)
+            + "_"
+            + f"{args.epochs}e"
+            + "_"
+            + str(args.model)
+            + "_signs"
+            + str(loss_less)
+            + "_augc"
+            + str(args.aug_contrast)
+            + "_augn"
+            + str(args.aug_noise)
+            + "_power"
+            + str(args.power)
+            + "_"
+            + known_gen_name
+            + "_"
+            + str(args.seed)
+        )
+
+        # fix the seed in the interest of reproducible results.
+        set_seed(args.seed)
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        # torch.multiprocessing.set_start_method("spawn")
+
+        train_data_loader, val_data_loader, test_data_loader = create_data_loaders(
+            args.data_prefix,
+            args.batch_size,
+            args.seed,
+        )
+
+        if args.unknown_prefix is not None or args.cross_dir is not None:
+            if args.cross_dir is not None:
+                cross_set_test = CrossWavefakeDataset(
+                    base_path=args.cross_dir,
+                    prefix=args.cross_prefix,
+                    sources=args.cross_sources,
+                    limit=2000,
+                )
+                cross_set_val = CrossWavefakeDataset(
+                    base_path=args.cross_dir,
+                    prefix=args.cross_prefix,
+                    sources=args.cross_sources,
+                    limit=1000,
+                )
+            else:
+                cross_set_val = LearnWavefakeDataset(
+                    args.unknown_prefix + "_val",
+                    source_name=known_gen_name,
+                )
+                cross_set_test = LearnWavefakeDataset(
+                    args.unknown_prefix + "_test",
+                    source_name=known_gen_name,
+                )
+            cross_loader_val = DataLoader(
+                cross_set_val,
+                batch_size=int(args.batch_size),
+                shuffle=False,
+                pin_memory=True,
+                sampler=DistributedSampler(
+                    cross_set_val, shuffle=False, seed=args.seed
+                ),
+            )
+            cross_loader_test = DataLoader(
+                cross_set_test,
+                batch_size=int(args.batch_size),
+                shuffle=False,
+                pin_memory=True,
+                sampler=DistributedSampler(
+                    cross_set_test, shuffle=False, seed=args.seed
+                ),
             )
         else:
-            cross_set_val = LearnWavefakeDataset(args.unknown_prefix + "_val")
-            cross_set_test = LearnWavefakeDataset(args.unknown_prefix + "_test")
-        cross_loader_val = DataLoader(
-            cross_set_val,
-            batch_size=int(args.batch_size),
-            shuffle=False,
-            pin_memory=True,
-            sampler=DistributedSampler(cross_set_val, shuffle=False, seed=args.seed),
+            cross_loader_val = cross_loader_test = None
+
+        if "doubledelta" in features:
+            channels = 60
+        elif "delta" in features:
+            channels = 40
+        elif "lfcc" in features:
+            channels = 20
+        else:
+            channels = int(args.num_of_scales)
+
+        model = get_model(
+            model_name=args.model,
+            nclasses=args.nclasses,
+            num_of_scales=args.num_of_scales,
+            flattend_size=args.flattend_size,
+            in_channels=2 if loss_less else 1,
+            channels=channels,
         )
-        cross_loader_test = DataLoader(
-            cross_set_test,
-            batch_size=int(args.batch_size),
-            shuffle=False,
-            pin_memory=True,
-            sampler=DistributedSampler(cross_set_test, shuffle=False, seed=args.seed),
+
+        if args.tensorboard:
+            writer_str = base_dir + "/tensorboard/"
+            writer_str += f"{args.model}/"
+            writer_str += f"{args.transform}/"
+            if transform == "packets":
+                writer_str += f"{args.wavelet}/"
+            writer_str += f"{args.features}/"
+            writer_str += f"{args.batch_size}_"
+            writer_str += f"{args.learning_rate}_"
+            writer_str += f"{args.weight_decay}_"
+            writer_str += f"{args.epochs}/"
+            writer_str += f"{args.f_min}-"
+            writer_str += f"{args.f_max}/"
+            writer_str += f"{args.num_of_scales}/"
+            writer_str += f"signs{loss_less}/"
+            writer_str += f"augc{args.aug_contrast}/"
+            writer_str += f"augn{args.aug_noise}/"
+            writer_str += f"power{args.power}/"
+            writer_str += f"{known_gen_name}/"
+            writer_str += f"{args.seed}"
+            writer = SummaryWriter(writer_str, max_queue=100)
+        else:
+            writer = None  # type: ignore
+
+        loss_fun = torch.nn.CrossEntropyLoss()
+
+        optimizer = Adam(
+            model.parameters(),
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
         )
-    else:
-        cross_loader_val = cross_loader_test = None
 
-    if "doubledelta" in features:
-        channels = 60
-    elif "delta" in features:
-        channels = 40
-    elif "lfcc" in features:
-        channels = 20
-    else:
-        channels = int(args.num_of_scales)
+        transforms, normalize = get_transforms(
+            args,
+            args.data_prefix,
+            features,
+            device,
+            args.calc_normalization,
+            pbar=args.pbar,
+        )
 
-    model = get_model(
-        model_name=args.model,
-        nclasses=args.nclasses,
-        num_of_scales=args.num_of_scales,
-        flattend_size=args.flattend_size,
-        in_channels=2 if loss_less else 1,
-        channels=channels,
-    )
+        trainer = Trainer(
+            model=model,
+            train_data_loader=train_data_loader,
+            val_data_loader=val_data_loader,
+            test_data_loader=test_data_loader,
+            cross_loader_val=cross_loader_val,
+            cross_loader_test=cross_loader_test,
+            optimizer=optimizer,
+            loss_fun=loss_fun,
+            normalize=normalize,
+            transforms=transforms,
+            snapshot_path=model_file,
+            args=args,
+            writer=writer,
+        )
+        trainer.train(args.epochs)
 
-    if args.tensorboard:
-        writer_str = base_dir + "/tensorboard/"
-        writer_str += f"{args.model}/"
-        writer_str += f"{args.transform}/"
-        if transform == "packets":
-            writer_str += f"{args.wavelet}/"
-        writer_str += f"{args.features}/"
-        writer_str += f"{args.batch_size}_"
-        writer_str += f"{args.learning_rate}_"
-        writer_str += f"{args.weight_decay}_"
-        writer_str += f"{args.epochs}/"
-        writer_str += f"{args.f_min}-"
-        writer_str += f"{args.f_max}/"
-        writer_str += f"{args.num_of_scales}/"
-        writer_str += f"signs{loss_less}/"
-        writer_str += f"augc{args.aug_contrast}/"
-        writer_str += f"augn{args.aug_noise}/"
-        writer_str += f"power{args.power}/"
-        writer_str += f"{known_gen_name}/"
-        writer_str += f"{args.seed}"
-        writer = SummaryWriter(writer_str, max_queue=100)
-    else:
-        writer = None  # type: ignore
+        if exp_results.get(args.seed) is None:
+            exp_results[args.seed] = [trainer.test_results]
+        elif type(exp_results[args.seed]) is list:
+            exp_results[args.seed].append(trainer.test_results)
+        else:
+            raise TypeError("Result array must contain lists.")
 
-    loss_fun = torch.nn.CrossEntropyLoss()
+        if args.tensorboard:
+            writer.close()
 
-    optimizer = Adam(
-        model.parameters(),
-        lr=args.learning_rate,
-        weight_decay=args.weight_decay,
-    )
+    if is_lead():
+        # import pdb; pdb.set_trace()
+        results = np.asarray(list(exp_results.values()))
+        mean = results.mean(0)
+        std = results.std(0)
+        print(mean)
+        print(
+            f"Best unknown eer: {mean[np.argmin(mean[:,3]), 3]:.4f} +- {std[np.argmin(mean[:,3]), 3]:.4f}"
+        )
 
-    transforms, normalize = get_transforms(
-        args,
-        args.data_prefix,
-        features,
-        device,
-        args.calc_normalization,
-        pbar=args.pbar,
-    )
-
-    trainer = Trainer(
-        model=model,
-        train_data_loader=train_data_loader,
-        val_data_loader=val_data_loader,
-        test_data_loader=test_data_loader,
-        cross_loader_val=cross_loader_val,
-        cross_loader_test=cross_loader_test,
-        optimizer=optimizer,
-        loss_fun=loss_fun,
-        normalize=normalize,
-        transforms=transforms,
-        snapshot_path=model_file,
-        args=args,
-        writer=writer,
-        label_names=label_names,
-    )
-    trainer.train(args.epochs)
-    print(trainer.validation_list)
-
-    if args.tensorboard:
-        writer.close()
+        if args.enable_gs:
+            best_config = {
+                k: v
+                for k, v in zip(
+                    griderator.get_keys(), griderator.grid_values[np.argmin(mean[:, 3])]
+                )
+            }
+            print(f"Best config: {best_config}")
 
     destroy_process_group()
 

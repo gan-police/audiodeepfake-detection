@@ -39,8 +39,8 @@ src/train_classifier.py \
     --learning-rate 0.0001 \
     --weight-decay 0.001   \
     --epochs 10 \
-    --validation-interval 1 \
-    --ckpt-every 1 \
+    --validation-interval 10 \
+    --ckpt-every 10 \
     --data-prefix "/home/s6kogase/data/run6/fake_22050_22050_0.7_$2" \
     --cross-dir "/home/s6kogase/data/run6/" \
     --cross-prefix "fake_22050_22050_0.7_" \
@@ -60,6 +60,7 @@ src/train_classifier.py \
     --window-size 22050 \
     --sample-rate 22050 \
     --features none \
+    --enable-gs \
     --calc-normalization \
     --pbar
 

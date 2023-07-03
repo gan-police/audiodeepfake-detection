@@ -39,25 +39,6 @@ def main() -> None:
     data_prefix = args.data_prefix
     features = args.features
 
-    label_names = np.array(
-        [
-            "ljspeech",
-            "melgan",
-            "hifigan",
-            "mbmelgan",
-            "fbmelgan",
-            "waveglow",
-            "pwg",
-            "lmelgan",
-            "avocodo",
-            "bigvgan",
-            "bigvganl",
-            "conformer",
-            "jsutmbmelgan",
-            "jsutpwg",
-        ]
-    )
-
     gan_acc_dict = {}
     mean_eers = {}
     mean_accs = {}
@@ -130,11 +111,11 @@ def main() -> None:
                     transforms=transforms,
                     snapshot_path=model_dir,
                     args=args,
-                    label_names=label_names,
                 )
 
                 trainer.load_snapshot(model_dir)
-                test_acc, test_eer, _, _ = trainer.testing()
+                trainer.testing()
+                test_acc, test_eer, _, _ = trainer.test_results
 
                 res_acc.append(test_acc)
                 res_eer.append(test_eer)

@@ -91,7 +91,7 @@ class LCNN(nn.Module):
 
         self.lstm = nn.Sequential(
             BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
-            # BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
+            BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
             # BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
             nn.Dropout(0.3),
         )

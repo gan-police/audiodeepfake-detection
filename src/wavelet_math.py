@@ -229,6 +229,7 @@ def get_transforms(
     device,
     normalization,
     pbar: bool = False,
+    verbose: bool = False,
 ) -> tuple[torch.nn.Sequential, torch.nn.Sequential]:
     """Initialize transformations and normalize."""
     if args.transform == "stft":
@@ -283,13 +284,15 @@ def get_transforms(
     )
 
     if os.path.exists(f"{norm_dir}_mean_std.pkl"):
-        print("Loading pre calculated mean and std from file.")
+        if verbose:
+            print("Loading pre calculated mean and std from file.")
         with open(f"{norm_dir}_mean_std.pkl", "rb") as file:
             mean, std = pickle.load(file)
             mean = torch.from_numpy(mean.astype(np.float32)).to(device)
             std = torch.from_numpy(std.astype(np.float32)).to(device)
     elif normalization:
-        print("computing mean and std values.", flush=True)
+        if verbose:
+            print("computing mean and std values.", flush=True)
         dataset = LearnWavefakeDataset(data_prefix + "_train")
         norm_dataset_loader = torch.utils.data.DataLoader(
             dataset,
@@ -310,10 +313,13 @@ def get_transforms(
             with open(f"{norm_dir}_mean_std.pkl", "wb") as f:
                 pickle.dump([mean.cpu().numpy(), std.cpu().numpy()], f)
     else:
-        print("Using default mean and std.")
+        if verbose:
+            print("Using default mean and std.")
         mean = torch.tensor(args.mean, device=device)
         std = torch.tensor(args.std, device=device)
-    print("mean", mean, "std:", std)
+
+    if verbose:
+        print("mean", mean, "std:", std)
 
     normalize = torch.nn.Sequential(
         torchvision.transforms.Normalize(mean, std),

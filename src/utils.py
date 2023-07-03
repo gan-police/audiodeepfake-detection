@@ -1,10 +1,14 @@
 """Set utility functions."""
+import itertools
 import os
+import random
 from argparse import ArgumentParser
 
 import numpy as np
 import torch
 import torchaudio
+
+from scripts.gridsearch_config import get_config
 
 
 def set_seed(seed: int):
@@ -185,7 +189,6 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
             "avocodo",
             "bigvgan",
             "bigvganl",
-            "fbmelgan",
             "conformer",
             "hifigan",
             "melgan",
@@ -225,6 +228,11 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         type=int,
         default=2,
         help="Number of output classes in model (default: 2).",
+    )
+    parser.add_argument(
+        "--enable-gs",
+        action="store_true",
+        help="Enables a grid search with values from the config file.",
     )
 
     parser.add_argument(
@@ -337,3 +345,90 @@ def print_results(res_eer, res_acc):
 
     print("avbigvgan")
     print(str_avbig)
+
+
+class _Griderator:
+    """Create an iterator for grid search."""
+
+    def __init__(self, config: dict[str, list], num_exp: int = 5) -> None:
+        """Initialize grid search instance.
+
+        Raises:
+            TypeError: If given config file is not of type dict.
+        """
+        if type(config) is not dict:
+            raise TypeError(f"Config file must be of type dict but is {type(config)}.")
+
+        rand = random.SystemRandom()
+        self.init_config = {"seed": [rand.randrange(10000) for _ in range(num_exp)]}
+
+        self.init_config.update(config)
+        self.grid_values = list(itertools.product(*self.init_config.values()))
+        self.current = 0
+
+    def get_keys(self):
+        """Get key names of grid item."""
+        return self.init_config.keys()
+
+    def get_len(self):
+        """Get number of runs for this grid."""
+        return len(self.grid_values)
+
+    def __iter__(self):
+        """Return the majesty herself."""
+        return self
+
+    def __next__(self):
+        """Define what to do on next step call.
+
+        Raises:
+            StopIteration: If iterator came to an end.
+        """
+        self.current += 1
+        if self.current < len(self.grid_values):
+            return self.grid_values[self.current]
+        raise StopIteration
+
+    def next(self):
+        """Make next step dot call possible."""
+        return self.__next__()
+
+    def reset(self):
+        """Set iterator to initial value."""
+        self.current = 0
+
+    def update_args(self, args):
+        """Update args with current step values."""
+        for value, key in zip(self.grid_values[self.current], self.get_keys()):
+            if args.get(key) is not None:
+                args[key] = value
+            else:
+                print(f"Skipping invalid config key {key}.")
+
+        return args
+
+    def update_step(self, args):
+        """Update given config variable with values from the current grid step and make one."""
+        new_args = self.update_args(args)
+        try:
+            new_step = self.__next__()
+        except StopIteration:
+            return new_args, StopIteration
+        return new_args, new_step
+
+
+def init_grid(num_exp: int = 5) -> _Griderator:
+    """Return a grid iterator using the given config.
+
+    Args:
+        num_exp (int): Number of random seeds to use for grid search.
+    """
+    return _Griderator(get_config(), num_exp=num_exp)
+
+
+class DotDict(dict):
+    """Dot.notation access to dictionary attributes."""
+
+    __getattr__ = dict.get
+    __setattr__ = dict.__setitem__  # type: ignore
+    __delattr__ = dict.__delitem__  # type: ignore

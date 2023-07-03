@@ -75,8 +75,9 @@ class LearnWavefakeDataset(Dataset):
     def __init__(
         self,
         data_dir: str,
+        source_name: str = "fake",
         key: Optional[str] = "audio",
-        verbose: Optional[bool] = True,
+        verbose: Optional[bool] = False,
     ):
         """Create a Wavefake-dataset object.
 
@@ -104,7 +105,7 @@ class LearnWavefakeDataset(Dataset):
         self.audios = np.array(self.file_lst[:-1])
         self.key = key
 
-        self.label_names = {0: "original", get_ds_label(self.labels): "fake"}
+        self.label_names = {0: "original", get_ds_label(self.labels): source_name}
 
     def _load_mean_std(self):
         with open(self.data_dir + "/mean_std.pkl", "rb") as f:
@@ -145,7 +146,7 @@ class CrossWavefakeDataset(Dataset):
         prefix: str = "fake_22050_22050_0.7_",
         limit: int = -1,
         key: Optional[str] = "audio",
-        verbose: Optional[bool] = True,
+        verbose: Optional[bool] = False,
     ):
         """Create a Wavefake-dataset object.
 
@@ -215,9 +216,7 @@ class CrossWavefakeDataset(Dataset):
                     required_samples = init_size // 2
                 real_count = 0
             elif init_size != len(dataset):
-                raise RuntimeError(
-                    f"{folder} contains to little samples."
-                )
+                raise RuntimeError(f"{folder} contains to little samples.")
             else:
                 unique_labels = np.unique(np.asarray(labels))
 
