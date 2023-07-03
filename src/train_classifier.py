@@ -19,7 +19,7 @@ from tqdm import tqdm
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
-from src.data_loader import LearnWavefakeDataset
+from src.data_loader import CrossWavefakeDataset, LearnWavefakeDataset
 from src.models import get_model, save_model
 from src.utils import add_default_parser_args, add_noise, contrast, set_seed
 from src.wavelet_math import get_transforms
@@ -270,7 +270,7 @@ class Trainer:
                 f"{name} - ",
                 [
                     (
-                        key,
+                        data_loader.dataset.label_names[key],
                         (
                             sum([sum(ok_dict_g[key]) for ok_dict_g in ok_dict_gathered])  # type: ignore
                             / sum(
@@ -279,7 +279,7 @@ class Trainer:
                                     for count_dict_g in count_dict_gathered
                                 ]  # type: ignore
                             )
-                        ),
+                        ).item(),
                     )
                     for key in common_keys
                 ],
@@ -299,19 +299,17 @@ class Trainer:
         with torch.no_grad():
             test_acc, test_eer, _ = self.val_test_loop(
                 data_loader=self.test_data_loader,
-                pbar=not self.args.pbar,
-                name="known",
+                pbar=self.args.pbar,
+                name="test known",
             )
-            if self.args.unknown_prefix is not None:
+            if self.args.unknown_prefix is not None or self.args.cross_dir is not None:
                 cr_test_acc, cr_test_eer, _ = self.val_test_loop(
                     data_loader=self.cross_loader_test,
-                    pbar=not self.args.pbar,
-                    name="unknown",
+                    pbar=self.args.pbar,
+                    name="test unknown",
                 )
             else:
                 cr_test_eer = cr_test_acc = None  # type: ignore
-            print("test acc", test_acc)
-            print("test eer", test_eer)
 
         if self.args.tensorboard:
             self.writer.add_scalar("accuracy/test", test_acc, self.step_total)  # type: ignore
@@ -346,14 +344,14 @@ class Trainer:
         val_acc, val_eer, _ = self.val_test_loop(
             data_loader=self.val_data_loader,
             pbar=self.args.pbar,
-            name="known",
+            name="val known",
         )
 
-        if self.args.unknown_prefix is not None:
+        if self.args.unknown_prefix is not None or self.args.cross_dir is not None:
             cr_val_acc, cr_val_eer, _ = self.val_test_loop(
                 data_loader=self.cross_loader_val,
                 pbar=self.args.pbar,
-                name="unknown",
+                name="val unknown",
             )
 
         if self.args.tensorboard:
@@ -566,9 +564,22 @@ def main():
         args.seed,
     )
 
-    if args.unknown_prefix is not None:
-        cross_set_val = LearnWavefakeDataset(args.unknown_prefix + "_val")
-        cross_set_test = LearnWavefakeDataset(args.unknown_prefix + "_test")
+    if args.unknown_prefix is not None or args.cross_dir is not None:
+        if args.cross_dir is not None:
+            cross_set_test = CrossWavefakeDataset(
+                base_path=args.cross_dir,
+                prefix=args.cross_prefix,
+                sources=args.cross_sources,
+            )
+            cross_set_val = CrossWavefakeDataset(
+                base_path=args.cross_dir,
+                prefix=args.cross_prefix,
+                sources=args.cross_sources,
+                limit=1000,
+            )
+        else:
+            cross_set_val = LearnWavefakeDataset(args.unknown_prefix + "_val")
+            cross_set_test = LearnWavefakeDataset(args.unknown_prefix + "_test")
         cross_loader_val = DataLoader(
             cross_set_val,
             batch_size=int(args.batch_size),

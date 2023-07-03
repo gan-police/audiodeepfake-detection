@@ -7,7 +7,7 @@
 #SBATCH --partition=A100short
 #SBATCH --output=exp/log5/slurm/train/train_%A_%a.out
 #SBATCH --error=exp/log5/slurm/train/train_%A_%a.err
-#SBATCH --array=0
+#SBATCH --array=0-4
 
 source ${HOME}/.bashrc
 
@@ -36,13 +36,14 @@ torchrun \
 src/train_classifier.py \
     --log-dir "./exp/log5" \
     --batch-size 128 \
-    --learning-rate 0.0003 \
+    --learning-rate 0.0001 \
     --weight-decay 0.001   \
     --epochs 10 \
     --validation-interval 1 \
     --ckpt-every 1 \
-    --data-prefix "/home/s6kogase/data/asvspoof21_run1/audios_16000_8000_0.7_$2" \
-    --unknown-prefix "/home/s6kogase/data/asvspoof19_run1/audios_16000_8000_0.7_fake" \
+    --data-prefix "/home/s6kogase/data/run6/fake_22050_22050_0.7_$2" \
+    --cross-dir "/home/s6kogase/data/run6/" \
+    --cross-prefix "fake_22050_22050_0.7_" \
     --nclasses 2 \
     --seed $SLURM_ARRAY_TASK_ID \
     --model lcnn  \
@@ -55,9 +56,9 @@ src/train_classifier.py \
     --hop-length 100 \
     --log-scale \
     --f-min 1 \
-    --f-max 8000 \
-    --window-size 8000 \
-    --sample-rate 16000 \
+    --f-max 11025 \
+    --window-size 22050 \
+    --sample-rate 22050 \
     --features none \
     --calc-normalization \
     --pbar

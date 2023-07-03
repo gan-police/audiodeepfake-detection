@@ -6,6 +6,7 @@
 #SBATCH --job-name=train
 #SBATCH --gres=gpu:4
 #SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=24
 #SBATCH --partition develbooster
 #SBATCH --time=02:00:00
 #SBATCH --output=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%A_%a.out

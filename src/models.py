@@ -86,12 +86,14 @@ class LCNN(nn.Module):
             nn.Conv2d(32, 64, 3, 1, padding=1),
             MaxFeatureMap2D(),
             nn.MaxPool2d(2, 2),
-            nn.Dropout(0.7),
+            nn.Dropout(0.6),
         )
 
         self.lstm = nn.Sequential(
             BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
-            BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
+            # BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
+            # BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
+            nn.Dropout(0.3),
         )
 
         self.fc = nn.Linear((lstm_channels // 16) * 32, classes)
@@ -99,6 +101,7 @@ class LCNN(nn.Module):
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
         x = self.lcnn(x.permute(0, 1, 3, 2))
+        # import pdb; pdb.set_trace()
         x = x.permute(0, 2, 1, 3).contiguous()
         shape = x.shape
         x = self.lstm(x.view(shape[0], shape[1], -1))

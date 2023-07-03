@@ -168,6 +168,37 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         help="Shared prefix of the unknown source data paths (default: none).",
     )
     parser.add_argument(
+        "--cross-dir",
+        type=str,
+        help="Shared directory of the unknown source data paths (default: none).",
+    )
+    parser.add_argument(
+        "--cross-prefix",
+        type=str,
+        help="Shared prefix of the unknown source data paths (default: none).",
+    )
+    parser.add_argument(
+        "--cross-sources",
+        type=str,
+        nargs="+",
+        default=[
+            "avocodo",
+            "bigvgan",
+            "bigvganl",
+            "fbmelgan",
+            "conformer",
+            "hifigan",
+            "melgan",
+            "lmelgan",
+            "mbmelgan",
+            "pwg",
+            "waveglow",
+            "jsutmbmelgan",
+            "jsutpwg",
+        ],
+        help="Shared source names of the unknown source data paths.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=0,
