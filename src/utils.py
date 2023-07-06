@@ -122,6 +122,18 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         help="Calculate power spectrum of given factor (for stft and packets) (default: 2.0).",
     )
     parser.add_argument(
+        "--dropout-cnn",
+        type=float,
+        default=0.6,
+        help="Dropout of cnn layer (default: 0.6).",
+    )
+    parser.add_argument(
+        "--dropout-lstm",
+        type=float,
+        default=0.3,
+        help="Dropout of bi-lstm layer (default: 0.3).",
+    )
+    parser.add_argument(
         "--loss-less",
         choices=[
             "True",

@@ -3,11 +3,11 @@
 #SBATCH --nodes=1
 #SBATCH --job-name=train
 #SBATCH --gres=gpu:8
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=255
 #SBATCH --partition=A100short
 #SBATCH --output=exp/log5/slurm/train/train_%A_%a.out
 #SBATCH --error=exp/log5/slurm/train/train_%A_%a.err
-#SBATCH --array=0-4
+#SBATCH --array=0
 
 source ${HOME}/.bashrc
 
@@ -26,7 +26,7 @@ conda activate py310
 
 echo -e "Training..."
 
-torchrun \
+srun torchrun \
 --standalone \
 --nnodes 1 \
 --nproc_per_node 8 \
@@ -61,8 +61,7 @@ src/train_classifier.py \
     --sample-rate 22050 \
     --features none \
     --enable-gs \
-    --calc-normalization \
-    --pbar
+    --calc-normalization
 
 echo -e "Training process finished."
 echo "Goodbye at $(date)."

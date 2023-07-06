@@ -52,6 +52,8 @@ class LCNN(nn.Module):
         classes: int = 2,
         in_channels: int = 1,
         lstm_channels: int = 32,
+        dropout_cnn: float = 0.6,
+        dropout_lstm: float = 0.3,
     ) -> None:
         """Define network sturcture."""
         super(LCNN, self).__init__()
@@ -86,14 +88,14 @@ class LCNN(nn.Module):
             nn.Conv2d(32, 64, 3, 1, padding=1),
             MaxFeatureMap2D(),
             nn.MaxPool2d(2, 2),
-            nn.Dropout(0.6),
+            nn.Dropout(dropout_cnn),
         )
 
         self.lstm = nn.Sequential(
             BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
             BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
             # BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
-            nn.Dropout(0.3),
+            nn.Dropout(dropout_lstm),
         )
 
         self.fc = nn.Linear((lstm_channels // 16) * 32, classes)
@@ -304,6 +306,8 @@ def get_model(
     flattend_size: int = 21888,
     in_channels: int = 1,
     channels: int = 32,
+    dropout_cnn: float = 0.6,
+    dropout_lstm: float = 0.3,
 ) -> LearnDeepNet | OneDNet:
     """Get torch module model with given parameters."""
     if model_name == "learndeepnet":
@@ -317,6 +321,8 @@ def get_model(
             classes=nclasses,
             in_channels=in_channels,
             lstm_channels=channels,
+            dropout_cnn=dropout_cnn,
+            dropout_lstm=dropout_lstm,
         )  # type: ignore
     elif model_name == "onednet":
         model = OneDNet(

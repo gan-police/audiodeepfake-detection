@@ -101,8 +101,14 @@ class LearnWavefakeDataset(Dataset):
             raise ValueError("empty directory")
         if self.file_lst[-1].name != "labels.npy":
             raise ValueError("unexpected file name for label file.")
+
         self.labels = np.load(self.file_lst[-1])
         self.audios = np.array(self.file_lst[:-1])
+
+        limit = 60_000
+        self.labels = self.labels[:limit]
+        self.audios = self.audios[:limit]
+
         self.key = key
 
         self.label_names = {0: "original", get_ds_label(self.labels): source_name}

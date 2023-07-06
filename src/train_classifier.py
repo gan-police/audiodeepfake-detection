@@ -471,7 +471,8 @@ def main():
 
     parsed_args = _parse_args()
     args = DotDict(vars(parsed_args))
-    # print(parsed_args)
+    if is_lead():
+        print(parsed_args)
 
     base_dir = args.log_dir
     if not os.path.exists(base_dir + "/models"):
@@ -645,6 +646,8 @@ def main():
             flattend_size=args.flattend_size,
             in_channels=2 if loss_less else 1,
             channels=channels,
+            dropout_cnn=args.dropout_cnn,
+            dropout_lstm=args.dropout_lstm,
         )
 
         if args.tensorboard:
@@ -726,6 +729,7 @@ def main():
         )
 
         if args.enable_gs:
+            print(griderator.grid_values)
             best_config = {
                 k: v
                 for k, v in zip(
