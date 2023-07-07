@@ -2,9 +2,9 @@
 #
 #SBATCH --nodes=1
 #SBATCH --job-name=train
-#SBATCH --gres=gpu:8
-#SBATCH --cpus-per-task=255
-#SBATCH --partition=A100short
+#SBATCH --gres=gpu:4
+#SBATCH --cpus-per-task=32
+#SBATCH --partition=A40medium
 #SBATCH --output=exp/log5/slurm/train/train_%A_%a.out
 #SBATCH --error=exp/log5/slurm/train/train_%A_%a.err
 #SBATCH --array=0
@@ -29,7 +29,7 @@ echo -e "Training..."
 srun torchrun \
 --standalone \
 --nnodes 1 \
---nproc_per_node 8 \
+--nproc_per_node 4 \
 --rdzv_id $SLURM_JOB_ID \
 --rdzv_backend c10d \
 --rdzv_endpoint $head_node_ip:29400 \
