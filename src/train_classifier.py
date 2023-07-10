@@ -121,7 +121,7 @@ class Trainer:
         """Initialize trainer."""
         self.args = args
 
-        if args.ddp:
+        if self.args.ddp:
             self.local_rank = int(os.environ["LOCAL_RANK"])
             self.global_rank = int(os.environ["RANK"])
             self.world_size = torch.cuda.device_count()
@@ -357,7 +357,9 @@ class Trainer:
         )
         if is_lead(self.args):
             print(f"+------------------- Epoch {e+1} -------------------+", flush=True)
-        self.train_data_loader.sampler.set_epoch(e)
+        if self.args.ddp:
+            self.train_data_loader.sampler.set_epoch(e)
+
         for _it, batch in enumerate(self.bar):
             self.model.train()
             self._run_batch(e, batch)
@@ -408,7 +410,9 @@ class Trainer:
         out = self.model(freq_time_dt_norm)
         loss = self.loss_fun(out, batch_labels)
         acc = (
-            torch.sum((torch.argmax(out, -1) == (batch_labels != 0).to(self.local_rank)))
+            torch.sum(
+                (torch.argmax(out, -1) == (batch_labels != 0).to(self.local_rank))
+            )
             / self.args.batch_size
         )
 
@@ -498,6 +502,9 @@ def main():
         ValueError: If stft is started with signed log scaling.
         TypeError: If there went something wrong with the results.
     """
+    print(torch.get_num_threads())
+    torch.set_num_threads(1)
+    print(torch.get_num_threads())
     parsed_args = _parse_args()
     args = DotDict(vars(parsed_args))
 
@@ -536,7 +543,6 @@ def main():
                 )
                 print("---------------------------------------------------------")
             args, _ = griderator.update_step(args)
-            print(args)
 
         if args.f_max > args.sample_rate / 2:
             print("Warning: maximum analyzed frequency is above nyquist rate.")
@@ -623,6 +629,7 @@ def main():
             ddp=args.ddp,
             batch_size=args.batch_size,
             seed=args.seed,
+            limit=-1,
         )
 
         if args.unknown_prefix is not None or args.cross_dir is not None:
@@ -657,7 +664,7 @@ def main():
                     cross_set_test, shuffle=False, seed=args.seed
                 )
             else:
-                cross_val_sampler = cross_val_sampler = None
+                cross_val_sampler = cross_test_sampler = None
 
             cross_loader_val = DataLoader(
                 cross_set_val,
