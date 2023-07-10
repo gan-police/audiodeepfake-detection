@@ -165,15 +165,44 @@ def compute_pytorch_packet_representation(
     log_scale: bool = False,
     loss_less: bool = False,
     power: float = 2.0,
-):
-    """Create a packet image."""
+    block_norm: bool = False,
+    compute_welford: bool = False,
+    block_norm_dict=None,
+) -> tuple[torch.Tensor, dict]:
+    """Create a packet image.
+
+    Raises:
+        ValueError: If block norm is used but not initialized.
+    """
     ptwt_wp_tree = ptwt.WaveletPacket(data=pt_data, wavelet=wavelet, mode="reflect")
 
     # get the pytorch decomposition
     wp_keys = ptwt_wp_tree.get_level(max_lev)
     packet_list = []
+
+    if block_norm_dict is None:
+        block_norm_dict = {}
+    if block_norm_dict is None and block_norm:
+        raise ValueError()
+
     for node in wp_keys:
-        packet_list.append(ptwt_wp_tree[node])
+        node_wp = ptwt_wp_tree[node]
+
+        if compute_welford:
+            if node in block_norm_dict.keys():
+                block_norm_dict[node].update(node_wp.unsqueeze(-1))
+            else:
+                welfi = WelfordEstimator()
+                welfi.update(node_wp.unsqueeze(-1))
+                block_norm_dict[node] = welfi
+
+        if block_norm:
+            # mean = block_norm_dict[node]["mean"]
+            # std = block_norm_dict[node]["std"]
+            # node_wp = (node_wp - mean)/(std + 1e-12)
+
+            node_wp = node_wp / torch.max(torch.abs(node_wp))
+        packet_list.append(node_wp)
 
     wp_pt = torch.stack(packet_list, dim=-1)
 
@@ -188,7 +217,7 @@ def compute_pytorch_packet_representation(
     else:
         wp_pt = wp_pt.unsqueeze(1)
 
-    return wp_pt
+    return wp_pt, block_norm_dict
 
 
 class Packets(torch.nn.Module):
@@ -201,6 +230,9 @@ class Packets(torch.nn.Module):
         log_scale: bool = False,
         loss_less: bool = False,
         power: float = 2.0,
+        block_norm: bool = False,
+        compute_welford: bool = False,
+        block_norm_dict=None,
     ) -> None:
         """Initialize."""
         super().__init__()
@@ -210,16 +242,25 @@ class Packets(torch.nn.Module):
         self.loss_less = loss_less
         self.power = power
 
-    def forward(self, pt_data: torch.Tensor) -> torch.Tensor:
+        self.block_norm = block_norm
+        self.compute_welford = compute_welford
+        self.block_norm_dict = block_norm_dict
+
+    def forward(self, pt_data: torch.Tensor) -> tuple[torch.Tensor, dict]:
         """Forward packet representation."""
-        return compute_pytorch_packet_representation(
+        packets, block_norm_dict = compute_pytorch_packet_representation(
             pt_data,
             self.wavelet,
             self.max_lev,
             self.log_scale,
             self.loss_less,
             self.power,
-        ).permute(0, 1, 3, 2)
+            block_norm=self.block_norm,
+            compute_welford=self.compute_welford,
+            block_norm_dict=self.block_norm_dict,
+        )
+
+        return packets.permute(0, 1, 3, 2), block_norm_dict
 
 
 def get_transforms(
@@ -229,7 +270,7 @@ def get_transforms(
     device,
     normalization,
     pbar: bool = False,
-    verbose: bool = False,
+    verbose: bool = True,
 ) -> tuple[torch.nn.Sequential, torch.nn.Sequential]:
     """Initialize transformations and normalize."""
     if args.transform == "stft":
@@ -246,6 +287,9 @@ def get_transforms(
             log_scale=args.features == "none" and args.log_scale,
             loss_less=False if args.loss_less == "False" else True,
             power=args.power,
+            block_norm_dict=None,
+            block_norm=False,
+            compute_welford=True,
         )
 
     lfcc = LFCC(
@@ -283,20 +327,29 @@ def get_transforms(
         + loss_less
     )
 
-    if os.path.exists(f"{norm_dir}_mean_std.pkl"):
+    block_norm = True
+    # attention!
+    if os.path.exists(f"{norm_dir}_mean_std.pkl") and block_norm is False:
         if verbose:
             print("Loading pre calculated mean and std from file.")
         with open(f"{norm_dir}_mean_std.pkl", "rb") as file:
             mean, std = pickle.load(file)
             mean = torch.from_numpy(mean.astype(np.float32)).to(device)
             std = torch.from_numpy(std.astype(np.float32)).to(device)
+    elif os.path.exists(f"{norm_dir}_mean_std_bn.pt") and block_norm is True:
+        if verbose:
+            print("Loading pre calculated mean and std from file.")
+        welford_dict = torch.load(f"{norm_dir}_mean_std_bn.pt", map_location=device)
+        for k, _ in welford_dict.items():
+            welford_dict[k]["mean"].cuda(non_blocking=True)
+            welford_dict[k]["std"].cuda(non_blocking=True)
     elif normalization:
         if verbose:
             print("computing mean and std values.", flush=True)
         dataset = LearnWavefakeDataset(data_prefix + "_train")
         norm_dataset_loader = torch.utils.data.DataLoader(
             dataset,
-            batch_size=8000,
+            batch_size=4000,
             shuffle=False,
         )
         welford = WelfordEstimator()
@@ -307,19 +360,31 @@ def get_transforms(
                 total=len(norm_dataset_loader),
                 disable=not pbar,
             ):
-                freq_time_dt = transforms(batch["audio"].cuda())
+                freq_time_dt, welford_dict = transforms(batch["audio"].cuda())
+                transforms[0].block_norm_dict = welford_dict
                 welford.update(freq_time_dt.permute(0, 3, 2, 1))
             mean, std = welford.finalize()
-            with open(f"{norm_dir}_mean_std.pkl", "wb") as f:
-                pickle.dump([mean.cpu().numpy(), std.cpu().numpy()], f)
+            if block_norm:
+                for key in welford_dict.keys():
+                    mean, std = welford_dict[key].finalize()
+                    welford_dict[key] = {"mean": mean, "std": std}
+
+                torch.save(welford_dict, f"{norm_dir}_mean_std_bn.pt")
+            else:
+                with open(f"{norm_dir}_mean_std.pkl", "wb") as f:
+                    pickle.dump([mean.cpu().numpy(), std.cpu().numpy()], f)
     else:
         if verbose:
             print("Using default mean and std.")
         mean = torch.tensor(args.mean, device=device)
         std = torch.tensor(args.std, device=device)
 
-    if verbose:
-        print("mean", mean, "std:", std)
+    if block_norm:
+        mean = 0.0
+        std = 1.0
+        transforms[0].block_norm_dict = welford_dict
+        transforms[0].compute_welford = False
+        transforms[0].block_norm = True
 
     normalize = torch.nn.Sequential(
         torchvision.transforms.Normalize(mean, std),

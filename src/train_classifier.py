@@ -62,8 +62,11 @@ def create_data_loaders(
         train_data_set,
         batch_size=batch_size,
         shuffle=False,
+        drop_last=True,
         pin_memory=True,
-        sampler=DistributedSampler(train_data_set, shuffle=True, seed=seed),
+        sampler=DistributedSampler(
+            train_data_set, shuffle=True, seed=seed, drop_last=True
+        ),
     )
     val_data_loader = DataLoader(
         val_data_set,
@@ -210,7 +213,9 @@ class Trainer:
         # predicted_dict = defaultdict(list)
         for val_batch in bar:
             with torch.no_grad():
-                freq_time_dt = self.transforms(val_batch["audio"].to(self.local_rank))
+                freq_time_dt, _ = self.transforms(
+                    val_batch["audio"].to(self.local_rank)
+                )
                 freq_time_dt_norm = self.normalize(freq_time_dt)
 
                 out = self.model(freq_time_dt_norm)
@@ -369,12 +374,14 @@ class Trainer:
 
         if self.args.aug_contrast:
             batch_audios = contrast(batch_audios)
+            # batch_audios = torchaudio.functional.preemphasis(batch_audios, np.random.uniform(0., 1.0))
+            # batch_audios = torchaudio.functional.dither(batch_audios)
         if self.args.aug_noise:
             batch_audios = add_noise(batch_audios)
 
         self.optimizer.zero_grad()
         with torch.no_grad():
-            freq_time_dt = self.transforms(batch_audios)
+            freq_time_dt, _ = self.transforms(batch_audios)
             freq_time_dt_norm = self.normalize(freq_time_dt)
 
         out = self.model(freq_time_dt_norm)
@@ -422,11 +429,12 @@ class Trainer:
         for epoch in range(max_epochs):
             self._run_epoch(epoch)
 
-            if self.global_rank == 0 and self.local_rank == 0:
-                if epoch + 1 % self.args.ckpt_every == 0:
-                    self._save_snapshot(epoch)
-            if epoch + 1 % self.args.validation_interval == 0:
-                self._run_validation(epoch)
+            if epoch > 0:
+                if self.global_rank == 0 and self.local_rank == 0:
+                    if epoch % self.args.ckpt_every == 0:
+                        self._save_snapshot(epoch)
+                if epoch % self.args.validation_interval == 0:
+                    self._run_validation(epoch)
             if epoch == max_epochs - 1:
                 if self.global_rank == 0 and self.local_rank == 0:
                     print("Training done, now testing...")
@@ -487,19 +495,23 @@ def main():
     if args.enable_gs:
         if is_lead():
             print("--------------- Starting grid search -----------------")
-        griderator = init_grid(num_exp=3)
+
+        if not args.random_seeds:
+            griderator = init_grid(num_exp=5, init_seeds=[0, 1, 2, 3, 4])
+        else:
+            griderator = init_grid(num_exp=3)
         num_exp = griderator.get_len()
 
     for _exp_number in range(num_exp):
         if args.enable_gs:
             if is_lead():
-                # import pdb; pdb.set_trace()
                 print("---------------------------------------------------------")
                 print(
                     f"starting new experiments with {griderator.grid_values[griderator.current]}"
                 )
                 print("---------------------------------------------------------")
             args, _ = griderator.update_step(args)
+            print(args)
 
         if args.f_max > args.sample_rate / 2:
             print("Warning: maximum analyzed frequency is above nyquist rate.")
