@@ -327,16 +327,14 @@ def get_transforms(
         + loss_less
     )
 
-    block_norm = True
-    # attention!
-    if os.path.exists(f"{norm_dir}_mean_std.pkl") and block_norm is False:
+    if os.path.exists(f"{norm_dir}_mean_std.pkl") and args.block_norm is False:
         if verbose:
             print("Loading pre calculated mean and std from file.")
         with open(f"{norm_dir}_mean_std.pkl", "rb") as file:
             mean, std = pickle.load(file)
             mean = torch.from_numpy(mean.astype(np.float32)).to(device)
             std = torch.from_numpy(std.astype(np.float32)).to(device)
-    elif os.path.exists(f"{norm_dir}_mean_std_bn.pt") and block_norm is True:
+    elif os.path.exists(f"{norm_dir}_mean_std_bn.pt") and args.block_norm is True:
         if verbose:
             print("Loading pre calculated mean and std from file.")
         welford_dict = torch.load(f"{norm_dir}_mean_std_bn.pt", map_location=device)
@@ -364,7 +362,7 @@ def get_transforms(
                 transforms[0].block_norm_dict = welford_dict
                 welford.update(freq_time_dt.permute(0, 3, 2, 1))
             mean, std = welford.finalize()
-            if block_norm:
+            if args.block_norm:
                 for key in welford_dict.keys():
                     mean, std = welford_dict[key].finalize()
                     welford_dict[key] = {"mean": mean, "std": std}
@@ -379,7 +377,7 @@ def get_transforms(
         mean = torch.tensor(args.mean, device=device)
         std = torch.tensor(args.std, device=device)
 
-    if block_norm:
+    if args.block_norm:
         mean = 0.0
         std = 1.0
         transforms[0].block_norm_dict = welford_dict

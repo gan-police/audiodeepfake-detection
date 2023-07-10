@@ -116,6 +116,11 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         help="Log-scale transformed audio.",
     )
     parser.add_argument(
+        "--block-norm",
+        action="store_true",
+        help="Normalize frequency bin with maximum value in packet transformation.",
+    )
+    parser.add_argument(
         "--power",
         type=float,
         default=2.0,
@@ -274,6 +279,11 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         type=int,
         default=1,
         help="Save model after a fixed number of epochs. (default: 1)",
+    )
+    parser.add_argument(
+        "--ddp",
+        action="store_true",
+        help="Use distributed data parallel from pytorch.",
     )
 
     return parser

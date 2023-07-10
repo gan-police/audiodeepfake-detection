@@ -77,6 +77,7 @@ class LearnWavefakeDataset(Dataset):
         data_dir: str,
         source_name: str = "fake",
         key: Optional[str] = "audio",
+        limit: int = -1,
         verbose: Optional[bool] = False,
     ):
         """Create a Wavefake-dataset object.
@@ -105,7 +106,6 @@ class LearnWavefakeDataset(Dataset):
         self.labels = np.load(self.file_lst[-1])
         self.audios = np.array(self.file_lst[:-1])
 
-        limit = 60_000
         self.labels = self.labels[:limit]
         self.audios = self.audios[:limit]
 

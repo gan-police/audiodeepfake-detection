@@ -40,8 +40,10 @@ def ddp_setup() -> None:
 
 def create_data_loaders(
     data_prefix: str,
+    ddp: bool = False,
     batch_size: int = 64,
     seed: int = 0,
+    limit: int = -1,
 ) -> tuple:
     """Create the data loaders needed for training.
 
@@ -54,26 +56,35 @@ def create_data_loaders(
     Returns:
         dataloaders (tuple): train_data_loader, val_data_loader, test_data_set
     """
-    train_data_set = LearnWavefakeDataset(data_prefix + "_train")
-    val_data_set = LearnWavefakeDataset(data_prefix + "_val")
-    test_data_set = LearnWavefakeDataset(data_prefix + "_test")
+    train_data_set = LearnWavefakeDataset(data_prefix + "_train", limit=limit)
+    val_data_set = LearnWavefakeDataset(data_prefix + "_val", limit=limit)
+    test_data_set = LearnWavefakeDataset(data_prefix + "_test", limit=limit)
+
+    if ddp:
+        train_sampler = DistributedSampler(
+            train_data_set, shuffle=True, seed=seed, drop_last=True
+        )
+        val_sampler = DistributedSampler(val_data_set, shuffle=False, seed=seed)
+        test_sampler = DistributedSampler(test_data_set, shuffle=False, seed=seed)
+    else:
+        train_sampler = val_sampler = test_sampler = None
 
     train_data_loader = DataLoader(
         train_data_set,
         batch_size=batch_size,
-        shuffle=False,
+        shuffle=False if ddp else True,
         drop_last=True,
         pin_memory=True,
-        sampler=DistributedSampler(
-            train_data_set, shuffle=True, seed=seed, drop_last=True
-        ),
+        sampler=train_sampler,
+        num_workers=2 if not ddp else 0,
     )
     val_data_loader = DataLoader(
         val_data_set,
         batch_size=batch_size,
         shuffle=False,
         pin_memory=True,
-        sampler=DistributedSampler(val_data_set, shuffle=False, seed=seed),
+        sampler=val_sampler,
+        num_workers=2 if not ddp else 0,
     )
 
     test_data_loader = DataLoader(
@@ -81,7 +92,8 @@ def create_data_loaders(
         batch_size=batch_size,
         shuffle=False,
         pin_memory=True,
-        sampler=DistributedSampler(test_data_set, shuffle=False, seed=seed),
+        sampler=test_sampler,
+        num_workers=2 if not ddp else 0,
     )
 
     return train_data_loader, val_data_loader, test_data_loader
@@ -107,9 +119,15 @@ class Trainer:
         writer: SummaryWriter | None = None,
     ) -> None:
         """Initialize trainer."""
-        self.local_rank = int(os.environ["LOCAL_RANK"])
-        self.global_rank = int(os.environ["RANK"])
-        self.world_size = torch.cuda.device_count()
+        self.args = args
+
+        if args.ddp:
+            self.local_rank = int(os.environ["LOCAL_RANK"])
+            self.global_rank = int(os.environ["RANK"])
+            self.world_size = torch.cuda.device_count()
+        else:
+            self.local_rank = self.global_rank = torch.cuda.current_device()
+            self.world_size = 1
 
         if model is not None:
             self.model = model
@@ -126,7 +144,6 @@ class Trainer:
         self.loss_fun = loss_fun
         self.epochs_run = 0
         self.snapshot_path = snapshot_path + ".pt"
-        self.args = args
         self.normalize = normalize
         self.transforms = transforms
         self.writer = writer
@@ -148,9 +165,11 @@ class Trainer:
         if model is not None:
             if isinstance(model, torch.nn.Module):
                 self.model.to(self.local_rank)
-                self.model = DiDiP(self.model, device_ids=[self.local_rank])
+
+                if self.args.ddp:
+                    self.model = DiDiP(self.model, device_ids=[self.local_rank])
                 return
-            elif isinstance(model, DiDiP):
+            elif self.args.ddp and isinstance(model, DiDiP):
                 return
             else:
                 raise RuntimeError("Given Model not of type torch.nn.Module.")
@@ -168,7 +187,7 @@ class Trainer:
         else:
             self.init_model(self.model)
 
-        if not isinstance(self.model, DiDiP):
+        if self.args.ddp and not isinstance(self.model, DiDiP):
             raise RuntimeError("Model not parallelized.")
         else:
             return
@@ -210,7 +229,6 @@ class Trainer:
         count_dict = {}
         y_list = []
         out_list = []
-        # predicted_dict = defaultdict(list)
         for val_batch in bar:
             with torch.no_grad():
                 freq_time_dt, _ = self.transforms(
@@ -245,27 +263,34 @@ class Trainer:
         ys = torch.cat(y_list).to(self.local_rank)  # type: ignore
         outs = torch.cat(out_list).to(self.local_rank)  # type: ignore
 
-        # gather ys, outs, ok_sum, total
-        ys_gathered = torch.zeros(
-            self.world_size * len(ys), dtype=torch.bool, device=self.local_rank
-        )  # type: ignore
-        outs_gathered = torch.zeros(
-            self.world_size * len(outs), dtype=torch.int64, device=self.local_rank
-        )  # type: ignore
-        ok_sum_gathered = [None for _ in range(self.world_size)]  # type: ignore
-        total_gathered = [None for _ in range(self.world_size)]  # type: ignore
-        ok_dict_gathered = [None for _ in range(self.world_size)]  # type: ignore
-        count_dict_gathered = [None for _ in range(self.world_size)]  # type: ignore
+        if self.args.ddp:
+            # gather ys, outs, ok_sum, total
+            ys_gathered = torch.zeros(
+                self.world_size * len(ys), dtype=torch.bool, device=self.local_rank
+            )  # type: ignore
+            outs_gathered = torch.zeros(
+                self.world_size * len(outs), dtype=torch.int64, device=self.local_rank
+            )  # type: ignore
+            ok_sum_gathered = [None for _ in range(self.world_size)]  # type: ignore
+            total_gathered = [None for _ in range(self.world_size)]  # type: ignore
+            ok_dict_gathered = [None for _ in range(self.world_size)]  # type: ignore
+            count_dict_gathered = [None for _ in range(self.world_size)]  # type: ignore
 
-        torch.distributed.all_gather_into_tensor(ys_gathered, ys)
-        torch.distributed.all_gather_into_tensor(outs_gathered, outs)
-        torch.distributed.all_gather_object(ok_sum_gathered, ok_sum)
-        torch.distributed.all_gather_object(total_gathered, total)
-        torch.distributed.all_gather_object(ok_dict_gathered, ok_dict)
-        torch.distributed.all_gather_object(count_dict_gathered, count_dict)
+            torch.distributed.all_gather_into_tensor(ys_gathered, ys)
+            torch.distributed.all_gather_into_tensor(outs_gathered, outs)
+            torch.distributed.all_gather_object(ok_sum_gathered, ok_sum)
+            torch.distributed.all_gather_object(total_gathered, total)
+            torch.distributed.all_gather_object(ok_dict_gathered, ok_dict)
+            torch.distributed.all_gather_object(count_dict_gathered, count_dict)
+        else:
+            ys_gathered = ys
+            outs_gathered = outs
+            ok_sum_gathered = [ok_sum]
+            total_gathered = [total]
+            ok_dict_gathered = [ok_dict]
+            count_dict_gathered = [count_dict]
 
-        if self.local_rank == 0 and self.global_rank == 0:
-            # import pdb; pdb.set_trace()
+        if is_lead(self.args):
             print(
                 f"{name} - ",
                 [
@@ -330,12 +355,8 @@ class Trainer:
             unit="batches",
             disable=not self.args.pbar,
         )
-        if self.global_rank == 0:
+        if is_lead(self.args):
             print(f"+------------------- Epoch {e+1} -------------------+", flush=True)
-        # b_sz = len(next(iter(self.train_data_loader))["audio"])
-        # print(
-        #     f"[GPU{self.global_rank}] Epoch {e+1} | Batchsize: {b_sz} | Steps: {len(self.train_data_loader)}"
-        # )
         self.train_data_loader.sampler.set_epoch(e)
         for _it, batch in enumerate(self.bar):
             self.model.train()
@@ -387,7 +408,7 @@ class Trainer:
         out = self.model(freq_time_dt_norm)
         loss = self.loss_fun(out, batch_labels)
         acc = (
-            torch.sum((torch.argmax(out, -1) == (batch_labels != 0).cuda()))
+            torch.sum((torch.argmax(out, -1) == (batch_labels != 0).to(self.local_rank)))
             / self.args.batch_size
         )
 
@@ -430,17 +451,17 @@ class Trainer:
             self._run_epoch(epoch)
 
             if epoch > 0:
-                if self.global_rank == 0 and self.local_rank == 0:
+                if is_lead(self.args):
                     if epoch % self.args.ckpt_every == 0:
                         self._save_snapshot(epoch)
                 if epoch % self.args.validation_interval == 0:
                     self._run_validation(epoch)
             if epoch == max_epochs - 1:
-                if self.global_rank == 0 and self.local_rank == 0:
+                if is_lead(self.args):
                     print("Training done, now testing...")
                 test_results = self.testing()
                 self.test_results = test_results
-                if self.global_rank == 0 and self.local_rank == 0:
+                if is_lead(self.args):
                     print(
                         f"test results: known acc {test_results[0]*100:2.2f} %, \
                         known eer {test_results[1]:.3f}, \
@@ -454,9 +475,11 @@ class Trainer:
         return self._run_test()
 
 
-def is_lead() -> bool:
+def is_lead(args) -> bool:
     """Check if current process is lead rank."""
-    if int(os.environ["LOCAL_RANK"]) == 0 and int(os.environ["RANK"]) == 0:
+    if not args.ddp:
+        return True
+    elif int(os.environ["LOCAL_RANK"]) == 0 and int(os.environ["RANK"]) == 0:
         return True
     return False
 
@@ -475,11 +498,13 @@ def main():
         ValueError: If stft is started with signed log scaling.
         TypeError: If there went something wrong with the results.
     """
-    ddp_setup()
-
     parsed_args = _parse_args()
     args = DotDict(vars(parsed_args))
-    if is_lead():
+
+    if args.ddp:
+        ddp_setup()
+
+    if is_lead(args):
         print(parsed_args)
 
     base_dir = args.log_dir
@@ -493,7 +518,7 @@ def main():
     num_exp = 1
     exp_results = {}
     if args.enable_gs:
-        if is_lead():
+        if is_lead(args):
             print("--------------- Starting grid search -----------------")
 
         if not args.random_seeds:
@@ -504,7 +529,7 @@ def main():
 
     for _exp_number in range(num_exp):
         if args.enable_gs:
-            if is_lead():
+            if is_lead(args):
                 print("---------------------------------------------------------")
                 print(
                     f"starting new experiments with {griderator.grid_values[griderator.current]}"
@@ -590,12 +615,14 @@ def main():
         set_seed(args.seed)
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        # torch.multiprocessing.set_start_method("spawn")
+        if not args.ddp:
+            torch.multiprocessing.set_start_method("spawn")
 
         train_data_loader, val_data_loader, test_data_loader = create_data_loaders(
-            args.data_prefix,
-            args.batch_size,
-            args.seed,
+            data_prefix=args.data_prefix,
+            ddp=args.ddp,
+            batch_size=args.batch_size,
+            seed=args.seed,
         )
 
         if args.unknown_prefix is not None or args.cross_dir is not None:
@@ -621,23 +648,32 @@ def main():
                     args.unknown_prefix + "_test",
                     source_name=known_gen_name,
                 )
+
+            if args.ddp:
+                cross_val_sampler = DistributedSampler(
+                    cross_set_val, shuffle=False, seed=args.seed
+                )
+                cross_test_sampler = DistributedSampler(
+                    cross_set_test, shuffle=False, seed=args.seed
+                )
+            else:
+                cross_val_sampler = cross_val_sampler = None
+
             cross_loader_val = DataLoader(
                 cross_set_val,
-                batch_size=int(args.batch_size),
+                batch_size=args.batch_size,
                 shuffle=False,
                 pin_memory=True,
-                sampler=DistributedSampler(
-                    cross_set_val, shuffle=False, seed=args.seed
-                ),
+                sampler=cross_val_sampler,
+                num_workers=2 if not args.ddp else 0,
             )
             cross_loader_test = DataLoader(
                 cross_set_test,
-                batch_size=int(args.batch_size),
+                batch_size=args.batch_size,
                 shuffle=False,
                 pin_memory=True,
-                sampler=DistributedSampler(
-                    cross_set_test, shuffle=False, seed=args.seed
-                ),
+                sampler=cross_test_sampler,
+                num_workers=2 if not args.ddp else 0,
             )
         else:
             cross_loader_val = cross_loader_test = None
@@ -730,8 +766,7 @@ def main():
         if args.tensorboard:
             writer.close()
 
-    if is_lead():
-        # import pdb; pdb.set_trace()
+    if is_lead(args):
         results = np.asarray(list(exp_results.values()))
         mean = results.mean(0)
         std = results.std(0)
@@ -750,7 +785,8 @@ def main():
             }
             print(f"Best config: {best_config}")
 
-    destroy_process_group()
+    if args.ddp:
+        destroy_process_group()
 
 
 def save_model_epoch(model_file, model) -> str:
