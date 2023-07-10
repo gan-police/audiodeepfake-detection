@@ -143,6 +143,11 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         help="If sign pattern is to be used as second channel, only works for packets.",
     )
     parser.add_argument(
+        "--random-seeds",
+        action="store_true",
+        help="Use random seeds.",
+    )
+    parser.add_argument(
         "--aug-contrast",
         action="store_true",
         help="Use augmentation method contrast.",
@@ -276,7 +281,7 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
 
 def contrast(waveform: torch.Tensor) -> torch.Tensor:
     """Add contrast to waveform."""
-    enhancement_amount = np.random.uniform(0, 100.0)
+    enhancement_amount = np.random.uniform(5.0, 20.0)
     return torchaudio.functional.contrast(waveform, enhancement_amount)
 
 
@@ -362,7 +367,9 @@ def print_results(res_eer, res_acc):
 class _Griderator:
     """Create an iterator for grid search."""
 
-    def __init__(self, config: dict[str, list], num_exp: int = 5) -> None:
+    def __init__(
+        self, config: dict[str, list], init_seeds: list = None, num_exp: int = 5
+    ) -> None:
         """Initialize grid search instance.
 
         Raises:
@@ -371,8 +378,11 @@ class _Griderator:
         if type(config) is not dict:
             raise TypeError(f"Config file must be of type dict but is {type(config)}.")
 
-        rand = random.SystemRandom()
-        self.init_config = {"seed": [rand.randrange(10000) for _ in range(num_exp)]}
+        if len(init_seeds) == 0:
+            rand = random.SystemRandom()
+            self.init_config = {"seed": [rand.randrange(10000) for _ in range(num_exp)]}
+        else:
+            self.init_config = {"seed": init_seeds}
 
         self.init_config.update(config)
         self.grid_values = list(itertools.product(*self.init_config.values()))
@@ -429,13 +439,13 @@ class _Griderator:
         return new_args, new_step
 
 
-def init_grid(num_exp: int = 5) -> _Griderator:
+def init_grid(num_exp: int = 5, init_seeds: list = None) -> _Griderator:
     """Return a grid iterator using the given config.
 
     Args:
         num_exp (int): Number of random seeds to use for grid search.
     """
-    return _Griderator(get_config(), num_exp=num_exp)
+    return _Griderator(get_config(), num_exp=num_exp, init_seeds=init_seeds)
 
 
 class DotDict(dict):

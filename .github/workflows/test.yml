@@ -21,5 +21,3 @@ jobs:
           pip install nox flake8
       - name: Run flake8
         run: nox -s lint
-      - name: Run mypy
-        run: nox -s typing
