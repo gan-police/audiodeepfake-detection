@@ -1,17 +1,18 @@
 #!/bin/bash
 #
 #SBATCH -A holistic-vid-westai
-#SBATCH --nodes=2
-#SBATCH --ntasks=2
-#SBATCH --ntasks-per-node=4
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
 #SBATCH --job-name=train
 #SBATCH --gres=gpu:4
-#SBATCH --mem=300GB
+#SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=24
-#SBATCH --partition booster
+#SBATCH --partition develbooster
 #SBATCH --time=02:00:00
-#SBATCH --output=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%j.out
-#SBATCH --error=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%j.err
+#SBATCH --output=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%A_%a.out
+#SBATCH --error=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%A_%a.err
+#SBATCH --array=0
+
 source ${HOME}/.bashrc
 
 echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
@@ -23,7 +24,6 @@ head_node_ip=$(hostname --ip-address)
 
 echo Node IP: $head_node_ip
 export LOGLEVEL=INFO
-export OMP_NUM_THREADS=12
 
 echo "Got nodes:"
 echo $SLURM_JOB_NODELIST
@@ -32,17 +32,11 @@ echo $SLURM_JOB_NUM_NODES
 
 echo -e "Training..."
 
-srun torchrun \
---rdzv_id $RANDOM \
---rdzv_backend c10d \
---rdzv_endpoint $head_node_ip:29400 \
---nnodes 2 \
---nproc_per_node 4 \
-src/train_classifier.py \
+python -m src.train_classifier \
     --log-dir "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/" \
     --batch-size 128 \
     --learning-rate 0.0001 \
-    --weight-decay 0.001   \
+    --weight-decay 0.01   \
     --epochs 10 \
     --validation-interval 1 \
     --ckpt-every 1 \
@@ -68,7 +62,6 @@ src/train_classifier.py \
     --enable-gs \
     --calc-normalization \
     --block-norm \
-    --ddp \
     --pbar
 
 echo -e "Training process finished."

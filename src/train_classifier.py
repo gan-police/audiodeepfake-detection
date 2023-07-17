@@ -39,11 +39,9 @@ def ddp_setup() -> None:
 
 
 def create_data_loaders(
-    data_prefix: str,
-    ddp: bool = False,
-    batch_size: int = 64,
-    seed: int = 0,
+    args,
     limit: int = -1,
+    num_workers: int = 5,
 ) -> tuple:
     """Create the data loaders needed for training.
 
@@ -56,47 +54,111 @@ def create_data_loaders(
     Returns:
         dataloaders (tuple): train_data_loader, val_data_loader, test_data_set
     """
-    train_data_set = LearnWavefakeDataset(data_prefix + "_train", limit=limit)
-    val_data_set = LearnWavefakeDataset(data_prefix + "_val", limit=limit)
-    test_data_set = LearnWavefakeDataset(data_prefix + "_test", limit=limit)
+    train_data_set = LearnWavefakeDataset(args.data_prefix + "_train", limit=limit)
+    val_data_set = LearnWavefakeDataset(args.data_prefix + "_val", limit=limit)
+    test_data_set = LearnWavefakeDataset(args.data_prefix + "_test", limit=limit)
 
-    if ddp:
+    if args.ddp:
         train_sampler = DistributedSampler(
-            train_data_set, shuffle=True, seed=seed, drop_last=True
+            train_data_set, shuffle=True, seed=args.seed, drop_last=True
         )
-        val_sampler = DistributedSampler(val_data_set, shuffle=False, seed=seed)
-        test_sampler = DistributedSampler(test_data_set, shuffle=False, seed=seed)
+        val_sampler = DistributedSampler(val_data_set, shuffle=False, seed=args.seed)
+        test_sampler = DistributedSampler(test_data_set, shuffle=False, seed=args.seed)
     else:
         train_sampler = val_sampler = test_sampler = None
 
     train_data_loader = DataLoader(
         train_data_set,
-        batch_size=batch_size,
-        shuffle=False if ddp else True,
+        batch_size=args.batch_size,
+        shuffle=False if args.ddp else True,
         drop_last=True,
         pin_memory=True,
         sampler=train_sampler,
-        num_workers=2 if not ddp else 0,
+        num_workers=num_workers,
+        persistent_workers=True,
     )
     val_data_loader = DataLoader(
         val_data_set,
-        batch_size=batch_size,
+        batch_size=args.batch_size,
         shuffle=False,
         pin_memory=True,
         sampler=val_sampler,
-        num_workers=2 if not ddp else 0,
+        num_workers=num_workers,
+        persistent_workers=True,
     )
 
     test_data_loader = DataLoader(
         test_data_set,
-        batch_size=batch_size,
+        batch_size=args.batch_size,
         shuffle=False,
         pin_memory=True,
         sampler=test_sampler,
-        num_workers=2 if not ddp else 0,
+        num_workers=num_workers,
+        persistent_workers=True,
     )
 
-    return train_data_loader, val_data_loader, test_data_loader
+    if args.unknown_prefix is not None or args.cross_dir is not None:
+        if args.cross_dir is not None:
+            cross_set_test = CrossWavefakeDataset(
+                base_path=args.cross_dir,
+                prefix=args.cross_prefix,
+                sources=args.cross_sources,
+                limit=limit,
+            )
+            cross_set_val = CrossWavefakeDataset(
+                base_path=args.cross_dir,
+                prefix=args.cross_prefix,
+                sources=args.cross_sources,
+                limit=limit,
+            )
+        else:
+            cross_set_val = LearnWavefakeDataset(
+                args.unknown_prefix + "_val",
+                limit=1000,
+            )
+            cross_set_test = LearnWavefakeDataset(
+                args.unknown_prefix + "_test",
+                limit=2000,
+            )
+
+        if args.ddp:
+            cross_val_sampler = DistributedSampler(
+                cross_set_val, shuffle=False, seed=args.seed
+            )
+            cross_test_sampler = DistributedSampler(
+                cross_set_test, shuffle=False, seed=args.seed
+            )
+        else:
+            cross_val_sampler = cross_test_sampler = None
+
+        cross_loader_val = DataLoader(
+            cross_set_val,
+            batch_size=args.batch_size,
+            shuffle=False,
+            pin_memory=True,
+            sampler=cross_val_sampler,
+            num_workers=num_workers,
+            persistent_workers=True,
+        )
+        cross_loader_test = DataLoader(
+            cross_set_test,
+            batch_size=args.batch_size,
+            shuffle=False,
+            pin_memory=True,
+            sampler=cross_test_sampler,
+            num_workers=num_workers,
+            persistent_workers=True,
+        )
+    else:
+        cross_loader_val = cross_loader_test = None
+
+    return (
+        train_data_loader,
+        val_data_loader,
+        test_data_loader,
+        cross_loader_val,
+        cross_loader_test,
+    )
 
 
 class Trainer:
@@ -164,7 +226,7 @@ class Trainer:
         """
         if model is not None:
             if isinstance(model, torch.nn.Module):
-                self.model.to(self.local_rank)
+                self.model.to(self.local_rank, non_blocking=True)
 
                 if self.args.ddp:
                     self.model = DiDiP(self.model, device_ids=[self.local_rank])
@@ -232,13 +294,13 @@ class Trainer:
         for val_batch in bar:
             with torch.no_grad():
                 freq_time_dt, _ = self.transforms(
-                    val_batch["audio"].to(self.local_rank)
+                    val_batch["audio"].to(self.local_rank, non_blocking=True)
                 )
                 freq_time_dt_norm = self.normalize(freq_time_dt)
 
                 out = self.model(freq_time_dt_norm)
                 out_max = torch.argmax(out, -1)
-                y = val_batch["label"].to(self.local_rank) != 0
+                y = val_batch["label"].to(self.local_rank, non_blocking=True) != 0
                 ok_mask = out_max == y
                 ok_sum += sum(ok_mask).cpu().numpy().astype(int)
                 total += len(y)
@@ -260,8 +322,8 @@ class Trainer:
 
         common_keys = ok_dict.keys() & count_dict.keys()
 
-        ys = torch.cat(y_list).to(self.local_rank)  # type: ignore
-        outs = torch.cat(out_list).to(self.local_rank)  # type: ignore
+        ys = torch.cat(y_list).to(self.local_rank, non_blocking=True)  # type: ignore
+        outs = torch.cat(out_list).to(self.local_rank, non_blocking=True)  # type: ignore
 
         if self.args.ddp:
             # gather ys, outs, ok_sum, total
@@ -290,12 +352,13 @@ class Trainer:
             ok_dict_gathered = [ok_dict]
             count_dict_gathered = [count_dict]
 
+        torch.cuda.synchronize()
         if is_lead(self.args):
             print(
                 f"{name} - ",
                 [
                     (
-                        data_loader.dataset.label_names[key],
+                        data_loader.dataset.get_label_name(key),
                         (
                             sum([sum(ok_dict_g[key]) for ok_dict_g in ok_dict_gathered])  # type: ignore
                             / sum(
@@ -392,8 +455,12 @@ class Trainer:
 
     def _run_batch(self, e, batch):
         """Run one batch iteration forward pass."""
-        batch_audios = batch[self.train_data_loader.dataset.key].to(self.local_rank)
-        batch_labels = (batch["label"].to(self.local_rank) != 0).type(torch.long)
+        batch_audios = batch[self.train_data_loader.dataset.key].to(
+            self.local_rank, non_blocking=True
+        )
+        batch_labels = (
+            batch["label"].to(self.local_rank, non_blocking=True) != 0
+        ).type(torch.long)
 
         if self.args.aug_contrast:
             batch_audios = contrast(batch_audios)
@@ -411,7 +478,10 @@ class Trainer:
         loss = self.loss_fun(out, batch_labels)
         acc = (
             torch.sum(
-                (torch.argmax(out, -1) == (batch_labels != 0).to(self.local_rank))
+                (
+                    torch.argmax(out, -1)
+                    == (batch_labels != 0).to(self.local_rank, non_blocking=True)
+                )
             )
             / self.args.batch_size
         )
@@ -435,7 +505,7 @@ class Trainer:
     def _save_snapshot(self, epoch) -> None:
         """Save snapshot of current model."""
         snapshot = {
-            "MODEL_STATE": self.model.module.state_dict(),  # type: ignore
+            "MODEL_STATE": self.model.module.state_dict() if self.args.ddp else self.model.state_dict(),  # type: ignore
             "EPOCHS_RUN": epoch,
         }
         torch.save(snapshot, self.snapshot_path)
@@ -454,12 +524,11 @@ class Trainer:
         for epoch in range(max_epochs):
             self._run_epoch(epoch)
 
-            if epoch > 0:
-                if is_lead(self.args):
-                    if epoch % self.args.ckpt_every == 0:
-                        self._save_snapshot(epoch)
-                if epoch % self.args.validation_interval == 0:
-                    self._run_validation(epoch)
+            if is_lead(self.args):
+                if epoch % self.args.ckpt_every == 0:
+                    self._save_snapshot(epoch)
+            if epoch % self.args.validation_interval == 0:
+                self._run_validation(epoch)
             if epoch == max_epochs - 1:
                 if is_lead(self.args):
                     print("Training done, now testing...")
@@ -503,10 +572,14 @@ def main():
         TypeError: If there went something wrong with the results.
     """
     print(torch.get_num_threads())
-    torch.set_num_threads(1)
+    torch.set_num_threads(24)
     print(torch.get_num_threads())
     parsed_args = _parse_args()
     args = DotDict(vars(parsed_args))
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    torch.multiprocessing.set_start_method("spawn")
+    args.num_workers = 15
 
     if args.ddp:
         ddp_setup()
@@ -569,7 +642,7 @@ def main():
                 "Sign channel not possible for stft due to complex data type."
             )
 
-        model_file = base_dir + "/models/test4/" + path_name[0] + "_"
+        model_file = base_dir + "/models/" + path_name[0] + "_"
         if transform == "stft":
             model_file += "stft"
         elif transform == "packets":
@@ -620,70 +693,17 @@ def main():
         # fix the seed in the interest of reproducible results.
         set_seed(args.seed)
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        if not args.ddp:
-            torch.multiprocessing.set_start_method("spawn")
-
-        train_data_loader, val_data_loader, test_data_loader = create_data_loaders(
-            data_prefix=args.data_prefix,
-            ddp=args.ddp,
-            batch_size=args.batch_size,
-            seed=args.seed,
+        (
+            train_data_loader,
+            val_data_loader,
+            test_data_loader,
+            cross_loader_val,
+            cross_loader_test,
+        ) = create_data_loaders(
+            args=args,
             limit=-1,
+            num_workers=args.num_workers,
         )
-
-        if args.unknown_prefix is not None or args.cross_dir is not None:
-            if args.cross_dir is not None:
-                cross_set_test = CrossWavefakeDataset(
-                    base_path=args.cross_dir,
-                    prefix=args.cross_prefix,
-                    sources=args.cross_sources,
-                    limit=2000,
-                )
-                cross_set_val = CrossWavefakeDataset(
-                    base_path=args.cross_dir,
-                    prefix=args.cross_prefix,
-                    sources=args.cross_sources,
-                    limit=1000,
-                )
-            else:
-                cross_set_val = LearnWavefakeDataset(
-                    args.unknown_prefix + "_val",
-                    source_name=known_gen_name,
-                )
-                cross_set_test = LearnWavefakeDataset(
-                    args.unknown_prefix + "_test",
-                    source_name=known_gen_name,
-                )
-
-            if args.ddp:
-                cross_val_sampler = DistributedSampler(
-                    cross_set_val, shuffle=False, seed=args.seed
-                )
-                cross_test_sampler = DistributedSampler(
-                    cross_set_test, shuffle=False, seed=args.seed
-                )
-            else:
-                cross_val_sampler = cross_test_sampler = None
-
-            cross_loader_val = DataLoader(
-                cross_set_val,
-                batch_size=args.batch_size,
-                shuffle=False,
-                pin_memory=True,
-                sampler=cross_val_sampler,
-                num_workers=2 if not args.ddp else 0,
-            )
-            cross_loader_test = DataLoader(
-                cross_set_test,
-                batch_size=args.batch_size,
-                shuffle=False,
-                pin_memory=True,
-                sampler=cross_test_sampler,
-                num_workers=2 if not args.ddp else 0,
-            )
-        else:
-            cross_loader_val = cross_loader_test = None
 
         if "doubledelta" in features:
             channels = 60

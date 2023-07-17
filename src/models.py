@@ -102,7 +102,6 @@ class LCNN(nn.Module):
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
         x = self.lcnn(x.permute(0, 1, 3, 2))
-        # import pdb; pdb.set_trace()
         x = x.permute(0, 2, 1, 3).contiguous()
         shape = x.shape
         x = self.lstm(x.view(shape[0], shape[1], -1))
@@ -307,7 +306,7 @@ def get_model(
     channels: int = 32,
     dropout_cnn: float = 0.6,
     dropout_lstm: float = 0.3,
-) -> LearnDeepNet | OneDNet:
+) -> LearnDeepNet | OneDNet | LCNN:
     """Get torch module model with given parameters."""
     if model_name == "learndeepnet":
         model = LearnDeepNet(
