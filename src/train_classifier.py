@@ -103,13 +103,13 @@ def create_data_loaders(
                 base_path=args.cross_dir,
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
-                limit=limit,
+                limit=1000,
             )
             cross_set_val = CrossWavefakeDataset(
                 base_path=args.cross_dir,
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
-                limit=limit,
+                limit=2000,
             )
         else:
             cross_set_val = LearnWavefakeDataset(
