@@ -186,7 +186,7 @@ class Trainer:
         if self.args.ddp:
             self.local_rank = int(os.environ["LOCAL_RANK"])
             self.global_rank = int(os.environ["RANK"])
-            self.world_size = torch.cuda.device_count()
+            self.world_size = int(os.environ['WORLD_SIZE'])
         else:
             self.local_rank = self.global_rank = torch.cuda.current_device()
             self.world_size = 1
@@ -352,7 +352,7 @@ class Trainer:
             ok_dict_gathered = [ok_dict]
             count_dict_gathered = [count_dict]
 
-        torch.cuda.synchronize()
+        # torch.cuda.synchronize()
         if is_lead(self.args):
             print(
                 f"{name} - ",
@@ -571,15 +571,14 @@ def main():
         ValueError: If stft is started with signed log scaling.
         TypeError: If there went something wrong with the results.
     """
-    print(torch.get_num_threads())
     torch.set_num_threads(24)
-    print(torch.get_num_threads())
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    torch.multiprocessing.set_start_method("spawn")
+
     parsed_args = _parse_args()
     args = DotDict(vars(parsed_args))
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    torch.multiprocessing.set_start_method("spawn")
-    args.num_workers = 15
+    args.num_workers = 8
 
     if args.ddp:
         ddp_setup()

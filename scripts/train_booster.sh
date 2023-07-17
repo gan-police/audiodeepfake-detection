@@ -8,8 +8,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --mem=300GB
 #SBATCH --cpus-per-task=24
-#SBATCH --partition booster
-#SBATCH --time=02:00:00
+#SBATCH --partition develbooster
+#SBATCH --time=00:30:00
 #SBATCH --output=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%j.out
 #SBATCH --error=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%j.err
 source ${HOME}/.bashrc
@@ -23,7 +23,6 @@ head_node_ip=$(hostname --ip-address)
 
 echo Node IP: $head_node_ip
 export LOGLEVEL=INFO
-export OMP_NUM_THREADS=12
 
 echo "Got nodes:"
 echo $SLURM_JOB_NODELIST
@@ -32,7 +31,7 @@ echo $SLURM_JOB_NUM_NODES
 
 echo -e "Training..."
 
-srun torchrun \
+srun --cpu-bind=none torchrun \
 --rdzv_id $RANDOM \
 --rdzv_backend c10d \
 --rdzv_endpoint $head_node_ip:29400 \
