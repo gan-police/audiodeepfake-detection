@@ -749,7 +749,7 @@ def main():
             cross_loader_test,
         ) = create_data_loaders(
             args=args,
-            limit=10000,
+            limit=20000,
             num_workers=args.num_workers,
         )
 

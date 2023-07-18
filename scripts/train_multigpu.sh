@@ -28,7 +28,7 @@ echo -e "Training..."
 torchrun \
 --standalone \
 --nnodes 1 \
---nproc_per_node 4 \
+--nproc_per_node 8 \
 --rdzv_id $SLURM_JOB_ID \
 --rdzv_backend c10d \
 --rdzv_endpoint $head_node_ip:29400 \
@@ -38,7 +38,7 @@ src/train_classifier.py \
     --learning-rate 0.0001 \
     --weight-decay 0.001   \
     --epochs 10 \
-    --validation-interval 10 \
+    --validation-interval 1 \
     --ckpt-every 10 \
     --data-prefix "/home/s6kogase/data/run6/fake_22050_22050_0.7_$2" \
     --cross-dir "/home/s6kogase/data/run6/" \
