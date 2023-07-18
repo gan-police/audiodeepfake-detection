@@ -689,41 +689,6 @@ def main():
             + str(args.seed)
         )
 
-        # fix the seed in the interest of reproducible results.
-        set_seed(args.seed)
-
-        (
-            train_data_loader,
-            val_data_loader,
-            test_data_loader,
-            cross_loader_val,
-            cross_loader_test,
-        ) = create_data_loaders(
-            args=args,
-            limit=-1,
-            num_workers=args.num_workers,
-        )
-
-        if "doubledelta" in features:
-            channels = 60
-        elif "delta" in features:
-            channels = 40
-        elif "lfcc" in features:
-            channels = 20
-        else:
-            channels = int(args.num_of_scales)
-
-        model = get_model(
-            model_name=args.model,
-            nclasses=args.nclasses,
-            num_of_scales=args.num_of_scales,
-            flattend_size=args.flattend_size,
-            in_channels=2 if loss_less else 1,
-            channels=channels,
-            dropout_cnn=args.dropout_cnn,
-            dropout_lstm=args.dropout_lstm,
-        )
-
         if args.tensorboard:
             writer_str = base_dir + "/tensorboard/"
             writer_str += f"{args.model}/"
@@ -747,6 +712,46 @@ def main():
             writer = SummaryWriter(writer_str, max_queue=100)
         else:
             writer = None  # type: ignore
+
+        # fix the seed in the interest of reproducible results.
+        set_seed(args.seed)
+
+        if "doubledelta" in features:
+            channels = 60
+        elif "delta" in features:
+            channels = 40
+        elif "lfcc" in features:
+            channels = 20
+        else:
+            channels = int(args.num_of_scales)
+
+        try:
+            model = get_model(
+                args=args,
+                model_name=args.model,
+                nclasses=args.nclasses,
+                num_of_scales=args.num_of_scales,
+                flattend_size=args.flattend_size,
+                in_channels=2 if loss_less else 1,
+                channels=channels,
+                dropout_cnn=args.dropout_cnn,
+                dropout_lstm=args.dropout_lstm,
+            )
+        except RuntimeError:
+            print(f"Skipping model args.model_conf")
+            continue
+
+        (
+            train_data_loader,
+            val_data_loader,
+            test_data_loader,
+            cross_loader_val,
+            cross_loader_test,
+        ) = create_data_loaders(
+            args=args,
+            limit=10000,
+            num_workers=args.num_workers,
+        )
 
         loss_fun = torch.nn.CrossEntropyLoss()
 

@@ -36,7 +36,7 @@ python -m src.train_classifier \
     --log-dir "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/" \
     --batch-size 128 \
     --learning-rate 0.0001 \
-    --weight-decay 0.01   \
+    --weight-decay 0.001   \
     --epochs 10 \
     --validation-interval 1 \
     --ckpt-every 1 \
@@ -61,7 +61,6 @@ python -m src.train_classifier \
     --features none \
     --enable-gs \
     --calc-normalization \
-    --block-norm \
     --pbar
 
 echo -e "Training process finished."

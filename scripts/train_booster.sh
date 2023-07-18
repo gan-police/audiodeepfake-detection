@@ -1,15 +1,15 @@
 #!/bin/bash
 #
 #SBATCH -A holistic-vid-westai
-#SBATCH --nodes=2
-#SBATCH --ntasks=2
+#SBATCH --nodes=3
+#SBATCH --ntasks=3
 #SBATCH --ntasks-per-node=4
 #SBATCH --job-name=train
 #SBATCH --gres=gpu:4
 #SBATCH --mem=300GB
 #SBATCH --cpus-per-task=24
 #SBATCH --partition develbooster
-#SBATCH --time=00:30:00
+#SBATCH --time=01:00:00
 #SBATCH --output=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%j.out
 #SBATCH --error=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%j.err
 source ${HOME}/.bashrc
@@ -31,11 +31,12 @@ echo $SLURM_JOB_NUM_NODES
 
 echo -e "Training..."
 
-srun --cpu-bind=none torchrun \
+#srun --cpu-bind=none 
+torchrun \
 --rdzv_id $RANDOM \
 --rdzv_backend c10d \
 --rdzv_endpoint $head_node_ip:29400 \
---nnodes 2 \
+--nnodes 1 \
 --nproc_per_node 4 \
 src/train_classifier.py \
     --log-dir "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/" \
@@ -66,7 +67,6 @@ src/train_classifier.py \
     --features none \
     --enable-gs \
     --calc-normalization \
-    --block-norm \
     --ddp \
     --pbar
 
