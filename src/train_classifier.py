@@ -61,9 +61,7 @@ def create_data_loaders(
     test_data_set = LearnWavefakeDataset(data_prefix + "_test", limit=limit)
 
     if ddp:
-        train_sampler = DistributedSampler(
-            train_data_set, shuffle=True, seed=seed, drop_last=True
-        )
+        train_sampler = DistributedSampler(train_data_set, shuffle=True, seed=seed, drop_last=True)
         val_sampler = DistributedSampler(val_data_set, shuffle=False, seed=seed)
         test_sampler = DistributedSampler(test_data_set, shuffle=False, seed=seed)
     else:
@@ -77,6 +75,7 @@ def create_data_loaders(
         pin_memory=True,
         sampler=train_sampler,
         num_workers=2 if not ddp else 0,
+        persistent_workers=True if not ddp else False,
     )
     val_data_loader = DataLoader(
         val_data_set,
@@ -85,6 +84,7 @@ def create_data_loaders(
         pin_memory=True,
         sampler=val_sampler,
         num_workers=2 if not ddp else 0,
+        persistent_workers=True if not ddp else False,
     )
 
     test_data_loader = DataLoader(
@@ -94,6 +94,7 @@ def create_data_loaders(
         pin_memory=True,
         sampler=test_sampler,
         num_workers=2 if not ddp else 0,
+        persistent_workers=True if not ddp else False,
     )
 
     return train_data_loader, val_data_loader, test_data_loader
@@ -164,7 +165,7 @@ class Trainer:
         """
         if model is not None:
             if isinstance(model, torch.nn.Module):
-                self.model.to(self.local_rank)
+                self.model.to(self.local_rank, non_blocking=True)
 
                 if self.args.ddp:
                     self.model = DiDiP(self.model, device_ids=[self.local_rank])
@@ -232,13 +233,13 @@ class Trainer:
         for val_batch in bar:
             with torch.no_grad():
                 freq_time_dt, _ = self.transforms(
-                    val_batch["audio"].to(self.local_rank)
+                    val_batch["audio"].to(self.local_rank, non_blocking=True)
                 )
                 freq_time_dt_norm = self.normalize(freq_time_dt)
 
                 out = self.model(freq_time_dt_norm)
                 out_max = torch.argmax(out, -1)
-                y = val_batch["label"].to(self.local_rank) != 0
+                y = val_batch["label"].to(self.local_rank, non_blocking=True) != 0
                 ok_mask = out_max == y
                 ok_sum += sum(ok_mask).cpu().numpy().astype(int)
                 total += len(y)
@@ -260,8 +261,8 @@ class Trainer:
 
         common_keys = ok_dict.keys() & count_dict.keys()
 
-        ys = torch.cat(y_list).to(self.local_rank)  # type: ignore
-        outs = torch.cat(out_list).to(self.local_rank)  # type: ignore
+        ys = torch.cat(y_list).to(self.local_rank, non_blocking=True)  # type: ignore
+        outs = torch.cat(out_list).to(self.local_rank, non_blocking=True)  # type: ignore
 
         if self.args.ddp:
             # gather ys, outs, ok_sum, total
@@ -392,8 +393,8 @@ class Trainer:
 
     def _run_batch(self, e, batch):
         """Run one batch iteration forward pass."""
-        batch_audios = batch[self.train_data_loader.dataset.key].to(self.local_rank)
-        batch_labels = (batch["label"].to(self.local_rank) != 0).type(torch.long)
+        batch_audios = batch[self.train_data_loader.dataset.key].to(self.local_rank, non_blocking=True)
+        batch_labels = (batch["label"].to(self.local_rank, non_blocking=True) != 0).type(torch.long)
 
         if self.args.aug_contrast:
             batch_audios = contrast(batch_audios)
@@ -411,7 +412,7 @@ class Trainer:
         loss = self.loss_fun(out, batch_labels)
         acc = (
             torch.sum(
-                (torch.argmax(out, -1) == (batch_labels != 0).to(self.local_rank))
+                (torch.argmax(out, -1) == (batch_labels != 0).to(self.local_rank, non_blocking=True))
             )
             / self.args.batch_size
         )
@@ -503,7 +504,7 @@ def main():
         TypeError: If there went something wrong with the results.
     """
     print(torch.get_num_threads())
-    torch.set_num_threads(1)
+    torch.set_num_threads(32)
     print(torch.get_num_threads())
     parsed_args = _parse_args()
     args = DotDict(vars(parsed_args))

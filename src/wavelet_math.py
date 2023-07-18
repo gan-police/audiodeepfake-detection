@@ -358,7 +358,7 @@ def get_transforms(
                 total=len(norm_dataset_loader),
                 disable=not pbar,
             ):
-                freq_time_dt, welford_dict = transforms(batch["audio"].cuda())
+                freq_time_dt, welford_dict = transforms(batch["audio"].cuda(non_blocking=True))
                 transforms[0].block_norm_dict = welford_dict
                 welford.update(freq_time_dt.permute(0, 3, 2, 1))
             mean, std = welford.finalize()
