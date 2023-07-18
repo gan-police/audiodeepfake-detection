@@ -241,6 +241,8 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
             "onednet",
             "learndeepnet",
             "lcnn",
+            "gridmodel",
+            "modules",
         ],
         default="lcnn",
         help="The model type (default: lcnn).",
@@ -432,11 +434,9 @@ class _Griderator:
     def update_args(self, args):
         """Update args with current step values."""
         for value, key in zip(self.grid_values[self.current], self.get_keys()):
-            if args.get(key) is not None:
-                args[key] = value
-            else:
-                print(f"Skipping invalid config key {key}.")
-
+            if args.get(key) is None:
+                print(f"Added new config key: {key}.")
+            args[key] = value
         return args
 
     def update_step(self, args):

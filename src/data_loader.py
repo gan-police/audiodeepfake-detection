@@ -110,12 +110,17 @@ class LearnWavefakeDataset(Dataset):
         self.audios = self.audios[:limit]
 
         self.key = key
-
         self.label_names = {0: "original", get_ds_label(self.labels): source_name}
 
     def _load_mean_std(self):
         with open(self.data_dir + "/mean_std.pkl", "rb") as f:
             return pickle.load(f)
+
+    def get_label_name(self, key):
+        if key in self.label_names.keys():
+            return self.label_names[key]
+        else:
+            return f"John Doe Generator {key}"
 
     def __len__(self) -> int:
         """Return the data set length."""
@@ -261,6 +266,12 @@ class CrossWavefakeDataset(Dataset):
         self.label_names = label_source_names
 
         self.key = key
+
+    def get_label_name(self, key):
+        if key in self.label_names.keys():
+            return self.label_names[key]
+        else:
+            return f"John Doe Generator {key}"
 
     def __len__(self) -> int:
         """Return the data set length."""

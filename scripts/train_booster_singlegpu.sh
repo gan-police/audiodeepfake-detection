@@ -1,17 +1,18 @@
 #!/bin/bash
 #
 #SBATCH -A holistic-vid-westai
-#SBATCH --nodes=3
-#SBATCH --ntasks=3
-#SBATCH --ntasks-per-node=4
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
 #SBATCH --job-name=train
 #SBATCH --gres=gpu:4
-#SBATCH --mem=300GB
+#SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=24
 #SBATCH --partition develbooster
-#SBATCH --time=01:00:00
-#SBATCH --output=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%j.out
-#SBATCH --error=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%j.err
+#SBATCH --time=02:00:00
+#SBATCH --output=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%A_%a.out
+#SBATCH --error=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%A_%a.err
+#SBATCH --array=0
+
 source ${HOME}/.bashrc
 
 echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
@@ -31,14 +32,7 @@ echo $SLURM_JOB_NUM_NODES
 
 echo -e "Training..."
 
-#srun --cpu-bind=none 
-torchrun \
---rdzv_id $RANDOM \
---rdzv_backend c10d \
---rdzv_endpoint $head_node_ip:29400 \
---nnodes 1 \
---nproc_per_node 4 \
-src/train_classifier.py \
+python -m src.train_classifier \
     --log-dir "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/" \
     --batch-size 128 \
     --learning-rate 0.0001 \
@@ -67,7 +61,6 @@ src/train_classifier.py \
     --features none \
     --enable-gs \
     --calc-normalization \
-    --ddp \
     --pbar
 
 echo -e "Training process finished."
