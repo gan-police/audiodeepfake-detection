@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torchaudio
 
+from src.data_loader import LearnWavefakeDataset
 from scripts.gridsearch_config import get_config
 
 
@@ -390,7 +391,7 @@ class _Griderator:
         if type(config) is not dict:
             raise TypeError(f"Config file must be of type dict but is {type(config)}.")
 
-        if len(init_seeds) == 0:
+        if init_seeds is None:
             rand = random.SystemRandom()
             self.init_config = {"seed": [rand.randrange(10000) for _ in range(num_exp)]}
         else:
@@ -464,3 +465,15 @@ class DotDict(dict):
     __getattr__ = dict.get
     __setattr__ = dict.__setitem__  # type: ignore
     __delattr__ = dict.__delitem__  # type: ignore
+
+
+def get_input_dims(args, transforms) -> list:
+    """Return dimensions of transformed audio."""
+    dataset = LearnWavefakeDataset(args.data_prefix + "_train")
+    with torch.no_grad():
+        freq_time_dt, _ = transforms(
+            dataset.__getitem__(0)["audio"].cuda(non_blocking=True)
+        )
+    shape = list(freq_time_dt.shape)
+    shape[0] = args.batch_size
+    return freq_time_dt.shape

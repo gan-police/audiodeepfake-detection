@@ -62,6 +62,7 @@ src/train_classifier.py \
     --features none \
     --enable-gs \
     --calc-normalization \
+    --random-seeds \
     --ddp \
     --pbar
 
