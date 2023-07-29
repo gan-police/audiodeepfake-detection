@@ -104,13 +104,13 @@ def create_data_loaders(
                 base_path=args.cross_dir,
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
-                limit=1000,
+                limit=5000,
             )
             cross_set_val = CrossWavefakeDataset(
                 base_path=args.cross_dir,
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
-                limit=2000,
+                limit=1000,
             )
         else:
             cross_set_val = LearnWavefakeDataset(
@@ -527,9 +527,9 @@ class Trainer:
             self._run_epoch(epoch)
 
             if is_lead(self.args):
-                if epoch % self.args.ckpt_every == 0:
+                if (epoch > 0 and epoch % self.args.ckpt_every == 0) or (epoch == 0 and self.args.ckpt_every == 1):
                     self._save_snapshot(epoch)
-            if epoch % self.args.validation_interval == 0:
+            if (epoch > 0 and epoch % self.args.validation_interval == 0) or (epoch == 0 and self.args.validation_interval == 1):
                 self._run_validation(epoch)
             if epoch == max_epochs - 1:
                 if is_lead(self.args):
@@ -603,9 +603,9 @@ def main():
             print("--------------- Starting grid search -----------------")
 
         if not args.random_seeds:
-            griderator = init_grid(num_exp=5, init_seeds=[0, 1, 2, 3, 4])
+            griderator = init_grid(num_exp=5, init_seeds=[42, 21, 11])
         else:
-            griderator = init_grid(num_exp=1)
+            griderator = init_grid(num_exp=5)
         num_exp = griderator.get_len()
 
     for _exp_number in range(num_exp):
@@ -762,7 +762,7 @@ def main():
             cross_loader_test,
         ) = create_data_loaders(
             args=args,
-            limit=20000,
+            limit=-1,
             num_workers=args.num_workers,
         )
 

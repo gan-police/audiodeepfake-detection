@@ -393,10 +393,12 @@ def get_model(
             raise RuntimeError("Model not valid.")
     
     elif model_name == "modules":
-        if check_dimensions(args.module(args), args.input_dim):
+        if check_dimensions(args.module(args), args.input_dim[1:]):
             model = args.module(args)
         else:
             raise RuntimeError("Model not valid.")
+    else:
+        raise RuntimeError(f"Model with model string '{model_name}' does not exist.")
     return model
 
 

@@ -476,4 +476,4 @@ def get_input_dims(args, transforms) -> list:
         )
     shape = list(freq_time_dt.shape)
     shape[0] = args.batch_size
-    return freq_time_dt.shape
+    return shape

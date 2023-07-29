@@ -13,20 +13,9 @@ def get_config() -> dict:
     overridden by this configuration. Any other key is also welcome and
     can be used in "modules"-architecure for example.
     """
-    config = {
-        "learning_rate": [0.0005],
-        "weight_decay": [0.001],
-        "wavelet": ["sym8"],
-        "dropout_cnn": [0.7],
-        "dropout_lstm": [0.1],
-        "num_of_scales": [256],
-        "epochs": [10],
-        "validation_interval": [10],
-        "block_norm": [False],
-        "batch_size": [128],
-        "aug_contrast": [False],
-        "model": ["gridmodel"],
-        "model_data": [[
+    model = "modules"
+    if model == "gridmodel":
+        model_data = [[
             {
                 "layers": [
                     [torchvision.ops, "Permute 0,1,3,2"],
@@ -73,10 +62,31 @@ def get_config() -> dict:
                 "input_shape": (1, 512),
                 "transforms": [partial(torch.Tensor.mean, dim=1)]
             }
-        ]],
-        "module": [LCNN]
+        ]]
+    else:
+        model_data = [None]
+
+    config = {
+        "learning_rate": [0.0005],
+        "weight_decay": [0.001],
+        "wavelet": ["sym8"],
+        "dropout_cnn": [0.6],
+        "dropout_lstm": [0.1],
+        "num_of_scales": [256],
+        "epochs": [10],
+        "validation_interval": [10],
+        "block_norm": [False],
+        "batch_size": [128],
+        "aug_contrast": [False],
+        "model": ["modules"],
+        "model_data": model_data,
+        "module": [TestNet],
+        "kernel1": [3],
+        "ochannels1": [128],
     }
-    if "model_data" in config.keys():
+
+    # parse model data if exists
+    if "model_data" in config.keys() and config["model_data"][0] is not None:
         for i in range(len(config["model_data"])):
             new_els = []
             for j in range(len(config["model_data"][i])):
@@ -106,6 +116,89 @@ def transf(x):
     return x.view(x.shape[0], x.shape[1], -1)
 
 
+
+class LCNN(nn.Module):
+    """Deep CNN with 2D convolutions for detecting audio deepfakes.
+
+    Fork of ASVSpoof Challenge 2021 LA Baseline.
+    """
+
+    def __init__(
+        self,
+        args,
+        classes: int = 2,
+    ) -> None:
+        """Define network sturcture."""
+        super(LCNN, self).__init__()
+
+        # LCNN from AVSpoofChallenge 2021
+        self.lcnn = nn.Sequential(
+            nn.Conv2d(1, args.ochannels1, args.kernel1, 1, padding=2),
+            #MaxFeatureMap2D(),
+            nn.LeakyReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(args.ochannels1, 64, 1, 1, padding=0),
+            #MaxFeatureMap2D(),
+            nn.LeakyReLU(),
+            nn.SyncBatchNorm(64, affine=False),
+            nn.Conv2d(64, 96, 3, 1, padding=1),
+            #MaxFeatureMap2D(),
+            nn.LeakyReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.SyncBatchNorm(96, affine=False),
+            nn.Conv2d(96, 96, 1, 1, padding=0),
+            #MaxFeatureMap2D(),
+            nn.LeakyReLU(),
+            nn.SyncBatchNorm(96, affine=False),
+            nn.Conv2d(96, 128, 3, 1, padding=1),
+            #MaxFeatureMap2D(),
+            nn.LeakyReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(128, 128, 1, 1, padding=0),
+            #MaxFeatureMap2D(),
+            nn.LeakyReLU(),
+            nn.SyncBatchNorm(128, affine=False),
+            nn.Conv2d(128, 64, 3, 1, padding=1),
+            #MaxFeatureMap2D(),
+            nn.LeakyReLU(),
+            nn.SyncBatchNorm(64, affine=False),
+            nn.Conv2d(64, 64, 1, 1, padding=0),
+            #MaxFeatureMap2D(),
+            nn.LeakyReLU(),
+            nn.SyncBatchNorm(64, affine=False),
+            nn.Conv2d(64, 64, 3, 1, padding=1),
+            #MaxFeatureMap2D(),
+            nn.LeakyReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Dropout(args.dropout_cnn),
+        )
+        size = int(args.num_of_scales * 4)
+        self.lstm = nn.Sequential(
+            BLSTMLayer(size, size),
+            BLSTMLayer(size, size),
+            nn.Dropout(args.dropout_lstm),
+        )
+
+        self.fc = nn.Linear(size, classes)
+
+    def forward(self, x) -> torch.Tensor:
+        """Forward pass."""
+        #import pdb; pdb.set_trace()
+        # [batch, channels, packets, time]
+        x = self.lcnn(x.permute(0, 1, 3, 2))
+
+        # [batch, channels, time, packets]
+        x = x.permute(0, 2, 1, 3).contiguous()
+        shape = x.shape
+
+        # [batch, time, channels, packets]
+        #import pdb; pdb.set_trace()
+        x = self.lstm(x.view(shape[0], shape[1], -1))
+        x = self.fc(x).mean(1)
+
+        return x
+
+
 class TestNet(torch.nn.Module):
     """Deep CNN."""
 
@@ -116,32 +209,53 @@ class TestNet(torch.nn.Module):
         """Define network sturcture."""
         super(TestNet, self).__init__()
 
-        channels_in = 2 if args.loss_less == "True" else 1
-
-        self.cnn = torch.nn.Sequential(
-            torch.nn.Conv2d(channels_in, 64, 5, 1, padding=2),
-            torch.nn.ReLU6(),
-            torch.nn.SyncBatchNorm(64),
-            torch.nn.Conv2d(64, 64, 3, 1, padding=1),
-            torch.nn.MaxPool2d(2),
-            torch.nn.Dropout(0.6),
+        self.lcnn = nn.Sequential(
+            nn.Conv2d(1, args.ochannels1, args.kernel1, 1, padding=2),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.SyncBatchNorm(args.ochannels1, affine=False),
+            nn.Conv2d(args.ochannels1, 64, 1, 1, padding=0),
+            nn.PReLU(),
+            nn.SyncBatchNorm(64, affine=False),
+            nn.Conv2d(64, 96, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.SyncBatchNorm(96, affine=False),
+            nn.Conv2d(96, 128, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(128, affine=False),
+            nn.Conv2d(128, 64, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(64, affine=False),
+            nn.Conv2d(64, 64, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Dropout(args.dropout_cnn),
         )
 
-        size = int(args.num_of_scales * 64 / 2)
-
-        self.lstm = torch.nn.Sequential(
-            BLSTMLayer(size, size)
-            #torch.nn.Dropout(0.1)
+        self.lstm = nn.Sequential(
+            nn.Conv2d(12, 12, 3, 1, padding=1, dilation=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(12, affine=False),
+            nn.Conv2d(12, 12, 5, 1, padding=2, dilation=2),
+            nn.PReLU(),
+            nn.SyncBatchNorm(12, affine=False),
+            nn.Conv2d(12, 12, 7, 1, padding=2, dilation=4),
+            nn.PReLU(),
+            nn.Dropout(args.dropout_lstm),
         )
 
-        self.fc = torch.nn.Linear(size, 2)
+        self.fc = nn.Sequential(
+            nn.Flatten(2),
+            nn.Linear(args.flattend_size, 2),
+        )
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        x = self.cnn(x.permute(0, 1, 3, 2))
+        x = self.lcnn(x.permute(0, 1, 3, 2))
         x = x.permute(0, 2, 1, 3).contiguous()
-        shape = x.shape
-        x = self.lstm(x.view(shape[0], shape[1], -1))
+        
+        x = self.lstm(x)
         x = self.fc(x).mean(1)
 
         return x
@@ -177,64 +291,3 @@ class Regression(torch.nn.Module):
         x_flat = torch.reshape(x, [x.shape[0], -1])
         return self.logsoftmax(self.linear(x_flat))
     
-
-class LCNN(nn.Module):
-    """Deep CNN with 2D convolutions for detecting audio deepfakes.
-
-    Fork of ASVSpoof Challenge 2021 LA Baseline.
-    """
-
-    def __init__(
-        self,
-        args,
-        classes: int = 2,
-    ) -> None:
-        """Define network sturcture."""
-        super(LCNN, self).__init__()
-
-        # LCNN from AVSpoofChallenge 2021
-        self.lcnn = nn.Sequential(
-            nn.Conv2d(8, 64, 5, 1, padding=2),
-            MaxFeatureMap2D(),
-            nn.MaxPool2d(2, 2),
-            nn.Conv2d(32, 64, 1, 1, padding=0),
-            MaxFeatureMap2D(),
-            nn.SyncBatchNorm(32, affine=False),
-            nn.Conv2d(32, 96, 3, 1, padding=1),
-            MaxFeatureMap2D(),
-            nn.MaxPool2d(2, 2),
-            nn.SyncBatchNorm(48, affine=False),
-            nn.Conv2d(48, 96, 1, 1, padding=0),
-            MaxFeatureMap2D(),
-            nn.SyncBatchNorm(48, affine=False),
-            nn.Conv2d(48, 128, 3, 1, padding=1),
-            MaxFeatureMap2D(),
-            nn.MaxPool2d(2, 2),
-            nn.Dropout(args.dropout_cnn),
-        )
-        size = int(args.num_of_scales * 4)
-        self.lstm = nn.Sequential(
-            BLSTMLayer(size, size),
-            BLSTMLayer(size, size),
-            #nn.Dropout(args.dropout_lstm),
-        )
-
-        self.fc = nn.Linear(size, classes)
-        self.scale1 = torch.nn.Sequential(torch.nn.Conv2d(1, 7, 3, padding=1),torch.nn.ReLU(),)
-        self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
-
-    def forward(self, x) -> torch.Tensor:
-        """Forward pass."""
-        x_init = x
-        #import pdb; pdb.set_trace()
-        x1 = x.permute(0, 1, 3, 2)[:,:,:,:128]
-        x2 = x.permute(0, 1, 3, 2)[:,:,:,128:]
-        x1 = self.scale1(x2)
-        x = torch.cat([x2, x1], 1)
-        x = self.lcnn(x)
-        x = x.permute(0, 2, 1, 3).contiguous()
-        shape = x.shape
-        x = self.lstm(x.view(shape[0], shape[1], -1))
-        x = self.fc(x).mean(1)
-
-        return self.logsoftmax(x)
