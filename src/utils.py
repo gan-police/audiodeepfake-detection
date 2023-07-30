@@ -1,10 +1,14 @@
 """Set utility functions."""
+import itertools
 import os
+import random
 from argparse import ArgumentParser
 
 import numpy as np
 import torch
 import torchaudio
+
+from scripts.gridsearch_config import get_config
 
 
 def set_seed(seed: int):
@@ -112,10 +116,27 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         help="Log-scale transformed audio.",
     )
     parser.add_argument(
+        "--block-norm",
+        action="store_true",
+        help="Normalize frequency bin with maximum value in packet transformation.",
+    )
+    parser.add_argument(
         "--power",
         type=float,
         default=2.0,
         help="Calculate power spectrum of given factor (for stft and packets) (default: 2.0).",
+    )
+    parser.add_argument(
+        "--dropout-cnn",
+        type=float,
+        default=0.6,
+        help="Dropout of cnn layer (default: 0.6).",
+    )
+    parser.add_argument(
+        "--dropout-lstm",
+        type=float,
+        default=0.3,
+        help="Dropout of bi-lstm layer (default: 0.3).",
     )
     parser.add_argument(
         "--loss-less",
@@ -125,6 +146,11 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         ],
         default="False",
         help="If sign pattern is to be used as second channel, only works for packets.",
+    )
+    parser.add_argument(
+        "--random-seeds",
+        action="store_true",
+        help="Use random seeds.",
     )
     parser.add_argument(
         "--aug-contrast",
@@ -168,6 +194,36 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         help="Shared prefix of the unknown source data paths (default: none).",
     )
     parser.add_argument(
+        "--cross-dir",
+        type=str,
+        help="Shared directory of the unknown source data paths (default: none).",
+    )
+    parser.add_argument(
+        "--cross-prefix",
+        type=str,
+        help="Shared prefix of the unknown source data paths (default: none).",
+    )
+    parser.add_argument(
+        "--cross-sources",
+        type=str,
+        nargs="+",
+        default=[
+            "avocodo",
+            "bigvgan",
+            "bigvganl",
+            "conformer",
+            "hifigan",
+            "melgan",
+            "lmelgan",
+            "mbmelgan",
+            "pwg",
+            "waveglow",
+            "jsutmbmelgan",
+            "jsutpwg",
+        ],
+        help="Shared source names of the unknown source data paths.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=0,
@@ -185,6 +241,8 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
             "onednet",
             "learndeepnet",
             "lcnn",
+            "gridmodel",
+            "modules",
         ],
         default="lcnn",
         help="The model type (default: lcnn).",
@@ -194,6 +252,11 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         type=int,
         default=2,
         help="Number of output classes in model (default: 2).",
+    )
+    parser.add_argument(
+        "--enable-gs",
+        action="store_true",
+        help="Enables a grid search with values from the config file.",
     )
 
     parser.add_argument(
@@ -219,13 +282,18 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         default=1,
         help="Save model after a fixed number of epochs. (default: 1)",
     )
+    parser.add_argument(
+        "--ddp",
+        action="store_true",
+        help="Use distributed data parallel from pytorch.",
+    )
 
     return parser
 
 
 def contrast(waveform: torch.Tensor) -> torch.Tensor:
     """Add contrast to waveform."""
-    enhancement_amount = np.random.uniform(0, 100.0)
+    enhancement_amount = np.random.uniform(5.0, 20.0)
     return torchaudio.functional.contrast(waveform, enhancement_amount)
 
 
@@ -306,3 +374,93 @@ def print_results(res_eer, res_acc):
 
     print("avbigvgan")
     print(str_avbig)
+
+
+class _Griderator:
+    """Create an iterator for grid search."""
+
+    def __init__(
+        self, config: dict[str, list], init_seeds: list = None, num_exp: int = 5
+    ) -> None:
+        """Initialize grid search instance.
+
+        Raises:
+            TypeError: If given config file is not of type dict.
+        """
+        if type(config) is not dict:
+            raise TypeError(f"Config file must be of type dict but is {type(config)}.")
+
+        if len(init_seeds) == 0:
+            rand = random.SystemRandom()
+            self.init_config = {"seed": [rand.randrange(10000) for _ in range(num_exp)]}
+        else:
+            self.init_config = {"seed": init_seeds}
+
+        self.init_config.update(config)
+        self.grid_values = list(itertools.product(*self.init_config.values()))
+        self.current = 0
+
+    def get_keys(self):
+        """Get key names of grid item."""
+        return self.init_config.keys()
+
+    def get_len(self):
+        """Get number of runs for this grid."""
+        return len(self.grid_values)
+
+    def __iter__(self):
+        """Return the majesty herself."""
+        return self
+
+    def __next__(self):
+        """Define what to do on next step call.
+
+        Raises:
+            StopIteration: If iterator came to an end.
+        """
+        self.current += 1
+        if self.current < len(self.grid_values):
+            return self.grid_values[self.current]
+        raise StopIteration
+
+    def next(self):
+        """Make next step dot call possible."""
+        return self.__next__()
+
+    def reset(self):
+        """Set iterator to initial value."""
+        self.current = 0
+
+    def update_args(self, args):
+        """Update args with current step values."""
+        for value, key in zip(self.grid_values[self.current], self.get_keys()):
+            if args.get(key) is None:
+                print(f"Added new config key: {key}.")
+            args[key] = value
+        return args
+
+    def update_step(self, args):
+        """Update given config variable with values from the current grid step and make one."""
+        new_args = self.update_args(args)
+        try:
+            new_step = self.__next__()
+        except StopIteration:
+            return new_args, StopIteration
+        return new_args, new_step
+
+
+def init_grid(num_exp: int = 5, init_seeds: list = None) -> _Griderator:
+    """Return a grid iterator using the given config.
+
+    Args:
+        num_exp (int): Number of random seeds to use for grid search.
+    """
+    return _Griderator(get_config(), num_exp=num_exp, init_seeds=init_seeds)
+
+
+class DotDict(dict):
+    """Dot.notation access to dictionary attributes."""
+
+    __getattr__ = dict.get
+    __setattr__ = dict.__setitem__  # type: ignore
+    __delattr__ = dict.__delitem__  # type: ignore

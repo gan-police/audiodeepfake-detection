@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torchaudio
 from torchsummary import summary
+import torchvision.ops as torchvisionops
 
 
 def contrast(waveform: torch.Tensor) -> torch.Tensor:
@@ -41,6 +42,35 @@ def compute_parameter_total(net: torch.nn.Module) -> int:
     return total
 
 
+class GridModelWrapper(nn.Module):
+    """Deep CNN."""
+
+    def __init__(
+        self,
+        sequentials: list,
+        transforms: list,
+        in_channels: int = 1,
+    ) -> None:
+        """Define network sturcture."""
+        super(GridModelWrapper, self).__init__()
+
+        self.sequentials = nn.ParameterList(sequentials)
+        self.transforms = transforms
+        self.len = len(self.sequentials)
+        
+        if len(self.transforms) != self.len:
+            print("Warning: length of transforms and sequentials are not the same.")
+
+    def forward(self, x) -> torch.Tensor:
+        """Forward pass."""
+        for i in range(self.len):
+            x = self.sequentials[i](x)
+            if len(self.transforms) > i:
+                for j in range(len(self.transforms[i])):
+                    x = self.transforms[i][j](x)
+
+        return x
+
 class LCNN(nn.Module):
     """Deep CNN with 2D convolutions for detecting audio deepfakes.
 
@@ -51,7 +81,9 @@ class LCNN(nn.Module):
         self,
         classes: int = 2,
         in_channels: int = 1,
-        lstm_channels: int = 32,
+        lstm_channels: int = 256,
+        dropout_cnn: float = 0.6,
+        dropout_lstm: float = 0.3,
     ) -> None:
         """Define network sturcture."""
         super(LCNN, self).__init__()
@@ -63,35 +95,36 @@ class LCNN(nn.Module):
             nn.MaxPool2d(2, 2),
             nn.Conv2d(32, 64, 1, 1, padding=0),
             MaxFeatureMap2D(),
-            nn.BatchNorm2d(32, affine=False),
+            nn.SyncBatchNorm(32, affine=False),
             nn.Conv2d(32, 96, 3, 1, padding=1),
             MaxFeatureMap2D(),
             nn.MaxPool2d(2, 2),
-            nn.BatchNorm2d(48, affine=False),
+            nn.SyncBatchNorm(48, affine=False),
             nn.Conv2d(48, 96, 1, 1, padding=0),
             MaxFeatureMap2D(),
-            nn.BatchNorm2d(48, affine=False),
+            nn.SyncBatchNorm(48, affine=False),
             nn.Conv2d(48, 128, 3, 1, padding=1),
             MaxFeatureMap2D(),
             nn.MaxPool2d(2, 2),
             nn.Conv2d(64, 128, 1, 1, padding=0),
             MaxFeatureMap2D(),
-            nn.BatchNorm2d(64, affine=False),
+            nn.SyncBatchNorm(64, affine=False),
             nn.Conv2d(64, 64, 3, 1, padding=1),
             MaxFeatureMap2D(),
-            nn.BatchNorm2d(32, affine=False),
+            nn.SyncBatchNorm(32, affine=False),
             nn.Conv2d(32, 64, 1, 1, padding=0),
             MaxFeatureMap2D(),
-            nn.BatchNorm2d(32, affine=False),
+            nn.SyncBatchNorm(32, affine=False),
             nn.Conv2d(32, 64, 3, 1, padding=1),
             MaxFeatureMap2D(),
             nn.MaxPool2d(2, 2),
-            nn.Dropout(0.7),
+            nn.Dropout(dropout_cnn),
         )
 
         self.lstm = nn.Sequential(
             BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
             BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
+            nn.Dropout(dropout_lstm),
         )
 
         self.fc = nn.Linear((lstm_channels // 16) * 32, classes)
@@ -295,13 +328,16 @@ class BLSTMLayer(nn.Module):
 
 
 def get_model(
+    args,
     model_name: str,
     nclasses: int = 2,
     num_of_scales: int = 256,
     flattend_size: int = 21888,
     in_channels: int = 1,
     channels: int = 32,
-) -> LearnDeepNet | OneDNet:
+    dropout_cnn: float = 0.6,
+    dropout_lstm: float = 0.3,
+) -> LearnDeepNet | OneDNet | LCNN:
     """Get torch module model with given parameters."""
     if model_name == "learndeepnet":
         model = LearnDeepNet(
@@ -314,6 +350,8 @@ def get_model(
             classes=nclasses,
             in_channels=in_channels,
             lstm_channels=channels,
+            dropout_cnn=dropout_cnn,
+            dropout_lstm=dropout_lstm,
         )  # type: ignore
     elif model_name == "onednet":
         model = OneDNet(
@@ -321,6 +359,82 @@ def get_model(
             num_of_scales=num_of_scales,
             flattend_size=flattend_size,
         )  # type: ignore
+    elif model_name == "gridmodel":
+        input_shape = (1, 256, 101)
+
+        model_data = [
+            "Conv2d 1 32 3 2",
+            "Conv2d 32 64 3 2",
+            "Flatten",
+            "Linear 96768 2",
+            "ReLU",
+            "Softmax 1",
+        ]
+        import torchvision
+        from functools import partial
+        model_seq = []
+        model_data = [
+            [torchvision.ops, "Permute 0,1,3,2"],
+            "Conv2d 1 64 5 1 2",
+            "MaxFeatureMap2D",
+            "MaxPool2d 2 2",
+            "Conv2d 32 64 1 1 0",
+            "MaxFeatureMap2D",
+            "SyncBatchNorm 32",
+            "Conv2d 32 96 3 1 1",
+            "MaxFeatureMap2D",
+            "MaxPool2d 2 2",
+            "SyncBatchNorm 48",
+            "Conv2d 48 96 1 1 0",
+            "MaxFeatureMap2D",
+            "SyncBatchNorm 48",
+            "Conv2d 48 128 3 1 1",
+            "MaxFeatureMap2D",
+            "MaxPool2d 2 2",
+            "Conv2d 64 128 1 1 0",
+            "MaxFeatureMap2D",
+            "SyncBatchNorm 64",
+            "Conv2d 64 64 3 1 1",
+            "MaxFeatureMap2D",
+            "SyncBatchNorm 32",
+            "Conv2d 32 64 1 1 0",
+            "MaxFeatureMap2D",
+            "SyncBatchNorm 32",
+            "Conv2d 32 64 3 1 1",
+            "MaxFeatureMap2D",
+            "MaxPool2d 2 2",
+            "Dropout 0.7",
+        ]
+        model_data2 = [
+            "BLSTMLayer 512 512",
+            "BLSTMLayer 512 512",
+            "Dropout 0.1",
+            "Linear 512 2",
+        ]
+
+        model_seq.append(parse_sequential(model_data, input_shape))
+        model_seq.append(parse_sequential(model_data2, (1, 512)))
+
+        def transform(x):
+            x = x.permute(0, 2, 1, 3)
+            x = x.contiguous()
+            return x.view(x.shape[0], x.shape[1], -1)
+
+        transforms = [
+            [partial(transform)],
+            [partial(torch.Tensor.mean, dim=1)]
+        ]
+        
+        if False not in model_seq:
+            model = GridModelWrapper(
+                sequentials=model_seq,
+                transforms=transforms,
+            )
+        else:
+            raise RuntimeError("Model not valid.")
+    
+    elif model_name == "modules":
+        model = args.module(args)
     return model
 
 
@@ -349,18 +463,35 @@ def parse_sequential(model_str, input_shape) -> nn.Sequential | bool:
     layers = []
 
     for layer_str in model_str:
-        layer_parts = layer_str.split()
+        if type(layer_str) is list:
+            module = layer_str[0]
+            layer_parts = layer_str[1].split(" ")  
+        else:
+            module = nn     # default
+            layer_parts = layer_str.split(" ")
         try:
-            layer_type = getattr(nn, layer_parts[0])
+            layer_type = getattr(module, layer_parts[0])
         except AttributeError:
             if layer_parts[0] == "MaxFeatureMap2D":
                 layer_type = MaxFeatureMap2D
-            elif layer_parts[0] == "BLSTLayer":
+            elif layer_parts[0] == "BLSTMLayer":
                 layer_type = BLSTMLayer
             else:
+                print(f"Warning: given layer type {layer_parts[0]} not found.")
                 return False
 
-        layer_args = [int(arg) for arg in layer_parts[1:]]
+        layer_args = []
+        for arg in layer_parts[1:]:
+            if "," in arg:  # assume list
+                arg_list = arg.split(",")
+                if "." in arg_list[0]:   # assume float list
+                    layer_args.append([float(a) for a in arg_list])
+                else:   # assume int list
+                    layer_args.append([int(a) for a in arg_list])
+            elif "." in arg:    # assume single float
+                layer_args.append(float(arg))
+            else:   # assume single int
+                layer_args.append(int(arg))
         layer = layer_type(*layer_args)
         layers.append(layer)
 
@@ -376,11 +507,11 @@ def parse_sequential(model_str, input_shape) -> nn.Sequential | bool:
 def check_dimensions(
     model,
     input_shape,
-    verbose: bool = False,
+    verbose: bool = True,
 ) -> bool:
     """Check if model is valid for given dimensions."""
     try:
-        summary(model, input_shape)
+        summary(model, input_shape, verbose=0)
     except RuntimeError as e:
         if verbose:
             print(f"Error: {e}")

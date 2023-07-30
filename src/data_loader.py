@@ -4,6 +4,7 @@ Holds a custom torch Dataset class implementation that prepares the audio
 and cuts it to frames and transforms it with CWT. Dataloader methods
 can be found here to.
 """
+import os
 import pickle
 from pathlib import Path
 from typing import Optional, Tuple
@@ -11,6 +12,14 @@ from typing import Optional, Tuple
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+
+
+def get_ds_label(labels):
+    """Retrieve current label from binary dataset."""
+    for label in labels:
+        if label != 0:
+            return label
+    return np.int64(0)
 
 
 class WelfordEstimator:
@@ -66,7 +75,10 @@ class LearnWavefakeDataset(Dataset):
     def __init__(
         self,
         data_dir: str,
+        source_name: str = "fake",
         key: Optional[str] = "audio",
+        limit: int = -1,
+        verbose: Optional[bool] = False,
     ):
         """Create a Wavefake-dataset object.
 
@@ -84,18 +96,182 @@ class LearnWavefakeDataset(Dataset):
         """
         self.data_dir = data_dir
         self.file_lst = sorted(Path(data_dir).glob("./*.npy"))
-        print("Loading ", data_dir, flush=True)
+        if verbose:
+            print("Loading ", data_dir, flush=True)
         if len(self.file_lst) == 0:
             raise ValueError("empty directory")
         if self.file_lst[-1].name != "labels.npy":
             raise ValueError("unexpected file name for label file.")
+
         self.labels = np.load(self.file_lst[-1])
         self.audios = np.array(self.file_lst[:-1])
+
+        self.labels = self.labels[:limit]
+        self.audios = self.audios[:limit]
+
         self.key = key
+        self.label_names = {0: "original", get_ds_label(self.labels): source_name}
 
     def _load_mean_std(self):
         with open(self.data_dir + "/mean_std.pkl", "rb") as f:
             return pickle.load(f)
+
+    def get_label_name(self, key):
+        if key in self.label_names.keys():
+            return self.label_names[key]
+        else:
+            return f"John Doe Generator {key}"
+
+    def __len__(self) -> int:
+        """Return the data set length."""
+        return len(self.labels)
+
+    def __getitem__(self, idx: int) -> dict:
+        """Get a dataset element.
+
+        Args:
+            idx (int): The element index of the data pair to return.
+
+        Returns:
+            sample (dict): Returns a dictionary with the self.key
+                    default ("audio") and "label" keys.
+        """
+        audio_path = self.audios[idx]
+        audio = np.load(audio_path)
+        audio = torch.from_numpy(audio.astype(np.float32))
+
+        label = self.labels[idx]
+        label = torch.tensor(int(label))
+        sample = {self.key: audio, "label": label}
+        return sample
+
+
+class CrossWavefakeDataset(Dataset):
+    """Create a data loader to load pre-processed numpy arrays into memory."""
+
+    def __init__(
+        self,
+        sources: list,
+        base_path: str = "/home/s6kogase/data/run6",
+        postfix: str = "_test",
+        prefix: str = "fake_22050_22050_0.7_",
+        limit: int = -1,
+        key: Optional[str] = "audio",
+        verbose: Optional[bool] = False,
+    ):
+        """Create a Wavefake-dataset object.
+
+        Dataset with additional transforming in cwt space.
+
+        Args:
+            key: The key for the input or 'x' component of the dataset.
+                Defaults to "audio".
+
+        Raises:
+            RuntimeError: If there are problems with the given data paths.
+
+        # noqa: DAR401
+        """
+        if verbose:
+            print("Loading cross dataset...", flush=True)
+        legit_folders = [f"{prefix}{source}{postfix}" for source in sources]
+        init_size = None
+        required_num = 0
+        real_done = False
+        unique_labels = None
+        real_count = 0
+
+        labels = []
+        paths = []
+
+        for folder in os.listdir(base_path):
+            if folder not in legit_folders:
+                continue
+            required_num += 1
+
+        label_source_names = {}
+        label_source_names[0] = "original"
+
+        def get_free_label(unique_labels):
+            if len(unique_labels) == 0:
+                raise RuntimeError(
+                    "Function call only possible on arrays with positive length."
+                )
+
+            if 0 in unique_labels:
+                unique_labels = np.delete(unique_labels, 0)
+
+            unique_labels.sort()
+
+            for i in range(len(unique_labels)):
+                if i + 1 == unique_labels[i]:
+                    continue
+                else:
+                    return np.int64(i + 1)
+            return np.int64(i + 2)
+
+        def get_source_name(folder, sources):
+            for source in sources:
+                if f"_{source}_" in folder:
+                    return source
+
+        for folder in os.listdir(base_path):
+            if folder not in legit_folders:
+                continue
+            dataset = LearnWavefakeDataset(f"{base_path}/{folder}", verbose=False)
+            if init_size is None:
+                init_size = len(dataset)
+                if limit > 0 and limit < init_size // 2:
+                    required_samples = limit
+                else:
+                    required_samples = init_size // 2
+                real_count = 0
+            elif init_size != len(dataset):
+                raise RuntimeError(f"{folder} contains to little samples.")
+            else:
+                unique_labels = np.unique(np.asarray(labels))
+
+            file_count = 0
+
+            # make sure that there will only be unique values in dataset
+            target_label = get_ds_label(dataset.labels)
+            if unique_labels is not None:
+                this_label = target_label
+                if this_label in unique_labels:
+                    target_label = get_free_label(unique_labels)
+                    if verbose:
+                        print(
+                            f"Setting target label from {this_label} to {target_label}."
+                        )
+
+            label_source_names[target_label] = get_source_name(folder, sources)
+
+            for path, label in zip(dataset.audios, dataset.labels):
+                if real_done and file_count >= required_samples:
+                    break
+                if label == 0 and not real_done:
+                    real_count += 1
+                    paths.append(path)
+                    labels.append(label)
+                    if real_count == required_samples:
+                        real_done = True
+                elif label != 0 and file_count < required_samples:
+                    paths.append(path)
+                    labels.append(target_label)
+                    file_count += 1
+
+        self.labels = np.asarray(labels)
+        self.audios = np.asarray(paths)
+
+        self.label_names = label_source_names
+
+        self.key = key
+
+    def get_label_name(self, key):
+        if key in self.label_names.keys():
+            return self.label_names[key]
+        else:
+            return f"John Doe Generator {key}"
 
     def __len__(self) -> int:
         """Return the data set length."""
