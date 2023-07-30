@@ -6,7 +6,9 @@ import torch
 import torch.nn as nn
 import torchaudio
 from torchsummary import summary
-import torchvision.ops as torchvisionops
+
+import ast
+from copy import copy
 
 
 def contrast(waveform: torch.Tensor) -> torch.Tensor:
@@ -131,9 +133,11 @@ class LCNN(nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
+        x_init = x
         x = self.lcnn(x.permute(0, 1, 3, 2))
         x = x.permute(0, 2, 1, 3).contiguous()
         shape = x.shape
+        import pdb; pdb.set_trace()
         x = self.lstm(x.view(shape[0], shape[1], -1))
         x = self.fc(x).mean(1)
 
@@ -360,70 +364,25 @@ def get_model(
             flattend_size=flattend_size,
         )  # type: ignore
     elif model_name == "gridmodel":
-        input_shape = (1, 256, 101)
-
-        model_data = [
-            "Conv2d 1 32 3 2",
-            "Conv2d 32 64 3 2",
-            "Flatten",
-            "Linear 96768 2",
-            "ReLU",
-            "Softmax 1",
-        ]
-        import torchvision
-        from functools import partial
         model_seq = []
-        model_data = [
-            [torchvision.ops, "Permute 0,1,3,2"],
-            "Conv2d 1 64 5 1 2",
-            "MaxFeatureMap2D",
-            "MaxPool2d 2 2",
-            "Conv2d 32 64 1 1 0",
-            "MaxFeatureMap2D",
-            "SyncBatchNorm 32",
-            "Conv2d 32 96 3 1 1",
-            "MaxFeatureMap2D",
-            "MaxPool2d 2 2",
-            "SyncBatchNorm 48",
-            "Conv2d 48 96 1 1 0",
-            "MaxFeatureMap2D",
-            "SyncBatchNorm 48",
-            "Conv2d 48 128 3 1 1",
-            "MaxFeatureMap2D",
-            "MaxPool2d 2 2",
-            "Conv2d 64 128 1 1 0",
-            "MaxFeatureMap2D",
-            "SyncBatchNorm 64",
-            "Conv2d 64 64 3 1 1",
-            "MaxFeatureMap2D",
-            "SyncBatchNorm 32",
-            "Conv2d 32 64 1 1 0",
-            "MaxFeatureMap2D",
-            "SyncBatchNorm 32",
-            "Conv2d 32 64 3 1 1",
-            "MaxFeatureMap2D",
-            "MaxPool2d 2 2",
-            "Dropout 0.7",
-        ]
-        model_data2 = [
-            "BLSTMLayer 512 512",
-            "BLSTMLayer 512 512",
-            "Dropout 0.1",
-            "Linear 512 2",
-        ]
+        transforms = []
+        for model_layer in args.model_data:
+            if "input_shape" in model_layer.keys():
+                input_shape = model_layer["input_shape"]
+            else:
+                input_shape = None
+            
+            if "transforms" in model_layer.keys():
+                transform = model_layer["transforms"]
+            else:
+                transform = []
 
-        model_seq.append(parse_sequential(model_data, input_shape))
-        model_seq.append(parse_sequential(model_data2, (1, 512)))
 
-        def transform(x):
-            x = x.permute(0, 2, 1, 3)
-            x = x.contiguous()
-            return x.view(x.shape[0], x.shape[1], -1)
-
-        transforms = [
-            [partial(transform)],
-            [partial(torch.Tensor.mean, dim=1)]
-        ]
+            model_seq.append(parse_sequential(
+                model_list=model_layer["layers"],
+                input_shape=input_shape
+            ))
+            transforms.append(transform)
         
         if False not in model_seq:
             model = GridModelWrapper(
@@ -434,8 +393,74 @@ def get_model(
             raise RuntimeError("Model not valid.")
     
     elif model_name == "modules":
-        model = args.module(args)
+        if check_dimensions(args.module(args), args.input_dim[1:]):
+            model = args.module(args)
+        else:
+            raise RuntimeError("Model not valid.")
+    else:
+        raise RuntimeError(f"Model with model string '{model_name}' does not exist.")
     return model
+
+
+def parse_model_str(model_str):
+    parsed_output = []
+    for element in model_str:
+        new_elements = []
+        output_els = 1
+        postfix = None
+        if isinstance(element, list):
+            postfix = element[0]
+            element = element[-1]   # bcause element = [module, layer]
+        if isinstance(element, str):
+            split = element.split()
+            element_parts = [ast.literal_eval(part) for part in split[1:]]  # assuming pattern: "Class args"
+            element_parts.insert(0, split[0])
+        else:
+            raise RuntimeError(f"Model string invalid at {element}.")
+                
+        # get number of combinations. Must be the same for each layer element.
+        for part in element_parts:
+            if isinstance(part, list):
+                if output_els == 1:
+                    output_els = len(part)
+                    break
+                
+        for i in range(output_els):
+            output_list = []
+
+            for part in element_parts:
+                if isinstance(part, list):
+                    if output_els != len(part):
+                        raise RuntimeError(f"Model layers must contain the same amount of elements. Expected {output_els}, but got {len(part)}.")
+                    part = part[i]
+                output_list.append(str(part).replace(" ", ""))
+            if postfix is not None:
+                output_list = [postfix, output_list]
+            new_elements.append(output_list)
+                
+        if len(parsed_output) > 0:
+            last_layer = copy(parsed_output[-1])
+        else:
+            last_layer = None
+
+        for i in range(len(new_elements)):
+            if len(parsed_output) == 0:
+                parsed_output = [[new_elements[i]]]
+            elif len(parsed_output) < i + 1:
+                if last_layer is not None:
+                    layer = copy(last_layer)
+                    layer.append(new_elements[i])
+                else:
+                    layer = [new_elements[i]]
+                parsed_output.append(layer)
+            else:
+                if len(new_elements) == 1:
+                    for part in parsed_output:
+                        part.append(new_elements[i])
+                else:
+                    parsed_output[i].append(new_elements[i])
+
+    return parsed_output
 
 
 def save_model(model: torch.nn.Module, path) -> None:
@@ -458,17 +483,17 @@ def initialize_model(model: torch.nn.Module, path) -> torch.nn.Module:
     return model.load_state_dict(torch.load(path))
 
 
-def parse_sequential(model_str, input_shape) -> nn.Sequential | bool:
+def parse_sequential(model_list, input_shape=None) -> nn.Sequential | bool:
     """Parse given model into torch.nn.Module."""
     layers = []
 
-    for layer_str in model_str:
-        if type(layer_str) is list:
-            module = layer_str[0]
-            layer_parts = layer_str[1].split(" ")  
+    for layer in model_list:
+        if not isinstance(layer[0], str):
+            module = layer[0]
+            layer_parts = layer[1]  
         else:
             module = nn     # default
-            layer_parts = layer_str.split(" ")
+            layer_parts = layer
         try:
             layer_type = getattr(module, layer_parts[0])
         except AttributeError:
@@ -480,28 +505,20 @@ def parse_sequential(model_str, input_shape) -> nn.Sequential | bool:
                 print(f"Warning: given layer type {layer_parts[0]} not found.")
                 return False
 
-        layer_args = []
-        for arg in layer_parts[1:]:
-            if "," in arg:  # assume list
-                arg_list = arg.split(",")
-                if "." in arg_list[0]:   # assume float list
-                    layer_args.append([float(a) for a in arg_list])
-                else:   # assume int list
-                    layer_args.append([int(a) for a in arg_list])
-            elif "." in arg:    # assume single float
-                layer_args.append(float(arg))
-            else:   # assume single int
-                layer_args.append(int(arg))
+        import ast
+        layer_args = [ast.literal_eval(part) for part in layer_parts[1:]]
         layer = layer_type(*layer_args)
         layers.append(layer)
 
     model = nn.Sequential(*layers)
-    dim_check = check_dimensions(model, input_shape)
-
-    if not dim_check:
-        return False
-    else:
-        return model
+    
+    # only perform dim check if input_shape is given
+    if input_shape is not None:
+        dim_check = check_dimensions(model, input_shape)
+        if not dim_check:
+            return False
+    
+    return model
 
 
 def check_dimensions(

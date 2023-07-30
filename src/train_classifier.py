@@ -28,6 +28,7 @@ from src.utils import (
     contrast,
     init_grid,
     set_seed,
+    get_input_dims
 )
 from src.wavelet_math import get_transforms
 
@@ -103,13 +104,13 @@ def create_data_loaders(
                 base_path=args.cross_dir,
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
-                limit=1000,
+                limit=2500,
             )
             cross_set_val = CrossWavefakeDataset(
                 base_path=args.cross_dir,
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
-                limit=2000,
+                limit=1000,
             )
         else:
             cross_set_val = LearnWavefakeDataset(
@@ -464,6 +465,7 @@ class Trainer:
 
         if self.args.aug_contrast:
             batch_audios = contrast(batch_audios)
+            #
             # batch_audios = torchaudio.functional.preemphasis(batch_audios, np.random.uniform(0., 1.0))
             # batch_audios = torchaudio.functional.dither(batch_audios)
         if self.args.aug_noise:
@@ -525,9 +527,9 @@ class Trainer:
             self._run_epoch(epoch)
 
             if is_lead(self.args):
-                if epoch % self.args.ckpt_every == 0:
+                if (epoch > 0 and epoch % self.args.ckpt_every == 0) or (epoch == 0 and self.args.ckpt_every == 1):
                     self._save_snapshot(epoch)
-            if epoch % self.args.validation_interval == 0:
+            if (epoch > 0 and epoch % self.args.validation_interval == 0) or (epoch == 0 and self.args.validation_interval == 1):
                 self._run_validation(epoch)
             if epoch == max_epochs - 1:
                 if is_lead(self.args):
@@ -578,7 +580,7 @@ def main():
     parsed_args = _parse_args()
     args = DotDict(vars(parsed_args))
 
-    args.num_workers = 8
+    args.num_workers = 4
 
     if args.ddp:
         ddp_setup()
@@ -603,7 +605,7 @@ def main():
         if not args.random_seeds:
             griderator = init_grid(num_exp=5, init_seeds=[0, 1, 2, 3, 4])
         else:
-            griderator = init_grid(num_exp=3)
+            griderator = init_grid(num_exp=4)
         num_exp = griderator.get_len()
 
     for _exp_number in range(num_exp):
@@ -725,6 +727,17 @@ def main():
         else:
             channels = int(args.num_of_scales)
 
+        transforms, normalize = get_transforms(
+            args,
+            args.data_prefix,
+            features,
+            device,
+            args.calc_normalization,
+            pbar=args.pbar,
+        )
+
+        args.input_dim = get_input_dims(args=args, transforms=transforms)
+
         try:
             model = get_model(
                 args=args,
@@ -749,7 +762,7 @@ def main():
             cross_loader_test,
         ) = create_data_loaders(
             args=args,
-            limit=20000,
+            limit=-1,
             num_workers=args.num_workers,
         )
 
@@ -759,15 +772,6 @@ def main():
             model.parameters(),
             lr=args.learning_rate,
             weight_decay=args.weight_decay,
-        )
-
-        transforms, normalize = get_transforms(
-            args,
-            args.data_prefix,
-            features,
-            device,
-            args.calc_normalization,
-            pbar=args.pbar,
         )
 
         trainer = Trainer(
