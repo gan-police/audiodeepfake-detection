@@ -104,7 +104,7 @@ def create_data_loaders(
                 base_path=args.cross_dir,
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
-                limit=5000,
+                limit=2500,
             )
             cross_set_val = CrossWavefakeDataset(
                 base_path=args.cross_dir,
@@ -603,9 +603,9 @@ def main():
             print("--------------- Starting grid search -----------------")
 
         if not args.random_seeds:
-            griderator = init_grid(num_exp=5, init_seeds=[42, 21, 11])
+            griderator = init_grid(num_exp=5, init_seeds=[0, 1, 2, 3, 4])
         else:
-            griderator = init_grid(num_exp=5)
+            griderator = init_grid(num_exp=4)
         num_exp = griderator.get_len()
 
     for _exp_number in range(num_exp):

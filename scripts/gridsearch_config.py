@@ -70,8 +70,8 @@ def get_config() -> dict:
         "learning_rate": [0.0005],
         "weight_decay": [0.001],
         "wavelet": ["sym8"],
-        "dropout_cnn": [0.6],
-        "dropout_lstm": [0.1],
+        "dropout_cnn": [0.5],
+        "dropout_lstm": [0.2],
         "num_of_scales": [256],
         "epochs": [10],
         "validation_interval": [10],
@@ -82,7 +82,9 @@ def get_config() -> dict:
         "model_data": model_data,
         "module": [TestNet],
         "kernel1": [3],
-        "ochannels1": [128],
+        "ochannels1": [64],
+        "ochannels2": [72],
+        "ochannels5": [32],
     }
 
     # parse model data if exists
@@ -214,20 +216,20 @@ class TestNet(torch.nn.Module):
             nn.PReLU(),
             nn.MaxPool2d(2, 2),
             nn.SyncBatchNorm(args.ochannels1, affine=False),
-            nn.Conv2d(args.ochannels1, 64, 1, 1, padding=0),
+            nn.Conv2d(args.ochannels1, args.ochannels2, 1, 1, padding=0),
             nn.PReLU(),
-            nn.SyncBatchNorm(64, affine=False),
-            nn.Conv2d(64, 96, 3, 1, padding=1),
+            nn.SyncBatchNorm(args.ochannels2, affine=False),
+            nn.Conv2d(args.ochannels2, 96, 3, 1, padding=1),
             nn.PReLU(),
             nn.MaxPool2d(2, 2),
             nn.SyncBatchNorm(96, affine=False),
             nn.Conv2d(96, 128, 3, 1, padding=1),
             nn.PReLU(),
             nn.SyncBatchNorm(128, affine=False),
-            nn.Conv2d(128, 64, 3, 1, padding=1),
+            nn.Conv2d(128, args.ochannels5, 3, 1, padding=1),
             nn.PReLU(),
-            nn.SyncBatchNorm(64, affine=False),
-            nn.Conv2d(64, 64, 3, 1, padding=1),
+            nn.SyncBatchNorm(args.ochannels5, affine=False),
+            nn.Conv2d(args.ochannels5, 64, 3, 1, padding=1),
             nn.PReLU(),
             nn.MaxPool2d(2, 2),
             nn.Dropout(args.dropout_cnn),
@@ -249,12 +251,20 @@ class TestNet(torch.nn.Module):
             nn.Flatten(2),
             nn.Linear(args.flattend_size, 2),
         )
+        self.single_gpu = not args.ddp
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
+        # [batch, channels, packets, time]
         x = self.lcnn(x.permute(0, 1, 3, 2))
+
+        # [batch, channels, time, packets]
         x = x.permute(0, 2, 1, 3).contiguous()
         
+        if self.single_gpu:
+            import pdb; pdb.set_trace()
+
+        # "[batch, time, channels, packets]"
         x = self.lstm(x)
         x = self.fc(x).mean(1)
 
