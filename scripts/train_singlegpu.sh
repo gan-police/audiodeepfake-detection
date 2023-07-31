@@ -46,7 +46,7 @@ python -m src.train_classifier \
     --loss-less $6 \
     --flattend-size $7 \
     --aug-contrast \
-    --hop-length 100 \
+    --hop-length 220 \
     --log-scale \
     --f-min 1 \
     --f-max 11025 \

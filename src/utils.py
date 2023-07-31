@@ -474,6 +474,11 @@ def get_input_dims(args, transforms) -> list:
         freq_time_dt, _ = transforms(
             dataset.__getitem__(0)["audio"].cuda(non_blocking=True)
         )
+    
     shape = list(freq_time_dt.shape)
-    shape[0] = args.batch_size
+    
+    if len(shape) < 4:
+        shape.insert(0, args.batch_size)
+    else:
+        shape[0] = args.batch_size
     return shape

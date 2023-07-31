@@ -68,9 +68,9 @@ def get_config() -> dict:
 
     config = {
         "learning_rate": [0.0005],
-        "weight_decay": [0.001],
+        "weight_decay": [0.005],
         "wavelet": ["sym8"],
-        "dropout_cnn": [0.5],
+        "dropout_cnn": [0.6],
         "dropout_lstm": [0.2],
         "num_of_scales": [256],
         "epochs": [10],
@@ -82,9 +82,11 @@ def get_config() -> dict:
         "model_data": model_data,
         "module": [TestNet],
         "kernel1": [3],
-        "ochannels1": [64],
-        "ochannels2": [72],
-        "ochannels5": [32],
+        "ochannels1": [32],
+        "ochannels2": [64],
+        "ochannels3": [96],
+        "ochannels4": [128],
+        "ochannels5": [64],
     }
 
     # parse model data if exists
@@ -219,14 +221,14 @@ class TestNet(torch.nn.Module):
             nn.Conv2d(args.ochannels1, args.ochannels2, 1, 1, padding=0),
             nn.PReLU(),
             nn.SyncBatchNorm(args.ochannels2, affine=False),
-            nn.Conv2d(args.ochannels2, 96, 3, 1, padding=1),
+            nn.Conv2d(args.ochannels2, args.ochannels3, 3, 1, padding=1),
             nn.PReLU(),
             nn.MaxPool2d(2, 2),
-            nn.SyncBatchNorm(96, affine=False),
-            nn.Conv2d(96, 128, 3, 1, padding=1),
+            nn.SyncBatchNorm(args.ochannels3, affine=False),
+            nn.Conv2d(args.ochannels3, args.ochannels4, 3, 1, padding=1),
             nn.PReLU(),
-            nn.SyncBatchNorm(128, affine=False),
-            nn.Conv2d(128, args.ochannels5, 3, 1, padding=1),
+            nn.SyncBatchNorm(args.ochannels4, affine=False),
+            nn.Conv2d(args.ochannels4, args.ochannels5, 3, 1, padding=1),
             nn.PReLU(),
             nn.SyncBatchNorm(args.ochannels5, affine=False),
             nn.Conv2d(args.ochannels5, 64, 3, 1, padding=1),
@@ -255,14 +257,14 @@ class TestNet(torch.nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
+        if self.single_gpu:
+            import pdb; pdb.set_trace()
+
         # [batch, channels, packets, time]
         x = self.lcnn(x.permute(0, 1, 3, 2))
 
         # [batch, channels, time, packets]
-        x = x.permute(0, 2, 1, 3).contiguous()
-        
-        if self.single_gpu:
-            import pdb; pdb.set_trace()
+        x = x.permute(0, 2, 1, 3).contiguous()     
 
         # "[batch, time, channels, packets]"
         x = self.lstm(x)

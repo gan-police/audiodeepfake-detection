@@ -106,6 +106,10 @@ class LearnWavefakeDataset(Dataset):
         self.labels = np.load(self.file_lst[-1])
         self.audios = np.array(self.file_lst[:-1])
 
+        if limit == -1:
+            limit = len(self.audios)
+        limit -= (limit // 128) % 8     # same batches if trained with 1, 2, 4, 8 GPUs
+
         self.labels = self.labels[:limit]
         self.audios = self.audios[:limit]
 

@@ -8,7 +8,7 @@ import torch
 from scipy.interpolate import interp1d
 from scipy.optimize import brentq
 from sklearn.metrics import roc_curve
-from torch.distributed import destroy_process_group, init_process_group
+from torch.distributed import destroy_process_group, init_process_group, barrier
 from torch.nn.parallel import DistributedDataParallel as DiDiP
 from torch.optim import Adam
 from torch.utils.data import DataLoader
@@ -104,22 +104,22 @@ def create_data_loaders(
                 base_path=args.cross_dir,
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
-                limit=2500,
+                limit=31744,     # same batches if trained with 1, 2, 4, 8 GPUs
             )
             cross_set_val = CrossWavefakeDataset(
                 base_path=args.cross_dir,
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
-                limit=1000,
+                limit=1024,
             )
         else:
             cross_set_val = LearnWavefakeDataset(
                 args.unknown_prefix + "_val",
-                limit=1000,
+                limit=1024,
             )
             cross_set_test = LearnWavefakeDataset(
                 args.unknown_prefix + "_test",
-                limit=2000,
+                limit=2048,
             )
 
         if args.ddp:
@@ -353,7 +353,10 @@ class Trainer:
             ok_dict_gathered = [ok_dict]
             count_dict_gathered = [count_dict]
 
-        # torch.cuda.synchronize()
+        if self.args.ddp:
+            torch.cuda.synchronize()
+            barrier()   # synchronize all processes
+
         if is_lead(self.args):
             print(
                 f"{name} - ",
@@ -603,7 +606,7 @@ def main():
             print("--------------- Starting grid search -----------------")
 
         if not args.random_seeds:
-            griderator = init_grid(num_exp=5, init_seeds=[0, 1, 2, 3, 4])
+            griderator = init_grid(num_exp=5, init_seeds=[2, 1, 0, 3, 4])
         else:
             griderator = init_grid(num_exp=4)
         num_exp = griderator.get_len()

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#SBATCH --nodes=2
+#SBATCH --nodes=1
 #SBATCH --job-name=train
 #SBATCH --gres=gpu:4
 #SBATCH --cpus-per-task=32
@@ -52,7 +52,7 @@ src/train_classifier.py \
     --loss-less $6 \
     --flattend-size $7 \
     --aug-contrast \
-    --hop-length 100 \
+    --hop-length 220 \
     --log-scale \
     --f-min 1 \
     --f-max 11025 \
