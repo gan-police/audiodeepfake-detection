@@ -67,8 +67,8 @@ def get_config() -> dict:
         model_data = [None]
 
     config = {
-        "learning_rate": [0.0005],
-        "weight_decay": [0.005],
+        "learning_rate": [0.00025, 0.0001, 0.00005, 0.00001],
+        "weight_decay": [0.001],
         "wavelet": ["sym8"],
         "dropout_cnn": [0.6],
         "dropout_lstm": [0.2],
@@ -82,11 +82,11 @@ def get_config() -> dict:
         "model_data": model_data,
         "module": [TestNet],
         "kernel1": [3],
-        "ochannels1": [32],
-        "ochannels2": [64],
+        "ochannels1": [64],
+        "ochannels2": [64, 32],
         "ochannels3": [96],
         "ochannels4": [128],
-        "ochannels5": [64],
+        "ochannels5": [32],
     }
 
     # parse model data if exists
@@ -236,15 +236,16 @@ class TestNet(torch.nn.Module):
             nn.MaxPool2d(2, 2),
             nn.Dropout(args.dropout_cnn),
         )
-
-        self.lstm = nn.Sequential(
-            nn.Conv2d(12, 12, 3, 1, padding=1, dilation=1),
+        time_dim = 12
+        self.dil_conv = nn.Sequential(
+            nn.SyncBatchNorm(time_dim, affine=True),
+            nn.Conv2d(time_dim, time_dim, 3, 1, padding=1, dilation=1),
             nn.PReLU(),
-            nn.SyncBatchNorm(12, affine=False),
-            nn.Conv2d(12, 12, 5, 1, padding=2, dilation=2),
+            nn.SyncBatchNorm(time_dim, affine=True),
+            nn.Conv2d(time_dim, time_dim, 5, 1, padding=2, dilation=2),
             nn.PReLU(),
-            nn.SyncBatchNorm(12, affine=False),
-            nn.Conv2d(12, 12, 7, 1, padding=2, dilation=4),
+            nn.SyncBatchNorm(time_dim, affine=True),
+            nn.Conv2d(time_dim, time_dim, 7, 1, padding=2, dilation=4),
             nn.PReLU(),
             nn.Dropout(args.dropout_lstm),
         )
@@ -267,7 +268,7 @@ class TestNet(torch.nn.Module):
         x = x.permute(0, 2, 1, 3).contiguous()     
 
         # "[batch, time, channels, packets]"
-        x = self.lstm(x)
+        x = self.dil_conv(x)
         x = self.fc(x).mean(1)
 
         return x

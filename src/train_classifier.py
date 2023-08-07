@@ -104,18 +104,18 @@ def create_data_loaders(
                 base_path=args.cross_dir,
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
-                limit=31744,     # same batches if trained with 1, 2, 4, 8 GPUs
+                limit=15360,     # same batches if trained with 1, 2, 4, 8 GPUs
             )
             cross_set_val = CrossWavefakeDataset(
                 base_path=args.cross_dir,
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
-                limit=1024,
+                limit=2048,
             )
         else:
             cross_set_val = LearnWavefakeDataset(
                 args.unknown_prefix + "_val",
-                limit=1024,
+                limit=2048,
             )
             cross_set_test = LearnWavefakeDataset(
                 args.unknown_prefix + "_test",
@@ -606,7 +606,7 @@ def main():
             print("--------------- Starting grid search -----------------")
 
         if not args.random_seeds:
-            griderator = init_grid(num_exp=5, init_seeds=[2, 1, 0, 3, 4])
+            griderator = init_grid(num_exp=5, init_seeds=[0, 1, 2, 3, 4])
         else:
             griderator = init_grid(num_exp=4)
         num_exp = griderator.get_len()
@@ -771,9 +771,12 @@ def main():
 
         loss_fun = torch.nn.CrossEntropyLoss()
 
+        #import pdb; pdb.set_trace()
+        #lr = args.learning_rate * 4
+        lr = args.learning_rate * 4     # num of gpus
         optimizer = Adam(
             model.parameters(),
-            lr=args.learning_rate,
+            lr=lr,
             weight_decay=args.weight_decay,
         )
 
