@@ -3,8 +3,8 @@
 #SBATCH --nodes=1
 #SBATCH --job-name=train
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=32
-#SBATCH --partition=A100medium
+#SBATCH --cpus-per-task=8
+#SBATCH --partition=A40short
 #SBATCH --output=exp/log5/slurm/train/train_%A_%a.out
 #SBATCH --error=exp/log5/slurm/train/train_%A_%a.err
 
@@ -46,7 +46,7 @@ python -m src.train_classifier \
     --loss-less $6 \
     --flattend-size $7 \
     --aug-contrast \
-    --hop-length 100 \
+    --hop-length 220 \
     --log-scale \
     --f-min 1 \
     --f-max 11025 \

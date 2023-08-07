@@ -1,10 +1,10 @@
 #!/bin/bash
 #
-#SBATCH --nodes=2
+#SBATCH --nodes=1
 #SBATCH --job-name=train
-#SBATCH --gres=gpu:4
-#SBATCH --cpus-per-task=32
-#SBATCH --partition=A40short
+#SBATCH --gres=gpu:8
+#SBATCH --cpus-per-task=255
+#SBATCH --partition=A100short
 #SBATCH --output=exp/log5/slurm/train/train_%A_%a.out
 #SBATCH --error=exp/log5/slurm/train/train_%A_%a.err
 
@@ -25,9 +25,9 @@ conda activate py310
 
 echo -e "Training..."
 
-torchrun \
+srun torchrun \
 --nnodes 1 \
---nproc_per_node 4 \
+--nproc_per_node 8 \
 --rdzv_id $SLURM_JOB_ID \
 --rdzv_backend c10d \
 --rdzv_endpoint $head_node_ip:29400 \
@@ -52,7 +52,7 @@ src/train_classifier.py \
     --loss-less $6 \
     --flattend-size $7 \
     --aug-contrast \
-    --hop-length 100 \
+    --hop-length 220 \
     --log-scale \
     --f-min 1 \
     --f-max 11025 \

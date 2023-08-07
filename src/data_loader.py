@@ -106,6 +106,27 @@ class LearnWavefakeDataset(Dataset):
         self.labels = np.load(self.file_lst[-1])
         self.audios = np.array(self.file_lst[:-1])
 
+        if limit == -1:
+            limit = len(self.audios)
+        limit -= (limit // 128) % 8     # same batches if trained with 1, 2, 4, 8 GPUs
+
+        # keep equally distributed structure
+        del_num = len(self.audios) - limit
+        pos_count = del_num // 2
+        neg_count = del_num // 2
+
+        for i in range(len(self.audios)):
+            if self.labels[i] == 0 and pos_count > 0:
+                pos_count -= 1
+                self.labels = np.delete(self.labels, i)
+                self.audios = np.delete(self.audios, i)
+            elif self.audios[i] != 0 and neg_count > 0:
+                neg_count -= 1
+                self.labels = np.delete(self.labels, i)
+                self.audios = np.delete(self.audios, i)
+            elif pos_count == 0 and neg_count == 0:
+                break
+            
         self.labels = self.labels[:limit]
         self.audios = self.audios[:limit]
 
@@ -221,10 +242,10 @@ class CrossWavefakeDataset(Dataset):
             dataset = LearnWavefakeDataset(f"{base_path}/{folder}", verbose=False)
             if init_size is None:
                 init_size = len(dataset)
-                if limit > 0 and limit < init_size // 2:
+                if limit > 0 and limit <= init_size:
                     required_samples = limit
                 else:
-                    required_samples = init_size // 2
+                    required_samples = init_size
                 real_count = 0
             elif init_size != len(dataset):
                 raise RuntimeError(f"{folder} contains to little samples.")
@@ -262,7 +283,7 @@ class CrossWavefakeDataset(Dataset):
 
         self.labels = np.asarray(labels)
         self.audios = np.asarray(paths)
-
+        
         self.label_names = label_source_names
 
         self.key = key

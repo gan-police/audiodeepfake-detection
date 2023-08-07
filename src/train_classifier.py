@@ -8,7 +8,7 @@ import torch
 from scipy.interpolate import interp1d
 from scipy.optimize import brentq
 from sklearn.metrics import roc_curve
-from torch.distributed import destroy_process_group, init_process_group
+from torch.distributed import destroy_process_group, init_process_group, barrier
 from torch.nn.parallel import DistributedDataParallel as DiDiP
 from torch.optim import Adam
 from torch.utils.data import DataLoader
@@ -104,22 +104,22 @@ def create_data_loaders(
                 base_path=args.cross_dir,
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
-                limit=2500,
+                limit=15360,     # same batches if trained with 1, 2, 4, 8 GPUs
             )
             cross_set_val = CrossWavefakeDataset(
                 base_path=args.cross_dir,
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
-                limit=1000,
+                limit=2048,
             )
         else:
             cross_set_val = LearnWavefakeDataset(
                 args.unknown_prefix + "_val",
-                limit=1000,
+                limit=2048,
             )
             cross_set_test = LearnWavefakeDataset(
                 args.unknown_prefix + "_test",
-                limit=2000,
+                limit=2048,
             )
 
         if args.ddp:
@@ -353,7 +353,10 @@ class Trainer:
             ok_dict_gathered = [ok_dict]
             count_dict_gathered = [count_dict]
 
-        # torch.cuda.synchronize()
+        if self.args.ddp:
+            torch.cuda.synchronize()
+            barrier()   # synchronize all processes
+
         if is_lead(self.args):
             print(
                 f"{name} - ",
@@ -768,9 +771,12 @@ def main():
 
         loss_fun = torch.nn.CrossEntropyLoss()
 
+        #import pdb; pdb.set_trace()
+        #lr = args.learning_rate * 4
+        lr = args.learning_rate * 4     # num of gpus
         optimizer = Adam(
             model.parameters(),
-            lr=args.learning_rate,
+            lr=lr,
             weight_decay=args.weight_decay,
         )
 

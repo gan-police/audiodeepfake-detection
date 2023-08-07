@@ -46,6 +46,7 @@ class STFTLayer(torch.nn.Module):
         ).cuda()
         self.log_scale = log_scale
         self.log_offset = log_offset
+        self.block_norm_dict = None
 
     def forward(self, input) -> torch.Tensor:
         """Transform input into frequency-time-representation.
@@ -59,7 +60,7 @@ class STFTLayer(torch.nn.Module):
         if self.log_scale:
             specgram = torch.log(specgram + 1e-12)
 
-        return specgram
+        return specgram, None
 
 
 class LFCC(torch.nn.Module):

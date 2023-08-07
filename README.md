@@ -212,6 +212,10 @@ This plots the saliency, the integrated gradients and the mean over all time of 
 ## Issues
 As we use the Adam optimizer of the python module pytorch, we recommend to use torch 2.0.0, torchaudio 2.0.0 and cuda 11.7.
 
+Important: If training with multiple GPUs be aware of the train, test and val set sizes to be equal to our initial settings to get reproducible results.
+They should e.g. be multiples of batch size * number of GPUs to have the same sizes when training with 1, 2, 4, 6, 8 or 16 GPUs.
+When training and testing on different GPU hardware than our settings we cannot guarantee equal results.
+
 ## Citation
 This work is in the public domain. Feel free to use my material, but please cite it properly.
 ```
