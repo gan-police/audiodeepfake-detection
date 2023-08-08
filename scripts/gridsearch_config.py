@@ -67,14 +67,14 @@ def get_config() -> dict:
         model_data = [None]
 
     config = {
-        "learning_rate": [0.00025, 0.0001, 0.00005, 0.00001],
-        "weight_decay": [0.001],
+        "learning_rate": [0.0001],
+        "weight_decay": [0.001, 0.01, 0.0001],
         "wavelet": ["sym8"],
         "dropout_cnn": [0.6],
         "dropout_lstm": [0.2],
         "num_of_scales": [256],
         "epochs": [10],
-        "validation_interval": [10],
+        "validation_interval": [1],
         "block_norm": [False],
         "batch_size": [128],
         "aug_contrast": [False],
@@ -82,8 +82,9 @@ def get_config() -> dict:
         "model_data": model_data,
         "module": [TestNet],
         "kernel1": [3],
+        "num_devices": [8],
         "ochannels1": [64],
-        "ochannels2": [64, 32],
+        "ochannels2": [32],
         "ochannels3": [96],
         "ochannels4": [128],
         "ochannels5": [32],
@@ -213,6 +214,8 @@ class TestNet(torch.nn.Module):
         """Define network sturcture."""
         super(TestNet, self).__init__()
 
+        #self.upsample = nn.ConvTranspose2d(1, 1, (1, 3), stride=(2, 1), padding=(1, 0))
+
         self.lcnn = nn.Sequential(
             nn.Conv2d(1, args.ochannels1, args.kernel1, 1, padding=2),
             nn.PReLU(),
@@ -236,7 +239,7 @@ class TestNet(torch.nn.Module):
             nn.MaxPool2d(2, 2),
             nn.Dropout(args.dropout_cnn),
         )
-        time_dim = 12
+        time_dim = 12 #(args.input_dim[-1]) // 8 - 1  # upsample + 3 * max pool 2x2
         self.dil_conv = nn.Sequential(
             nn.SyncBatchNorm(time_dim, affine=True),
             nn.Conv2d(time_dim, time_dim, 3, 1, padding=1, dilation=1),
@@ -260,7 +263,8 @@ class TestNet(torch.nn.Module):
         """Forward pass."""
         if self.single_gpu:
             import pdb; pdb.set_trace()
-
+        #import pdb; pdb.set_trace()
+        #x = self.upsample(x)
         # [batch, channels, packets, time]
         x = self.lcnn(x.permute(0, 1, 3, 2))
 

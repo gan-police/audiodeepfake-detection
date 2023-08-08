@@ -28,7 +28,8 @@ from src.utils import (
     contrast,
     init_grid,
     set_seed,
-    get_input_dims
+    get_input_dims,
+    debug
 )
 from src.wavelet_math import get_transforms
 
@@ -771,9 +772,7 @@ def main():
 
         loss_fun = torch.nn.CrossEntropyLoss()
 
-        #import pdb; pdb.set_trace()
-        #lr = args.learning_rate * 4
-        lr = args.learning_rate * 4     # num of gpus
+        lr = args.learning_rate * int(args.num_devices)     # num of gpus
         optimizer = Adam(
             model.parameters(),
             lr=lr,
