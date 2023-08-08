@@ -164,8 +164,10 @@ def load_transform_and_stack(
                 audio, sample_rate, resample_rate, resampling_method="kaiser_window"
             )
             # cut to non-overlapping equal-sized windows
-            framed_audio = audio_res[0].unfold(0, window_size, window_size)
-
+            try:
+                framed_audio = audio_res[0].unfold(0, window_size, window_size)
+            except:
+                import pdb; pdb.set_trace()
             framed_audio = framed_audio.unsqueeze(1)
             audio_list.extend(np.array(framed_audio))
             label = np.array(get_label(path_list[i], binary_classification))
@@ -253,6 +255,7 @@ def get_frames(
     file_list: list[Path],
     max_len: int,
     start: int = 0,
+    resample_rate: int = 22050,
 ) -> tuple[list[Path], list[int], int]:
     """Get list of given files and frame count for each file.
 
@@ -286,10 +289,14 @@ def get_frames(
     for i in range(len(file_list)):
         leng = torchaudio.info(file_list[i]).num_frames
         temp = int(leng - (leng % window_size))
+        if resample_rate < window_size and temp / window_size == 1:
+            temp = 0
         length += temp
         result_lst.append(file_list[i])
         if length > max_len:
             overset = int((temp - (length - max_len)) / window_size)
+            if resample_rate < window_size and overset == 1:
+                overset = 0
             frames_lst.append(overset)
             if frames_lst[-1] == 0:
                 frames_lst[-1] = int(temp / window_size)
@@ -303,6 +310,7 @@ def split_dataset_random(
     train_size: float,
     val_size: float,
     window_size: int,
+    resample_rate: int,
     folder_list: list[Path],
     folder_list_all: list[Path],
     test_folder: Optional[Path] = None,
@@ -427,13 +435,13 @@ def split_dataset_random(
 
         # if folder holds real data or only one gan is taken into account
         train_list_f, train_list_w, last_ind = get_frames(
-            window_size, file_list, train_size
+            window_size, file_list, train_size, resample_rate=resample_rate
         )
         val_list_f, val_list_w, last_ind = get_frames(
-            window_size, file_list[last_ind + 1 :], val_size, last_ind + 1
+            window_size, file_list[last_ind + 1 :], val_size, last_ind + 1, resample_rate=resample_rate
         )
         test_list_f, test_list_w, last_ind = get_frames(
-            window_size, file_list[last_ind + 1 :], test_size, last_ind + 1
+            window_size, file_list[last_ind + 1 :], test_size, last_ind + 1, resample_rate=resample_rate
         )
         if folder == folder_list[0]:
             train_size = sum(train_list_w) * window_size
@@ -446,13 +454,13 @@ def split_dataset_random(
             percentage = 50 / folder_num if not equal_distr else 100 / folder_num
             print(f"dataset will contain only {percentage} % of this folder...")
             train_list_f, train_list_w, _ = get_frames(
-                window_size, train_list_f, train_size // folder_num
+                window_size, train_list_f, train_size // folder_num, resample_rate=resample_rate
             )
             val_list_f, val_list_w, _ = get_frames(
-                window_size, val_list_f, val_size // folder_num
+                window_size, val_list_f, val_size // folder_num, resample_rate=resample_rate
             )
             test_list_f, test_list_w, _ = get_frames(
-                window_size, test_list_f, test_size // folder_num
+                window_size, test_list_f, test_size // folder_num, resample_rate=resample_rate
             )
             if folder == folder_list[0]:
                 train_size = sum(train_list_w) * window_size * folder_num
@@ -472,7 +480,7 @@ def split_dataset_random(
         if len(file_list) == 0:
             raise ValueError("File list does not contain any files.")
         test_list_f, test_list_w, last_ind = get_frames(
-            window_size, file_list, test_size
+            window_size, file_list, test_size, resample_rate=resample_rate
         )
         result_list_new = []
         frames_list_new = []
@@ -595,12 +603,12 @@ def pre_process_folder(
         target_dir = Path(args.target_dir) / folder_name
     else:
         target_dir = data_dir.parent / folder_name
-
     if only_test is not None:
         _, _, test_list = split_dataset_random(
             train_size=train_size,
             val_size=val_size,
             window_size=window_size,
+            resample_rate=sample_rate,
             folder_list=folder_list,
             folder_list_all=folder_list_all,
             test_folder=Path(only_test),
@@ -621,6 +629,7 @@ def pre_process_folder(
             train_size=train_size,
             val_size=val_size,
             window_size=window_size,
+            resample_rate=sample_rate,
             folder_list=folder_list,
             folder_list_all=folder_list_all,
             equal_distr=equal_distr,
@@ -664,7 +673,8 @@ def process_folders(
         )
         print("validation set stored")
     else:
-        os.mkdir(f"{target_dir}_val")
+        if not os.path.exists(f"{target_dir}_val"):
+            os.mkdir(f"{target_dir}_val")
 
     print("processing test set.", flush=True)
     if test_list is not None:
@@ -680,7 +690,8 @@ def process_folders(
         )
         print("test set stored", flush=True)
     else:
-        os.mkdir(f"{target_dir}_test")
+        if not os.path.exists(f"{target_dir}_test"):
+            os.mkdir(f"{target_dir}_test")
 
     print("processing training set.", flush=True)
     if train_list is not None:
@@ -696,7 +707,8 @@ def process_folders(
         )
         print("training set stored", flush=True)
     else:
-        os.mkdir(f"{target_dir}_train")
+        if not os.path.exists(f"{target_dir}_train"):
+            os.mkdir(f"{target_dir}_train")
 
 
 def parse_args():
