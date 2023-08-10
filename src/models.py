@@ -152,50 +152,67 @@ class LearnDeepNet(nn.Module):
 
     def __init__(
         self,
-        classes: int = 2,
-        flattend_size: int = 21888,
-        in_channels: int = 32,
+        args,
     ) -> None:
         """Define network sturcture."""
         super(LearnDeepNet, self).__init__()
 
         self.cnn = nn.Sequential(
-            nn.Conv2d(1, in_channels, kernel_size=3, stride=1),
-            nn.SyncBatchNorm(in_channels),
-            nn.ReLU(),
-            nn.Conv2d(in_channels, 32, kernel_size=3, stride=1),
-            nn.SyncBatchNorm(32),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2),
-            nn.SyncBatchNorm(64),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=2),
-            nn.SyncBatchNorm(128),
-            nn.ReLU(),
-            nn.Conv2d(128, 128, kernel_size=3, stride=2),
-            nn.SyncBatchNorm(128),
-            nn.ReLU(),
-            nn.AvgPool2d(2),
-            nn.Dropout(0.7),
+            nn.Conv2d(1, 64, 3, 1, padding=2),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.SyncBatchNorm(64, affine=False),
+            nn.Conv2d(64, 32, 1, 1, padding=0),
+            nn.PReLU(),
+            nn.SyncBatchNorm(32, affine=False),
+            nn.Conv2d(32, 96, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.SyncBatchNorm(96, affine=False),
+            nn.Conv2d(96, 128, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(128, affine=False),
+            nn.Conv2d(128, 32, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(32, affine=False),
+            nn.Conv2d(32, 64, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Dropout(0.6),
+        )
+        time_dim = 12
+        self.dil_cnn = nn.Sequential(
+            nn.SyncBatchNorm(time_dim, affine=True),
+            nn.Conv2d(time_dim, time_dim, 3, 1, padding=1, dilation=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(time_dim, affine=True),
+            nn.Conv2d(time_dim, time_dim, 5, 1, padding=2, dilation=2),
+            nn.PReLU(),
+            nn.SyncBatchNorm(time_dim, affine=True),
+            nn.Conv2d(time_dim, time_dim, 7, 1, padding=2, dilation=4),
+            nn.PReLU(),
+            nn.Dropout(0.2),
         )
 
         self.fc = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(flattend_size, classes),
+            nn.Flatten(2),
+            nn.Linear(args.flattend_size, 2),
         )
-
-        self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
+        self.single_gpu = not args.ddp
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        x = self.cnn(x)
-        x = self.fc(x)
+        # [batch, channels, packets, time]
+        x = self.cnn(x.permute(0, 1, 3, 2))
 
-        return self.logsoftmax(x)
+        # [batch, channels, time, packets]
+        x = x.permute(0, 2, 1, 3).contiguous()     
 
-    def get_name(self) -> str:
-        """Return custom string identifier."""
-        return "LearnDeepNet"
+        # "[batch, time, channels, packets]"
+        x = self.dil_cnn(x)
+        x = self.fc(x).mean(1)
+
+        return x
 
 
 class OneDNet(nn.Module):
