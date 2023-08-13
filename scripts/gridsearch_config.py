@@ -68,8 +68,7 @@ def get_config() -> dict:
 
     config = {
         "learning_rate": [0.0001],
-        "weight_decay": [0.001, 0.01, 0.0001],
-        "wavelet": ["sym8"],
+        "weight_decay": [0.001],
         "dropout_cnn": [0.6],
         "dropout_lstm": [0.2],
         "num_of_scales": [256],
