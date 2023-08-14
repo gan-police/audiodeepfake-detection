@@ -180,7 +180,7 @@ class LearnDeepNet(nn.Module):
             nn.MaxPool2d(2, 2),
             nn.Dropout(0.6),
         )
-        time_dim = 12
+        time_dim = (args.input_dim[-1] + 2) // 8
         self.dil_cnn = nn.Sequential(
             nn.SyncBatchNorm(time_dim, affine=True),
             nn.Conv2d(time_dim, time_dim, 3, 1, padding=1, dilation=1),

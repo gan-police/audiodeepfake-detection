@@ -120,7 +120,7 @@ class LearnWavefakeDataset(Dataset):
                 pos_count -= 1
                 self.labels = np.delete(self.labels, i)
                 self.audios = np.delete(self.audios, i)
-            elif self.audios[i] != 0 and neg_count > 0:
+            elif self.labels[i] != 0 and neg_count > 0:
                 neg_count -= 1
                 self.labels = np.delete(self.labels, i)
                 self.audios = np.delete(self.audios, i)
@@ -130,6 +130,21 @@ class LearnWavefakeDataset(Dataset):
         self.labels = self.labels[:limit]
         self.audios = self.audios[:limit]
 
+        sizes = [self.labels[self.labels == 0].size, self.labels[self.labels != 0].size]
+        diff = abs(sizes[0] - sizes[1])
+        label = np.argmax(sizes)
+        for i in range(len(self.audios)):
+            if self.labels[i] == 0 and diff > 0 and label == 0:
+                diff -= 1
+                self.labels = np.delete(self.labels, i)
+                self.audios = np.delete(self.audios, i)
+            elif self.labels[i] != 0 and diff > 0 and label != 0:
+                diff -= 1
+                self.labels = np.delete(self.labels, i)
+                self.audios = np.delete(self.audios, i)
+            elif diff == 0:
+                break
+        
         self.key = key
         self.label_names = {0: "original", get_ds_label(self.labels): source_name}
 
