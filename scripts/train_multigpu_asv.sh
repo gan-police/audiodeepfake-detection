@@ -39,8 +39,8 @@ src/train_classifier.py \
     --epochs 10 \
     --validation-interval 1 \
     --ckpt-every 10 \
-    --data-prefix "/home/s6kogase/data/asvspoof21_run1/audios_16000_8000_0.7_fake" \
-    --cross-dir "/home/s6kogase/data/asvspoof19_run1/" \
+    --data-prefix "/home/s6kogase/data/asvspoof19_run1/audios_16000_8000_0.7_fake" \
+    --cross-dir "/home/s6kogase/data/asvspoof21_run1/" \
     --cross-sources "fake" \
     --cross-prefix "audios_16000_8000_0.7_" \
     --nclasses 2 \
