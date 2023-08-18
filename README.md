@@ -153,41 +153,7 @@ This trains a cnn classifier using the chosen hyperparameters. The training, val
 
 #### Calculating accuracy and equal error rate (EER)
 
-To calculate the accuracy and eer of trained models use `src.eval_models` with varying arguments, e.g.
-```shell
-python -m src.eval_models \
-    --data-prefix "${HOME}/data/fake_22050_11025_0.7" \
-    --model-path-prefix ./log/fake_packets_none_100_22050_22050_256_1-11025_0.7_0.0001_0.01_64_2_10e_lcnn_False \
-    --model "lcnn"  \
-    --batch-size 64 \
-    --window-size 22050 \
-    --sample-rate 22050 \
-    --flattend-size 352 \
-    --features none \
-    --seed 0 \
-    --transform packets \
-    --train-gans "melgan"
-```
-
-If you want to cross evaluate models against the test sets of other gans, you can use the `--crosseval-gans`, e.g. like this:
-```shell
-python -m src.eval_models \
-    --data-prefix "${HOME}/data/fake_22050_11025_0.7" \
-    --model-path-prefix ./log/fake_packets_none_100_22050_22050_256_1-11025_0.7_0.0001_0.01_64_2_10e_lcnn_False \
-    --model "lcnn"  \
-    --batch-size 64 \
-    --window-size 22050 \
-    --sample-rate 22050 \
-    --flattend-size 352 \
-    --features none \
-    --seed 0 \
-    --transform packets \
-    --train-gans "melgan" \
-    --crosseval-gans "melgan" "lmelgan" "mbmelgan" "fbmelgan" "hifigan" "waveglow" "pwg"
-```
-This evaluates the trained melgan model against all the other fake audios with default parameters, which makes it possible to see how well the classifier generalizes to other gan generated audios. All results will be saved in under `log/results/`.
-
-For a list of all arguments, open the help page via the `-h` argument.
+To test a model that was already trained, set the argument `only-testing` in the initial training script to `True`.
 
 
 ### Attributing the Classifier
