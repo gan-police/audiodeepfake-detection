@@ -469,9 +469,6 @@ class Trainer:
 
         if self.args.aug_contrast:
             batch_audios = contrast(batch_audios)
-            #
-            # batch_audios = torchaudio.functional.preemphasis(batch_audios, np.random.uniform(0., 1.0))
-            # batch_audios = torchaudio.functional.dither(batch_audios)
         if self.args.aug_noise:
             batch_audios = add_noise(batch_audios)
 
@@ -794,7 +791,12 @@ def main():
             args=args,
             writer=writer,
         )
-        trainer.train(args.epochs)
+        if args.only_testing:
+            trainer.load_snapshot(trainer.snapshot_path)
+            trainer.testing()
+        else:
+            trainer.train(args.epochs)
+            trainer._save_snapshot(args.epochs - 1)
 
         if exp_results.get(args.seed) is None:
             exp_results[args.seed] = [trainer.test_results]
@@ -810,7 +812,9 @@ def main():
         results = np.asarray(list(exp_results.values()))
         mean = results.mean(0)
         std = results.std(0)
+        print("results:", results)
         print(mean)
+        print(std)
         print(
             f"Best unknown eer: {mean[np.argmin(mean[:,3]), 3]:.4f} +- {std[np.argmin(mean[:,3]), 3]:.4f}"
         )

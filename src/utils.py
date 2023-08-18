@@ -278,6 +278,12 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         " on the validation data set. (default: 1)",
     )
     parser.add_argument(
+        "--only-testing",
+        type=bool,
+        default=False,
+        help="If you only want to test the given model. (default: False)",
+    )
+    parser.add_argument(
         "--ckpt-every",
         type=int,
         default=1,
@@ -435,8 +441,8 @@ class _Griderator:
     def update_args(self, args):
         """Update args with current step values."""
         for value, key in zip(self.grid_values[self.current], self.get_keys()):
-            if args.get(key) is None:
-                print(f"Added new config key: {key}.")
+            #if args.get(key) is None:
+            #    print(f"Added new config key: {key}.")
             args[key] = value
         return args
 
