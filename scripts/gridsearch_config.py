@@ -228,10 +228,11 @@ class TestNet(torch.nn.Module):
         """Define network sturcture."""
         super(TestNet, self).__init__()
 
+
         # self.upsample = nn.ConvTranspose2d(1, 1, (1, 3), stride=(1, 2), padding=(0, 1))
 
         self.lcnn = nn.Sequential(
-            nn.Conv2d(1, args.ochannels1, args.kernel1, 1, padding=1),
+            nn.Conv2d(1, args.ochannels1, args.kernel1, 1, padding=2),
             nn.PReLU(),
             nn.MaxPool2d(2, 2),
             nn.SyncBatchNorm(args.ochannels1, affine=False),
@@ -253,7 +254,9 @@ class TestNet(torch.nn.Module):
             nn.MaxPool2d(2, 2),
             nn.Dropout(args.dropout_cnn),
         )
+
         time_dim = ((args.input_dim[-1])) // 8
+
         self.dil_conv = nn.Sequential(
             nn.SyncBatchNorm(time_dim, affine=True),
             nn.Conv2d(time_dim, time_dim, 3, 1, padding=1, dilation=1),
@@ -278,6 +281,7 @@ class TestNet(torch.nn.Module):
         if self.single_gpu:
             import pdb; pdb.set_trace()
         # x = self.upsample(x)
+
         # [batch, channels, packets, time]
         x = self.lcnn(x.permute(0, 1, 3, 2))
 
