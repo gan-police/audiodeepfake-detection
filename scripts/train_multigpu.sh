@@ -25,7 +25,7 @@ conda activate py310
 
 echo -e "Training..."
 
-srun torchrun \
+torchrun \
 --nnodes 1 \
 --nproc_per_node 8 \
 --rdzv_id $SLURM_JOB_ID \

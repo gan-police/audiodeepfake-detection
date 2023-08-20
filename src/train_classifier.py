@@ -19,7 +19,7 @@ from tqdm import tqdm
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
-from src.data_loader import CrossWavefakeDataset, LearnWavefakeDataset
+from src.data_loader import CrossWavefakeDataset, LearnWavefakeDataset, get_costum_dataset
 from src.models import get_model, save_model
 from src.utils import (
     DotDict,
@@ -29,7 +29,6 @@ from src.utils import (
     init_grid,
     set_seed,
     get_input_dims,
-    debug
 )
 from src.wavelet_math import get_transforms
 
@@ -56,10 +55,13 @@ def create_data_loaders(
     Returns:
         dataloaders (tuple): train_data_loader, val_data_loader, test_data_set
     """
-    train_data_set = LearnWavefakeDataset(args.data_prefix + "_train", limit=limit)
-    val_data_set = LearnWavefakeDataset(args.data_prefix + "_val", limit=limit)
-    test_data_set = LearnWavefakeDataset(args.data_prefix + "_test", limit=limit)
+    #train_data_set = LearnWavefakeDataset(args.data_prefix + "_train", limit=limit)
+    #val_data_set = LearnWavefakeDataset(args.data_prefix + "_val", limit=limit)
+    #test_data_set = LearnWavefakeDataset(args.data_prefix + "_test", limit=limit)
 
+    train_data_set = get_costum_dataset("train")
+    val_data_set = get_costum_dataset("val")
+    test_data_set = get_costum_dataset("test")
     if args.ddp:
         train_sampler = DistributedSampler(
             train_data_set, shuffle=True, seed=args.seed, drop_last=True
@@ -431,6 +433,7 @@ class Trainer:
         for _it, batch in enumerate(self.bar):
             self.model.train()
             self._run_batch(e, batch)
+            self._run_batch(e, batch)
 
     def _run_validation(self, epoch):
         """Iterate over validation data."""
@@ -792,11 +795,13 @@ def main():
             writer=writer,
         )
         if args.only_testing:
+            trainer._check_model_init()
             trainer.load_snapshot(trainer.snapshot_path)
             trainer.testing()
         else:
             trainer.train(args.epochs)
-            trainer._save_snapshot(args.epochs - 1)
+            if is_lead(args):
+                trainer._save_snapshot(args.epochs - 1)
 
         if exp_results.get(args.seed) is None:
             exp_results[args.seed] = [trainer.test_results]
