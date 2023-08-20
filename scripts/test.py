@@ -198,13 +198,26 @@ class CustomDataset(Dataset):
         return sample
     
 
-def get_costum_dataset(ds_type):
+def get_costum_dataset(ds_set, ds_type):
     save_path = '/home/s6kogase/data/run1'
-    paths = ['/home/s6kogase/data/real/A_ljspeech', '/home/s6kogase/data/fake/E_fbmelgan']
-    labels = [0, 1]
+    train_path = '/home/s6kogase/data/data/train'
+    cross_test_path = '/home/s6kogase/data/data/cross_test'
+    if ds_set == "train":
+        paths = list(Path(train_path).glob(f"./*_*"))
+    elif ds_set == "cross_test":
+        paths = list(Path(cross_test_path).glob(f"./*_*"))
+        ds_type = "only_test"
+    else:
+        raise TypeError("Set name does not exist. Choose on of [train, cross_test].")
+
+    labels = []
+    for path in paths:
+        labels.append(ord(path.name.split("_")[0]) - 65)
+
+    ipdb.set_trace()
     seconds = 1
     resample_rate = 22050
-    limit = (55500, 7500, 15500)   # pro label
+    # limit = (55500, 7500, 15500)   # pro label
     
     return CustomDataset(
         paths=paths,
@@ -212,12 +225,11 @@ def get_costum_dataset(ds_type):
         save_path=save_path,
         seconds=seconds,
         resample_rate=resample_rate,
-        limit=limit,
         verbose=True,
         ds_type=ds_type
     )
 
 
 if __name__ == "__main__":
-    get_costum_dataset("train")
+    get_costum_dataset("cross_test", "train")
     
