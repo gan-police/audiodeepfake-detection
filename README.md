@@ -57,69 +57,33 @@ The following section of the README serves as a guide to reproducing the experim
 
 ### Preparation
 
-As the WaveFake dataset contains gan generated audios equivalent to the audios of LJSpeech, no further preparation needs to be done to get all audios that are needed. We work with mono-channeled audios of different sizes. Hence, the raw audio needs to be cut into equally sized frames of desired size. We mainly used frames of 0.5s and 0.25s. The sample rate can be varied as well.
+As the WaveFake dataset contains gan generated audios equivalent to the audios of LJSpeech, no further preparation needs to be done to get all audios that are needed. We work with mono-channeled audios of different sizes. Hence, the raw audio needs to be cut into equally sized frames of desired size. We mainly used frames of 1s. The sample rate can be varied as well.
 
-To do this store all images (original and GAN-generated) in separate subdirectories of one or two directories (depends if you split real and fake), i.e. the directory structure should look like this
+To do this store all audios (original and GAN-generated) in separate subdirectories, i.e. the directory structure should look like this
 
 ```
 data
-  ├── fake
-  │    ├── B_melgan
-  │    |    ├── LJ001-0001_gen.wav
-  |    |    ├── ...
-  │    |    └── LJ008-0217_gen.wav
-  │    └── C_hifigan
-  │         ├── LJ001-0001_gen.wav
-  |         ├── ...
-  │         └── LJ008-0217_gen.wav
-  ├── real
-  |    └── A_ljspeech
-  |         ├── LJ001-0001.wav
-  |         ├── ...
-  |         └── LJ008-0217.wav
-  └── fake_test
-       └── N_conformer
-            ├── 0001_gen.wav
-            ├── ...
-            └── 2200_gen.wav
+  └── cross_test
+      ├── B_melgan
+      |    ├── LJ001-0001_gen.wav
+      |    ├── ...
+      |    └── LJ008-0217_gen.wav
+      ├── C_hifigan
+      |    ├── LJ001-0001_gen.wav
+      |    ├── ...
+      |    └── LJ008-0217_gen.wav
+      └── A_ljspeech
+           ├── LJ001-0001.wav
+           ├── ...
+           └── LJ008-0217.wav
 ```
 
-The prefixes of the folders are important, since the directories get the labels in lexicographic order of their prefix, i.e. directory `A_...` gets label 0, `B_...` label 1, etc.
+The prefixes of the folders are important, since the directories get the labels in lexicographic order of their prefix, i.e. directory `A_...` gets label 0, `B_...` label 1, etc. If you skip certain letters in the alphabet that is okay as well. The labels will be in ascending order beginning from 0 automatically.
 
-Now, to prepare the data sets run `src.prepare_dataset` . It reads data set, splits them into a training, validation and test set, cuts all audios to pieces of window_size and stores the result as numpy arrays. 
-If you want to only generate test datasets e.g. for cross validation, put them into a seperate folder like `fake_test` and pass them to `prepare_datasets.py` with the option `--testdir`. This could look like this:
+Now, to prepare the data sets run `python -m scripts.prepare_ljspeech`. It reads the data set, cuts all audios to pieces of given size, splits them into a training, validation and test set, and stores the resulting audio paths with the frame numbers for each audio as numpy arrays.
+Use the parameter `use_only` to specify the name of the directories that should be used from the given data path. E.g. if there are directories `A_ljspeech`, `B_melgan` and `C_hifigan` but you only want to use the first two, set `only_use=["ljspeech", "melgan"]` in the corresponding dataset.
 
-```shell
-python -m src.prepare_datasets \
-    --window-size 22050 \
-    --sample-rate 22050 \
-    --realdir "${HOME}/data/real/A_ljspeech" \
-    --fakedir "${HOME}/data/fake/B_melgan" \
-    --directory "${HOME}/data/fake" \
-    --target-dir "${HOME}/data/datasets"
-```
-or
-```shell
-python -m src.prepare_datasets \
-    --window-size 22050 \
-    --sample-rate 22050 \
-    --realdir "${HOME}/data/real/A_ljspeech" \
-    --directory "${HOME}/data/fake"
-    --target-dir "${HOME}/data/datasets"
-```
-
-The dataset preparation script accepts additional arguments. For example, it is possible to change the sizes of the train, test or validation sets. Important: All .wav files need to have the same sample rate before preparing the datasets. For a list of all optional arguments, open the help page via the `-h` argument.
-
-We recommend to use the scripts `scripts/prepare_single_dataset.sh`, `scripts/prepare_all_dataset.sh` and `scripts/prepare_test_dataset.sh`.
-
-Important: After preparing all folders run `python -m scripts.clean_up` to make sure that all dataset splits contain the same amount of positive and negative labels. Make sure to set `path` to the target directory from above (it should only contain the output folders from the step before ending with `_test`, `_val` and `_all`). Check if the script executed properly with
-```shell
-for folder in *_train; do echo "$folder: $(find "$folder" -maxdepth 1 -type f | wc -l)"; done
-```
-Find all folders to contain the same amount of files.
-
-#### Downsample audio files
-If you want to resample audio files for training on a smaller sample rate, change `src.downsample` to fit your needs and run `scripts/downsample.sh`.
+This process could take some time, because it reads the length of all audio files. The results will be saved in the directory specified in `save_path` and hence this process has to only run once for each dataset.
 
 ### Training the Classifier
 

@@ -1,10 +1,13 @@
 """Return configuration for grid search."""
-import torch
-from torch import nn
-import torchvision
-from functools import partial
 from copy import copy
+from functools import partial
+
+import torch
+import torchvision
+from torch import nn
+
 from src.models import BLSTMLayer, MaxFeatureMap2D, parse_model_str
+
 
 def get_config() -> dict:
     """Return config dictonary for grid search.
@@ -15,54 +18,56 @@ def get_config() -> dict:
     """
     model = "modules"
     if model == "gridmodel":
-        model_data = [[
-            {
-                "layers": [
-                    [torchvision.ops, "Permute 0,1,3,2"],
-                    "Conv2d 1 [64,32,128] 2 1 2",
-                    "MaxFeatureMap2D",
-                    "MaxPool2d 2 2",
-                    "Conv2d [32,16,64] 64 1 1 0",
-                    "MaxFeatureMap2D",
-                    "SyncBatchNorm 32",
-                    "Conv2d 32 96 3 1 1",
-                    "MaxFeatureMap2D",
-                    "MaxPool2d 2 2",
-                    "SyncBatchNorm 48",
-                    "Conv2d 48 96 1 1 0",
-                    "MaxFeatureMap2D",
-                    "SyncBatchNorm 48",
-                    "Conv2d 48 128 3 1 1",
-                    "MaxFeatureMap2D",
-                    "MaxPool2d 2 2",
-                    "Conv2d 64 128 1 1 0",
-                    "MaxFeatureMap2D",
-                    "SyncBatchNorm 64",
-                    "Conv2d 64 64 3 1 1",
-                    "MaxFeatureMap2D",
-                    "SyncBatchNorm 32",
-                    "Conv2d 32 64 1 1 0",
-                    "MaxFeatureMap2D",
-                    "SyncBatchNorm 32",
-                    "Conv2d 32 64 3 1 1",
-                    "MaxFeatureMap2D",
-                    "MaxPool2d 2 2",
-                    "Dropout 0.7",
-                ],
-                "input_shape": (1, 256, 101),
-                "transforms": [partial(transf)]
-            },
-            {
-                "layers": [
-                    "BLSTMLayer 512 512",
-                    "BLSTMLayer 512 512",
-                    "Dropout 0.1",
-                    "Linear 512 2",
-                ],
-                "input_shape": (1, 512),
-                "transforms": [partial(torch.Tensor.mean, dim=1)]
-            }
-        ]]
+        model_data = [
+            [
+                {
+                    "layers": [
+                        [torchvision.ops, "Permute 0,1,3,2"],
+                        "Conv2d 1 [64,32,128] 2 1 2",
+                        "MaxFeatureMap2D",
+                        "MaxPool2d 2 2",
+                        "Conv2d [32,16,64] 64 1 1 0",
+                        "MaxFeatureMap2D",
+                        "SyncBatchNorm 32",
+                        "Conv2d 32 96 3 1 1",
+                        "MaxFeatureMap2D",
+                        "MaxPool2d 2 2",
+                        "SyncBatchNorm 48",
+                        "Conv2d 48 96 1 1 0",
+                        "MaxFeatureMap2D",
+                        "SyncBatchNorm 48",
+                        "Conv2d 48 128 3 1 1",
+                        "MaxFeatureMap2D",
+                        "MaxPool2d 2 2",
+                        "Conv2d 64 128 1 1 0",
+                        "MaxFeatureMap2D",
+                        "SyncBatchNorm 64",
+                        "Conv2d 64 64 3 1 1",
+                        "MaxFeatureMap2D",
+                        "SyncBatchNorm 32",
+                        "Conv2d 32 64 1 1 0",
+                        "MaxFeatureMap2D",
+                        "SyncBatchNorm 32",
+                        "Conv2d 32 64 3 1 1",
+                        "MaxFeatureMap2D",
+                        "MaxPool2d 2 2",
+                        "Dropout 0.7",
+                    ],
+                    "input_shape": (1, 256, 101),
+                    "transforms": [partial(transf)],
+                },
+                {
+                    "layers": [
+                        "BLSTMLayer 512 512",
+                        "BLSTMLayer 512 512",
+                        "Dropout 0.1",
+                        "Linear 512 2",
+                    ],
+                    "input_shape": (1, 512),
+                    "transforms": [partial(torch.Tensor.mean, dim=1)],
+                },
+            ]
+        ]
     else:
         model_data = [None]
 
@@ -72,6 +77,9 @@ def get_config() -> dict:
         "dropout_cnn": [0.6],
         "dropout_lstm": [0.2],
         "num_of_scales": [256],
+        "cross_sources": [
+            ["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg", "avocodo", "lbigvgan", "bigvgan"],
+        ],
         "epochs": [10],
         "validation_interval": [10],
         "block_norm": [False],
@@ -87,7 +95,7 @@ def get_config() -> dict:
         "ochannels3": [96],
         "ochannels4": [128],
         "ochannels5": [32],
-        "only_testing": [False]
+        "only_testing": [False],
     }
 
     # parse model data if exists
@@ -100,11 +108,14 @@ def get_config() -> dict:
                 if len(trials) > 1:
                     for k in range(1, len(trials)):
                         if len(new_els) < len(trials) - 1:
-                            config_copy = [copy(config_part) for config_part in config["model_data"][i]]
+                            config_copy = [
+                                copy(config_part)
+                                for config_part in config["model_data"][i]
+                            ]
                             config_copy[j]["layers"] = trials[k]
                             new_els.append(config_copy)
                         elif len(new_els) == len(trials) - 1:
-                            new_els[k-1][j]["layers"] = trials[k]
+                            new_els[k - 1][j]["layers"] = trials[k]
                         else:
                             raise RuntimeError
                 elif len(new_els) > 0:
@@ -119,7 +130,6 @@ def transf(x):
     x = x.permute(0, 2, 1, 3)
     x = x.contiguous()
     return x.view(x.shape[0], x.shape[1], -1)
-
 
 
 class LCNN(nn.Module):
@@ -139,40 +149,40 @@ class LCNN(nn.Module):
         # LCNN from AVSpoofChallenge 2021
         self.lcnn = nn.Sequential(
             nn.Conv2d(1, args.ochannels1, args.kernel1, 1, padding=2),
-            #MaxFeatureMap2D(),
+            # MaxFeatureMap2D(),
             nn.LeakyReLU(),
             nn.MaxPool2d(2, 2),
             nn.Conv2d(args.ochannels1, 64, 1, 1, padding=0),
-            #MaxFeatureMap2D(),
+            # MaxFeatureMap2D(),
             nn.LeakyReLU(),
             nn.SyncBatchNorm(64, affine=False),
             nn.Conv2d(64, 96, 3, 1, padding=1),
-            #MaxFeatureMap2D(),
+            # MaxFeatureMap2D(),
             nn.LeakyReLU(),
             nn.MaxPool2d(2, 2),
             nn.SyncBatchNorm(96, affine=False),
             nn.Conv2d(96, 96, 1, 1, padding=0),
-            #MaxFeatureMap2D(),
+            # MaxFeatureMap2D(),
             nn.LeakyReLU(),
             nn.SyncBatchNorm(96, affine=False),
             nn.Conv2d(96, 128, 3, 1, padding=1),
-            #MaxFeatureMap2D(),
+            # MaxFeatureMap2D(),
             nn.LeakyReLU(),
             nn.MaxPool2d(2, 2),
             nn.Conv2d(128, 128, 1, 1, padding=0),
-            #MaxFeatureMap2D(),
+            # MaxFeatureMap2D(),
             nn.LeakyReLU(),
             nn.SyncBatchNorm(128, affine=False),
             nn.Conv2d(128, 64, 3, 1, padding=1),
-            #MaxFeatureMap2D(),
+            # MaxFeatureMap2D(),
             nn.LeakyReLU(),
             nn.SyncBatchNorm(64, affine=False),
             nn.Conv2d(64, 64, 1, 1, padding=0),
-            #MaxFeatureMap2D(),
+            # MaxFeatureMap2D(),
             nn.LeakyReLU(),
             nn.SyncBatchNorm(64, affine=False),
             nn.Conv2d(64, 64, 3, 1, padding=1),
-            #MaxFeatureMap2D(),
+            # MaxFeatureMap2D(),
             nn.LeakyReLU(),
             nn.MaxPool2d(2, 2),
             nn.Dropout(args.dropout_cnn),
@@ -188,7 +198,7 @@ class LCNN(nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        #import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         # [batch, channels, packets, time]
         x = self.lcnn(x.permute(0, 1, 3, 2))
 
@@ -197,7 +207,7 @@ class LCNN(nn.Module):
         shape = x.shape
 
         # [batch, time, channels, packets]
-        #import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         x = self.lstm(x.view(shape[0], shape[1], -1))
         x = self.fc(x).mean(1)
 
@@ -213,7 +223,6 @@ class TestNet(torch.nn.Module):
     ) -> None:
         """Define network sturcture."""
         super(TestNet, self).__init__()
-
 
         # self.upsample = nn.ConvTranspose2d(1, 1, (1, 3), stride=(1, 2), padding=(0, 1))
 
@@ -265,21 +274,23 @@ class TestNet(torch.nn.Module):
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
         if self.single_gpu:
-            import pdb; pdb.set_trace()
+            import pdb
+
+            pdb.set_trace()
         # x = self.upsample(x)
 
         # [batch, channels, packets, time]
         x = self.lcnn(x.permute(0, 1, 3, 2))
 
         # [batch, channels, time, packets]
-        x = x.permute(0, 2, 1, 3).contiguous()     
+        x = x.permute(0, 2, 1, 3).contiguous()
 
         # "[batch, time, channels, packets]"
         x = self.dil_conv(x)
         x = self.fc(x).mean(1)
 
         return x
-    
+
 
 class Regression(torch.nn.Module):
     """A shallow linear-regression model."""
@@ -307,7 +318,6 @@ class Regression(torch.nn.Module):
             torch.Tensor: A logsoftmax scaled output of shape
                 [batch_size, classes].
         """
-        #import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         x_flat = torch.reshape(x, [x.shape[0], -1])
         return self.logsoftmax(self.linear(x_flat))
-    

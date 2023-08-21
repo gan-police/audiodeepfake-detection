@@ -8,7 +8,7 @@ import torch
 from scipy.interpolate import interp1d
 from scipy.optimize import brentq
 from sklearn.metrics import roc_curve
-from torch.distributed import destroy_process_group, init_process_group, barrier
+from torch.distributed import barrier, destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DiDiP
 from torch.optim import Adam
 from torch.utils.data import DataLoader
@@ -19,16 +19,20 @@ from tqdm import tqdm
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
-from src.data_loader import CrossWavefakeDataset, LearnWavefakeDataset, get_costum_dataset
+from src.data_loader import (
+    CrossWavefakeDataset,
+    LearnWavefakeDataset,
+    get_costum_dataset,
+)
 from src.models import get_model, save_model
 from src.utils import (
     DotDict,
     add_default_parser_args,
     add_noise,
     contrast,
+    get_input_dims,
     init_grid,
     set_seed,
-    get_input_dims,
 )
 from src.wavelet_math import get_transforms
 
@@ -55,14 +59,30 @@ def create_data_loaders(
     Returns:
         dataloaders (tuple): train_data_loader, val_data_loader, test_data_set
     """
-    #train_data_set = LearnWavefakeDataset(args.data_prefix + "_train", limit=limit)
-    #val_data_set = LearnWavefakeDataset(args.data_prefix + "_val", limit=limit)
-    #test_data_set = LearnWavefakeDataset(args.data_prefix + "_test", limit=limit)
-
-    save_path = '/home/s6kogase/data/data/run1'
-    train_data_set = get_costum_dataset(data_path="/home/s6kogase/data/data/train", ds_type="train", save_path=save_path, limit=(55504, 7504, 15504))
-    val_data_set = get_costum_dataset(data_path="/home/s6kogase/data/data/train", ds_type="val", save_path=save_path, limit=(55504, 7504, 15504))
-    test_data_set = get_costum_dataset(data_path="/home/s6kogase/data/data/train", ds_type="test", save_path=save_path, limit=(55504, 7504, 15504))
+    save_path = "/home/s6kogase/data/data/run2"
+    data_path = "/home/s6kogase/data/data/cross_test"
+    limit_train = (55504, 7504, 15504)
+    train_data_set = get_costum_dataset(
+        data_path=data_path,
+        ds_type="train",
+        only_use=["ljspeech", "fbmelgan"],
+        save_path=save_path,
+        limit=limit_train,
+    )
+    val_data_set = get_costum_dataset(
+        data_path=data_path,
+        ds_type="val",
+        only_use=["ljspeech", "fbmelgan"],
+        save_path=save_path,
+        limit=limit_train,
+    )
+    test_data_set = get_costum_dataset(
+        data_path=data_path,
+        ds_type="test",
+        only_use=["ljspeech", "fbmelgan"],
+        save_path=save_path,
+        limit=limit_train,
+    )
     if args.ddp:
         train_sampler = DistributedSampler(
             train_data_set, shuffle=True, seed=args.seed, drop_last=True
@@ -104,20 +124,22 @@ def create_data_loaders(
 
     if args.unknown_prefix is not None or args.cross_dir is not None:
         if args.cross_dir is not None:
-            cross_set_test = get_costum_dataset(data_path="/home/s6kogase/data/data/cross_test", ds_type="test", only_test_folders=['conformer', 'jsutmbmelgan', 'jsutpwg'], save_path=save_path, limit=(55500, 7304, 14600))
-            cross_set_val = get_costum_dataset(data_path="/home/s6kogase/data/data/cross_test", ds_type="val", only_test_folders=['conformer', 'jsutmbmelgan', 'jsutpwg'], save_path=save_path, limit=(55500, 7304, 14600))
-            """cross_set_test = CrossWavefakeDataset(
-                base_path=args.cross_dir,
-                prefix=args.cross_prefix,
-                sources=args.cross_sources,
-                limit=15360,     # same batches if trained with 1, 2, 4, 8 GPUs
+            cross_set_test = get_costum_dataset(
+                data_path="/home/s6kogase/data/data/cross_test",
+                ds_type="test",
+                only_test_folders=["conformer", "jsutmbmelgan", "jsutpwg"],
+                only_use=args.cross_sources,
+                save_path=save_path,
+                limit=(55500, 7304, 14600),
             )
-            cross_set_val = CrossWavefakeDataset(
-                base_path=args.cross_dir,
-                prefix=args.cross_prefix,
-                sources=args.cross_sources,
-                limit=2048,
-            )"""
+            cross_set_val = get_costum_dataset(
+                data_path="/home/s6kogase/data/data/cross_test",
+                ds_type="val",
+                only_test_folders=["conformer", "jsutmbmelgan", "jsutpwg"],
+                only_use=args.cross_sources,
+                save_path=save_path,
+                limit=(55500, 7304, 14600),
+            )
         else:
             cross_set_val = LearnWavefakeDataset(
                 args.unknown_prefix + "_val",
@@ -193,7 +215,7 @@ class Trainer:
         if self.args.ddp:
             self.local_rank = int(os.environ["LOCAL_RANK"])
             self.global_rank = int(os.environ["RANK"])
-            self.world_size = int(os.environ['WORLD_SIZE'])
+            self.world_size = int(os.environ["WORLD_SIZE"])
         else:
             self.local_rank = self.global_rank = torch.cuda.current_device()
             self.world_size = 1
@@ -361,7 +383,7 @@ class Trainer:
 
         if self.args.ddp:
             torch.cuda.synchronize()
-            barrier()   # synchronize all processes
+            barrier()  # synchronize all processes
 
         if is_lead(self.args):
             print(
@@ -534,9 +556,13 @@ class Trainer:
             self._run_epoch(epoch)
 
             if is_lead(self.args):
-                if (epoch > 0 and epoch % self.args.ckpt_every == 0) or (epoch == 0 and self.args.ckpt_every == 1):
+                if (epoch > 0 and epoch % self.args.ckpt_every == 0) or (
+                    epoch == 0 and self.args.ckpt_every == 1
+                ):
                     self._save_snapshot(epoch)
-            if (epoch > 0 and epoch % self.args.validation_interval == 0) or (epoch == 0 and self.args.validation_interval == 1):
+            if (epoch > 0 and epoch % self.args.validation_interval == 0) or (
+                epoch == 0 and self.args.validation_interval == 1
+            ):
                 self._run_validation(epoch)
             if epoch == max_epochs - 1:
                 if is_lead(self.args):
@@ -775,7 +801,7 @@ def main():
 
         loss_fun = torch.nn.CrossEntropyLoss()
 
-        lr = args.learning_rate * int(args.num_devices)     # num of gpus
+        lr = args.learning_rate * int(args.num_devices)  # num of gpus
         optimizer = Adam(
             model.parameters(),
             lr=lr,
