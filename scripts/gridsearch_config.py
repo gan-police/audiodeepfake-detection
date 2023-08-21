@@ -67,13 +67,13 @@ def get_config() -> dict:
         model_data = [None]
 
     config = {
-        "learning_rate": [0.0005],
+        "learning_rate": [0.0005, 0.00025, 0.0001],
         "weight_decay": [0.001],
         "dropout_cnn": [0.6],
         "dropout_lstm": [0.2],
         "num_of_scales": [256],
         "epochs": [10],
-        "validation_interval": [1],
+        "validation_interval": [10],
         "block_norm": [False],
         "batch_size": [128],
         "aug_contrast": [False],
@@ -81,7 +81,7 @@ def get_config() -> dict:
         "model_data": model_data,
         "module": [TestNet],
         "kernel1": [3],
-        "num_devices": [8],
+        "num_devices": [4],
         "ochannels1": [64],
         "ochannels2": [32],
         "ochannels3": [96],

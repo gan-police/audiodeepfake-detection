@@ -19,20 +19,25 @@ class CustomDataset(Dataset):
         self,
         paths: list,
         labels: list,
+        save_path: str,
+        only_test_folders: Optional[list],
+        abort_on_save: bool = False,
         ds_type: str = 'train',
-        save_path = '/home/s6kogase/data/run1',
         source_name: str = "fake",
         seconds: int = 1,
         resample_rate: int = 16000,
         train_ratio: float = 0.7,
         val_ratio: float = 0.1,
         key: Optional[str] = "audio",
-        limit: tuple = (-1, -1, -1),    # (train, val, test) per label
+        limit: tuple = (555000, 7500, 15500),    # (train, val, test) per label
         verbose: Optional[bool] = False,
     ):
         """Create a Wavefake-dataset object.
 
         Dataset with additional transforming in cwt space.
+
+        Important: Set ratios the same for all kind of comparable datasets to assure no
+        mixing up of training and testing data.
 
         Args:
             data_dir: A path to a pre-processed folder with numpy files.
@@ -67,7 +72,8 @@ class CustomDataset(Dataset):
             sample_count = []
             path_num = 0
             for path in tqdm(paths, desc="Process paths"):
-                names.append(path.split("/")[-1].split("_")[-1])
+                name = path.split("/")[-1].split("_")[-1]
+                names.append(name)
                 path_list = list(Path(path).glob(f"./*.wav"))
 
                 frame_dict = {}
@@ -97,26 +103,54 @@ class CustomDataset(Dataset):
                     dtype=object
                 ).transpose()
                 num_samples = frames_array.shape[0]
-                num_train = int(train_ratio * num_samples)
-                num_val = int(val_ratio * num_samples)
-                num_test = num_samples - num_train - num_val
+
+                if only_test_folders is None or name not in only_test_folders:
+                    num_train = int(train_ratio * num_samples)
+                    num_val = int(val_ratio * num_samples)
+                    num_test = num_samples - num_train - num_val
+                else:
+                    num_train = 0
+                    # use previous calculated lengths for val and test sets if enough samples are provided
+                    if len(sample_count) != 0 and num_samples >= sample_count[-1][1] + sample_count[-1][2]:
+                        num_val = sample_count[-1][1]
+                        num_test = sample_count[-1][2]
+                    else:
+                        # else use maximum samples available in same ratio
+                        num_val = int(val_ratio / (1. - train_ratio) * num_samples)
+                        num_test = num_samples - num_val
 
                 train_data.append(frames_array[:num_train])
                 val_data.append(frames_array[num_train:num_train + num_val])
                 test_data.append(frames_array[num_train + num_val:])
 
+                if name in only_test_folders:
+                    if len(sample_count) != 0:
+                        num_train = sample_count[-1][0]
+                    else:
+                        print("Warning: Only test folder came first. Defaulting to given limit for train set.")
+                        if limit == -1:
+                            num_train = 55500
+                        else:
+                            num_train = limit[0]
                 sample_count.append([num_train, num_val, num_test])
                 path_num += 1
 
             sample_count = np.asarray(sample_count)
             min_len = sample_count.transpose().min(axis=1)
-            result_train = self.get_result_set(train_data, min_len[0])
+            if only_test_folders is not None and len(only_test_folders) != 0:
+                result_train = np.zeros([0, 0, 0])
+            else:
+                result_train = self.get_result_set(train_data, min_len[0])
             result_val = self.get_result_set(val_data, min_len[1])
             result_test = self.get_result_set(test_data, min_len[2])
 
             np.save(f"{destination}_train.npy", result_train, allow_pickle=True)
             np.save(f"{destination}_val.npy", result_val, allow_pickle=True)
             np.save(f"{destination}_test.npy", result_test, allow_pickle=True)
+
+            if abort_on_save:
+                print("Aborting on dataset saving.")
+                quit()
 
         # proceed with preparation for loading
         
@@ -126,12 +160,17 @@ class CustomDataset(Dataset):
         result_test = result_test[:, :limit[2]]
 
         # make sure, all frames will result in the same window size after resampling
-        min_sample_rate = min(result_train[:,:,2].min(), result_val[:,:,2].min(), result_test[:,:,2].min())
+        if only_test_folders is not None and len(only_test_folders) != 0:
+            min_sample_rate = min(result_val[:,:,2].min(), result_test[:,:,2].min())
+        else:
+            min_sample_rate = min(result_train[:,:,2].min(), result_val[:,:,2].min(), result_test[:,:,2].min())
         if resample_rate > min_sample_rate:
             raise RuntimeError("Sample rate is smaller than desired sample rate. No upsampling possible here.")
 
         audio_data = None
         if ds_type == "train":
+            if only_test_folders is not None and len(only_test_folders) != 0:
+                raise ValueError("Since there are folders in only_test_folders this cannot be a train dataset.")
             result = result_train
         elif ds_type == "val":
             result = result_val
@@ -153,16 +192,16 @@ class CustomDataset(Dataset):
         self.resample_rate = resample_rate
         self.label_names = {0: "original", get_ds_label(self.audio_data[:,3]): source_name}
 
-    def get_result_set(self, frames, min_len):
+    def get_result_set(self, frames, min_len) -> np.ndarray:
         result = None   # will be of shape (len(paths), frame_number, individual_window_size, label)
         for frame_array in frames:
             if result is None:
-                result = frame_array[:min_len]
+                result = np.expand_dims(frame_array[:min_len], 0)
             else:
-                result = np.stack([result, frame_array[:min_len]])
+                result = np.concatenate([result, np.expand_dims(frame_array[:min_len], 0)])
         return result
 
-    def get_label_name(self, key):
+    def get_label_name(self, key) -> str:
         if key in self.label_names.keys():
             return self.label_names[key]
         else:
@@ -198,35 +237,42 @@ class CustomDataset(Dataset):
         return sample
     
 
-def get_costum_dataset(ds_set, ds_type):
-    save_path = '/home/s6kogase/data/run1'
+def get_costum_dataset(
+        ds_set: str,
+        ds_type: str,
+        seconds: float = 1,
+        resample_rate: int = 22050,
+        limit: tuple = (55504, 7504, 15504),
+        abort_on_save: bool = False
+) -> CustomDataset:
+    save_path = '/home/s6kogase/data/data/run1'
     train_path = '/home/s6kogase/data/data/train'
     cross_test_path = '/home/s6kogase/data/data/cross_test'
+    only_test_folder = ['conformer', 'jsutmbmelgan', 'jsutpwg']
     if ds_set == "train":
         paths = list(Path(train_path).glob(f"./*_*"))
     elif ds_set == "cross_test":
         paths = list(Path(cross_test_path).glob(f"./*_*"))
-        ds_type = "only_test"
     else:
         raise TypeError("Set name does not exist. Choose on of [train, cross_test].")
 
     labels = []
+    str_paths = []
     for path in paths:
         labels.append(ord(path.name.split("_")[0]) - 65)
-
-    ipdb.set_trace()
-    seconds = 1
-    resample_rate = 22050
-    # limit = (55500, 7500, 15500)   # pro label
+        str_paths.append(str(path))
     
     return CustomDataset(
-        paths=paths,
+        paths=str_paths,
         labels=labels,
         save_path=save_path,
+        abort_on_save=abort_on_save,
         seconds=seconds,
         resample_rate=resample_rate,
-        verbose=True,
-        ds_type=ds_type
+        verbose=False,
+        limit=limit,
+        ds_type=ds_type,
+        only_test_folders=only_test_folder
     )
 
 

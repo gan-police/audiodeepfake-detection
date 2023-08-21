@@ -59,9 +59,10 @@ def create_data_loaders(
     #val_data_set = LearnWavefakeDataset(args.data_prefix + "_val", limit=limit)
     #test_data_set = LearnWavefakeDataset(args.data_prefix + "_test", limit=limit)
 
-    train_data_set = get_costum_dataset("train")
-    val_data_set = get_costum_dataset("val")
-    test_data_set = get_costum_dataset("test")
+    save_path = '/home/s6kogase/data/data/run1'
+    train_data_set = get_costum_dataset(data_path="/home/s6kogase/data/data/train", ds_type="train", save_path=save_path, limit=(55504, 7504, 15504))
+    val_data_set = get_costum_dataset(data_path="/home/s6kogase/data/data/train", ds_type="val", save_path=save_path, limit=(55504, 7504, 15504))
+    test_data_set = get_costum_dataset(data_path="/home/s6kogase/data/data/train", ds_type="test", save_path=save_path, limit=(55504, 7504, 15504))
     if args.ddp:
         train_sampler = DistributedSampler(
             train_data_set, shuffle=True, seed=args.seed, drop_last=True
@@ -103,7 +104,9 @@ def create_data_loaders(
 
     if args.unknown_prefix is not None or args.cross_dir is not None:
         if args.cross_dir is not None:
-            cross_set_test = CrossWavefakeDataset(
+            cross_set_test = get_costum_dataset(data_path="/home/s6kogase/data/data/cross_test", ds_type="test", only_test_folders=['conformer', 'jsutmbmelgan', 'jsutpwg'], save_path=save_path, limit=(55500, 7304, 14600))
+            cross_set_val = get_costum_dataset(data_path="/home/s6kogase/data/data/cross_test", ds_type="val", only_test_folders=['conformer', 'jsutmbmelgan', 'jsutpwg'], save_path=save_path, limit=(55500, 7304, 14600))
+            """cross_set_test = CrossWavefakeDataset(
                 base_path=args.cross_dir,
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
@@ -114,7 +117,7 @@ def create_data_loaders(
                 prefix=args.cross_prefix,
                 sources=args.cross_sources,
                 limit=2048,
-            )
+            )"""
         else:
             cross_set_val = LearnWavefakeDataset(
                 args.unknown_prefix + "_val",

@@ -27,7 +27,7 @@ echo -e "Training..."
 
 torchrun \
 --nnodes 1 \
---nproc_per_node 8 \
+--nproc_per_node 4 \
 --rdzv_id $SLURM_JOB_ID \
 --rdzv_backend c10d \
 --rdzv_endpoint $head_node_ip:29400 \
