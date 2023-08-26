@@ -353,6 +353,8 @@ class CustomDataset(Dataset):
         key: Optional[str] = "audio",
         limit: tuple = (555000, 7500, 15500),  # (train, val, test) per label
         verbose: Optional[bool] = False,
+        filetype: str = "wav",
+        asvspoof_name: str = None,
     ):
         """Create a Wavefake-dataset object.
 
@@ -378,14 +380,12 @@ class CustomDataset(Dataset):
             self.label_names[labels[i]] = names[-1]
 
         destination = f"{save_path}/dataset_{'-'.join(names)}_meta_{seconds}sec"
-        if (
-            os.path.exists(f"{destination}_train.npy")
-            and os.path.exists(f"{destination}_val.npy")
-            and os.path.exists(f"{destination}_test.npy")
-        ):
-            result_train = np.load(f"{destination}_train.npy", allow_pickle=True)
-            result_val = np.load(f"{destination}_val.npy", allow_pickle=True)
-            result_test = np.load(f"{destination}_test.npy", allow_pickle=True)
+        if os.path.exists(f"{destination}_train.npy") and ds_type == "train":
+            result_set = np.load(f"{destination}_train.npy", allow_pickle=True)
+        elif os.path.exists(f"{destination}_val.npy") and ds_type == "val":
+            result_set = np.load(f"{destination}_val.npy", allow_pickle=True)
+        elif os.path.exists(f"{destination}_test.npy") and ds_type == "test":
+            result_set = np.load(f"{destination}_test.npy", allow_pickle=True)
         else:
             print(
                 "Reading dataset. This may take up to 45 min, so maybe grab a coffee. The result will be saved to your hard drive to speed up the dataloading in further experiments."
@@ -401,7 +401,10 @@ class CustomDataset(Dataset):
             for path in tqdm(paths, desc="Process paths"):
                 name = path.split("/")[-1].split("_")[-1]
                 names.append(name)
-                path_list = list(Path(path).glob(f"./*.wav"))
+                if asvspoof_name is not None:
+                    path_list = list(Path(path).glob(f"./{asvspoof_name}*.{filetype}"))
+                else:
+                    path_list = list(Path(path).glob(f"./*.{filetype}"))
 
                 frame_dict = {}
                 audio_list = []
@@ -470,16 +473,18 @@ class CustomDataset(Dataset):
 
             sample_count = np.asarray(sample_count)
             min_len = sample_count.transpose().min(axis=1)
-            if only_test_folders is not None and len(only_test_folders) != 0:
-                result_train = np.zeros([0, 0, 0])
-            else:
-                result_train = self.get_result_set(train_data, min_len[0])
-            result_val = self.get_result_set(val_data, min_len[1])
-            result_test = self.get_result_set(test_data, min_len[2])
 
-            np.save(f"{destination}_train.npy", result_train, allow_pickle=True)
-            np.save(f"{destination}_val.npy", result_val, allow_pickle=True)
-            np.save(f"{destination}_test.npy", result_test, allow_pickle=True)
+            if ds_type == "train":
+                if only_test_folders is not None and len(only_test_folders) != 0:
+                    result_set = np.zeros([0, 0, 0])
+                else:
+                    result_set = self.get_result_set(train_data, min_len[0])
+            elif ds_type == "val":
+                result_set = self.get_result_set(val_data, min_len[1])
+            else:
+                result_set = self.get_result_set(test_data, min_len[2])
+
+            np.save(f"{destination}_{ds_type}.npy", result_set, allow_pickle=True)
 
             if abort_on_save:
                 print("Aborting on dataset saving.")
@@ -488,19 +493,12 @@ class CustomDataset(Dataset):
         # proceed with preparation for loading
 
         # apply limit per label
-        result_train = result_train[:, : limit[0]]
-        result_val = result_val[:, : limit[1]]
-        result_test = result_test[:, : limit[2]]
+        import pdb; pdb.set_trace()
+        result_set = result_set[:, : limit]
 
         # make sure, all frames will result in the same window size after resampling
-        if only_test_folders is not None and len(only_test_folders) != 0:
-            min_sample_rate = min(result_val[:, :, 2].min(), result_test[:, :, 2].min())
-        else:
-            min_sample_rate = min(
-                result_train[:, :, 2].min(),
-                result_val[:, :, 2].min(),
-                result_test[:, :, 2].min(),
-            )
+        
+        min_sample_rate = result_set[:, :, 2].min()
         if resample_rate > min_sample_rate:
             raise RuntimeError(
                 "Sample rate is smaller than desired sample rate. No upsampling possible here."
@@ -512,14 +510,10 @@ class CustomDataset(Dataset):
                 raise ValueError(
                     "Since there are folders in only_test_folders this cannot be a train dataset."
                 )
-            result = result_train
-        elif ds_type == "val":
-            result = result_val
-        elif ds_type == "test":
-            result = result_test
-        else:
+        elif ds_type != "val" and ds_type != "test":
             raise RuntimeError("Dataset type does not exists.")
 
+        result = result_set
         for i in range(result.shape[0]):
             if audio_data is None:
                 audio_data = result[i]
@@ -592,6 +586,10 @@ def get_costum_dataset(
     resample_rate: int = 22050,
     limit: tuple = (55504, 7504, 15504),
     abort_on_save: bool = False,
+    asvspoof_name: str = None,
+    train_ratio: float = 0.7,
+    val_ratio: float = 0.1,
+    file_type: str = "wav"
 ) -> CustomDataset:
     paths = list(Path(data_path).glob(f"./*_*"))
     if len(paths) == 0:
@@ -625,4 +623,8 @@ def get_costum_dataset(
         limit=limit,
         ds_type=ds_type,
         only_test_folders=only_test_folders,
+        asvspoof_name=asvspoof_name,
+        train_ratio=train_ratio,
+        val_ratio=val_ratio,
+        filetype=file_type
     )

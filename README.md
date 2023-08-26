@@ -55,7 +55,7 @@ We used the inofficial implementation of Avocodo from [commit 2999557](https://g
 
 The following section of the README serves as a guide to reproducing the experiments from our paper.
 
-### Preparation
+### Preparation WaveFake
 
 As the WaveFake dataset contains gan generated audios equivalent to the audios of LJSpeech, no further preparation needs to be done to get all audios that are needed. We work with mono-channeled audios of different sizes. Hence, the raw audio needs to be cut into equally sized frames of desired size. We mainly used frames of 1s. The sample rate can be varied as well.
 
@@ -84,6 +84,14 @@ Now, to prepare the data sets run `python -m scripts.prepare_ljspeech`. It reads
 Use the parameter `use_only` to specify the name of the directories that should be used from the given data path. E.g. if there are directories `A_ljspeech`, `B_melgan` and `C_hifigan` but you only want to use the first two, set `only_use=["ljspeech", "melgan"]` in the corresponding dataset.
 
 This process could take some time, because it reads the length of all audio files. The results will be saved in the directory specified in `save_path` and hence this process has to only run once for each dataset.
+
+### Preparation ASVSpoof
+We are using Logical Access (LA) train and eval sets of ASV Spoof Challenge 2019 and the DeepFake (DF)
+# 1. Download data
+# 1.2 download keys
+# 2. unzip data
+# 3. Adjust base_path
+# 4. Run python -m scripts.split_asvspoof from repository folder
 
 ### Training the Classifier
 

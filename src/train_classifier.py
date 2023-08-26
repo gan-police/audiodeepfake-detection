@@ -46,7 +46,7 @@ def ddp_setup() -> None:
 def create_data_loaders(
     args,
     limit: int = -1,
-    num_workers: int = 5,
+    num_workers: int = 8,
 ) -> tuple:
     """Create the data loaders needed for training.
 
@@ -59,29 +59,30 @@ def create_data_loaders(
     Returns:
         dataloaders (tuple): train_data_loader, val_data_loader, test_data_set
     """
-    save_path = "/home/s6kogase/data/data/run2"
-    data_path = "/home/s6kogase/data/data/cross_test"
-    limit_train = (55504, 7504, 15504)
+    save_path = args.save_path
+    data_path = args.data_path
+    limit_train = args.limit_train
+    only_use = args.only_use
     train_data_set = get_costum_dataset(
         data_path=data_path,
         ds_type="train",
-        only_use=["ljspeech", "fbmelgan"],
+        only_use=only_use,
         save_path=save_path,
-        limit=limit_train,
+        limit=limit_train[0],
     )
     val_data_set = get_costum_dataset(
         data_path=data_path,
         ds_type="val",
-        only_use=["ljspeech", "fbmelgan"],
+        only_use=only_use,
         save_path=save_path,
-        limit=limit_train,
+        limit=limit_train[1],
     )
     test_data_set = get_costum_dataset(
         data_path=data_path,
         ds_type="test",
-        only_use=["ljspeech", "fbmelgan"],
+        only_use=only_use,
         save_path=save_path,
-        limit=limit_train,
+        limit=limit_train[2],
     )
     if args.ddp:
         train_sampler = DistributedSampler(
@@ -125,30 +126,23 @@ def create_data_loaders(
     if args.unknown_prefix is not None or args.cross_dir is not None:
         if args.cross_dir is not None:
             cross_set_test = get_costum_dataset(
-                data_path="/home/s6kogase/data/data/cross_test",
+                data_path=args.cross_data_path,
                 ds_type="test",
-                only_test_folders=["conformer", "jsutmbmelgan", "jsutpwg"],
+                only_test_folders=args.only_test_folders,
                 only_use=args.cross_sources,
                 save_path=save_path,
-                limit=(55500, 7304, 14600),
+                limit=args.cross_limit[2],
             )
             cross_set_val = get_costum_dataset(
-                data_path="/home/s6kogase/data/data/cross_test",
+                data_path=args.cross_data_path,
                 ds_type="val",
-                only_test_folders=["conformer", "jsutmbmelgan", "jsutpwg"],
+                only_test_folders=args.only_test_folders,
                 only_use=args.cross_sources,
                 save_path=save_path,
-                limit=(55500, 7304, 14600),
+                limit=args.cross_limit[1],
             )
         else:
-            cross_set_val = LearnWavefakeDataset(
-                args.unknown_prefix + "_val",
-                limit=2048,
-            )
-            cross_set_test = LearnWavefakeDataset(
-                args.unknown_prefix + "_test",
-                limit=2048,
-            )
+            raise NotImplementedError()
 
         if args.ddp:
             cross_val_sampler = DistributedSampler(
@@ -640,7 +634,7 @@ def main():
         else:
             griderator = init_grid(num_exp=4)
         num_exp = griderator.get_len()
-
+    #import ipdb; ipdb.set_trace()
     for _exp_number in range(num_exp):
         if args.enable_gs:
             if is_lead(args):
@@ -826,7 +820,7 @@ def main():
         if args.only_testing:
             trainer._check_model_init()
             trainer.load_snapshot(trainer.snapshot_path)
-            trainer.testing()
+            trainer.test_results = trainer.testing()
         else:
             trainer.train(args.epochs)
             if is_lead(args):
@@ -849,6 +843,34 @@ def main():
         print("results:", results)
         print(mean)
         print(std)
+        
+        if True:
+            print("evaluating results:")
+            min = results.min(0)
+            max = results.max(0)
+            stringer = []
+            stringer_2 = []
+            for i in range(len(mean)):
+                print("------------------------------------------------------------------")
+                stringer_2.append(
+                    {
+                        k: v
+                        for k, v in zip(
+                            griderator.get_keys(), griderator.grid_values[i]
+                        )
+                    }
+                )
+                stringer.append(rf"${max[i, 2]*100:.2f}$ & ${mean[i, 2]*100:.2f} \pm {std[i, 2]*100:.2f}$ & ${min[i, 3]:.3f}$ & ${mean[i, 3]:.3f} \pm {std[i, 3]:.3f}$")
+            
+            stringer = np.asarray(stringer, dtype=object)
+            stringer_2 = np.asarray(stringer_2, dtype=object)
+            wavelets = griderator.init_config["wavelet"]
+            cross_dirs = griderator.init_config["cross_sources"]
+            for i in range((len(mean) // len(cross_dirs))):
+                print(stringer_2[i::len(cross_dirs)]) # which configs
+                for k in range(len(wavelets)):
+                    print(rf"{wavelets[k]} & {stringer[i::len(cross_dirs)][k]}") # which values
+        print("------------------------------------------------------------------")
         print(
             f"Best unknown eer: {mean[np.argmin(mean[:,3]), 3]:.4f} +- {std[np.argmin(mean[:,3]), 3]:.4f}"
         )
