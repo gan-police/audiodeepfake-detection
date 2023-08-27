@@ -71,16 +71,17 @@ def get_config() -> dict:
     else:
         model_data = [None]
 
-    config = {
+    wf_config = {
         "learning_rate": [0.0001],
         "weight_decay": [0.001],
-        "data_path": ["/home/s6kogase/data/data/cross_test"],
         "save_path": ["/home/s6kogase/data/data/run3"],
-        "limit_train": [(55504, 7504, 15504)],
+        "data_path": ["/home/s6kogase/data/data/cross_test"],
         "only_use": [["ljspeech", "fbmelgan"]],
+        "limit_train": [(55504, 7504, 15504)],
         "cross_data_path": ["/home/s6kogase/data/data/cross_test"],
         "cross_limit": [(55500, 7304, 14600)],
         "only_test_folders": [["conformer", "jsutmbmelgan", "jsutpwg"]],
+        "file_type": ["wav"],
         "dropout_cnn": [0.6],
         "dropout_lstm": [0.2],
         "num_of_scales": [256],
@@ -108,6 +109,50 @@ def get_config() -> dict:
         "ochannels5": [32, 64],
         "only_testing": [False],
     }
+
+    asv_config = {
+        "learning_rate": [0.0001, 0.0005],
+        "weight_decay": [0.01, 0.001],
+        "save_path": ["/home/s6kogase/data/data/run3"],
+        "data_path": ["/home/s6kogase/data/data/asvspoof"],
+        "cross_limit": [(7472, 7672, 21320)],
+        "cross_sources": [["asv2019real", "asv2019fake"]],
+        "asvspoof_name_cross": ["LA"],    # or DF_E or None
+        "cross_data_path": ["/home/s6kogase/data/data/asvspoof"],
+        "limit_train": [(44368, 6336, 12672)],
+        "file_type": ["flac"],
+        "asvspoof_name": ["DF_E"],
+        "sample_rate": [16000],
+        "dropout_cnn": [0.6],
+        "dropout_lstm": [0.2],
+        "num_of_scales": [256],
+        "wavelet": ["sym8"],
+        "only_use": [
+            #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "avocodo", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg", "lbigvgan", "bigvgan"],
+            #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
+            # ["ljspeech", "avocodo"],
+            #["ljspeech", "lbigvgan", "bigvgan"],
+            ["asv2021real", "asv2021fake"]
+        ],
+        "epochs": [10, 5],
+        "validation_interval": [10],
+        "block_norm": [False],
+        "batch_size": [128],
+        "aug_contrast": [False],
+        "model": ["modules"],
+        "model_data": model_data,
+        "module": [TestNet],
+        "kernel1": [3],
+        "num_devices": [8],
+        "ochannels1": [64, 32],
+        "ochannels2": [32, 64],
+        "ochannels3": [96],
+        "ochannels4": [128],
+        "ochannels5": [32, 64],
+        "only_testing": [False],
+    }
+
+    config = asv_config
 
     # parse model data if exists
     if "model_data" in config.keys() and config["model_data"][0] is not None:
@@ -262,6 +307,8 @@ class TestNet(torch.nn.Module):
         )
 
         time_dim = ((args.input_dim[-1])) // 8
+        if args.asvspoof_name is not None:  # cheap workaround
+            time_dim = 9
 
         self.dil_conv = nn.Sequential(
             nn.SyncBatchNorm(time_dim, affine=True),

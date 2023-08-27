@@ -405,7 +405,6 @@ class CustomDataset(Dataset):
                     path_list = list(Path(path).glob(f"./{asvspoof_name}*.{filetype}"))
                 else:
                     path_list = list(Path(path).glob(f"./*.{filetype}"))
-
                 frame_dict = {}
                 audio_list = []
                 frame_list = []
@@ -493,7 +492,7 @@ class CustomDataset(Dataset):
         # proceed with preparation for loading
 
         # apply limit per label
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
         result_set = result_set[:, : limit]
 
         # make sure, all frames will result in the same window size after resampling
@@ -597,6 +596,7 @@ def get_costum_dataset(
 
     labels = []
     str_paths = []
+
     for path in paths:
         if (
             only_use is not None

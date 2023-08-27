@@ -43,7 +43,7 @@ if __name__ == "__main__":
         resample_rate=16000,
     )
 
-    limit_train = (7472, 7672, 21320)
+    limit_train = (44368, 6336, 12672)
 
     only_use = ["asv2021real", "asv2021fake"]
     train_data_set = get_costum_dataset(
@@ -76,3 +76,4 @@ if __name__ == "__main__":
         file_type="flac",
         resample_rate=16000,
     )
+    

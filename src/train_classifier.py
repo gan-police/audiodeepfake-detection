@@ -63,12 +63,16 @@ def create_data_loaders(
     data_path = args.data_path
     limit_train = args.limit_train
     only_use = args.only_use
+    
     train_data_set = get_costum_dataset(
         data_path=data_path,
         ds_type="train",
         only_use=only_use,
         save_path=save_path,
         limit=limit_train[0],
+        asvspoof_name=f"{args.asvspoof_name}_T" if args.asvspoof_name is not None and "LA" in args.asvspoof_name else args.asvspoof_name,
+        file_type=args.file_type,
+        resample_rate=args.sample_rate,
     )
     val_data_set = get_costum_dataset(
         data_path=data_path,
@@ -76,6 +80,9 @@ def create_data_loaders(
         only_use=only_use,
         save_path=save_path,
         limit=limit_train[1],
+        asvspoof_name=f"{args.asvspoof_name}_D" if args.asvspoof_name is not None and "LA" in args.asvspoof_name else args.asvspoof_name,
+        file_type=args.file_type,
+        resample_rate=args.sample_rate,
     )
     test_data_set = get_costum_dataset(
         data_path=data_path,
@@ -83,6 +90,9 @@ def create_data_loaders(
         only_use=only_use,
         save_path=save_path,
         limit=limit_train[2],
+        asvspoof_name=f"{args.asvspoof_name}_E" if args.asvspoof_name is not None and "LA" in args.asvspoof_name else args.asvspoof_name,
+        file_type=args.file_type,
+        resample_rate=args.sample_rate,
     )
     if args.ddp:
         train_sampler = DistributedSampler(
@@ -132,6 +142,9 @@ def create_data_loaders(
                 only_use=args.cross_sources,
                 save_path=save_path,
                 limit=args.cross_limit[2],
+                asvspoof_name=args.asvspoof_name_cross,
+                file_type=args.file_type,
+                resample_rate=args.sample_rate,
             )
             cross_set_val = get_costum_dataset(
                 data_path=args.cross_data_path,
@@ -140,6 +153,9 @@ def create_data_loaders(
                 only_use=args.cross_sources,
                 save_path=save_path,
                 limit=args.cross_limit[1],
+                asvspoof_name=args.asvspoof_name_cross,
+                file_type=args.file_type,
+                resample_rate=args.sample_rate,
             )
         else:
             raise NotImplementedError()
@@ -645,8 +661,8 @@ def main():
                 print("---------------------------------------------------------")
             args, _ = griderator.update_step(args)
 
-        if args.f_max > args.sample_rate / 2:
-            print("Warning: maximum analyzed frequency is above nyquist rate.")
+        #if args.f_max > args.sample_rate / 2:
+        #    print("Warning: maximum analyzed frequency is above nyquist rate.")
 
         if args.features != "none" and args.model != "lcnn":
             raise NotImplementedError(
