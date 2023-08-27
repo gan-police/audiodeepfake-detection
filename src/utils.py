@@ -8,8 +8,8 @@ import numpy as np
 import torch
 import torchaudio
 
-from src.data_loader import LearnWavefakeDataset
 from scripts.gridsearch_config import get_config
+from src.data_loader import LearnWavefakeDataset
 
 
 def set_seed(seed: int):
@@ -441,7 +441,7 @@ class _Griderator:
     def update_args(self, args):
         """Update args with current step values."""
         for value, key in zip(self.grid_values[self.current], self.get_keys()):
-            #if args.get(key) is None:
+            # if args.get(key) is None:
             #    print(f"Added new config key: {key}.")
             args[key] = value
         return args
@@ -480,14 +480,20 @@ def get_input_dims(args, transforms) -> list:
         freq_time_dt, _ = transforms(
             dataset.__getitem__(0)["audio"].cuda(non_blocking=True)
         )
-    
+
     shape = list(freq_time_dt.shape)
-    
+
     if len(shape) < 4:
         shape.insert(0, args.batch_size)
     else:
         shape[0] = args.batch_size
+    
+    if args.asvspoof_name is not None:
+        shape[3] = 77
     return shape
 
+
 def debug():
-    import pdb; pdb.set_trace()
+    import pdb
+
+    pdb.set_trace()

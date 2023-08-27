@@ -1,14 +1,13 @@
 """Models for classification of audio deepfakes."""
+import ast
 import sys
+from copy import copy
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torchaudio
 from torchsummary import summary
-
-import ast
-from copy import copy
 
 
 def contrast(waveform: torch.Tensor) -> torch.Tensor:
@@ -59,7 +58,7 @@ class GridModelWrapper(nn.Module):
         self.sequentials = nn.ParameterList(sequentials)
         self.transforms = transforms
         self.len = len(self.sequentials)
-        
+
         if len(self.transforms) != self.len:
             print("Warning: length of transforms and sequentials are not the same.")
 
@@ -72,6 +71,7 @@ class GridModelWrapper(nn.Module):
                     x = self.transforms[i][j](x)
 
         return x
+
 
 class LCNN(nn.Module):
     """Deep CNN with 2D convolutions for detecting audio deepfakes.
@@ -126,7 +126,7 @@ class LCNN(nn.Module):
         self.lstm = nn.Sequential(
             BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
             BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
-            #nn.Dropout(dropout_lstm),
+            # nn.Dropout(dropout_lstm),
         )
 
         self.fc = nn.Linear((lstm_channels // 16) * 32, classes)
@@ -136,7 +136,7 @@ class LCNN(nn.Module):
         x = self.lcnn(x.permute(0, 1, 3, 2))
         x = x.permute(0, 2, 1, 3).contiguous()
         shape = x.shape
-        #import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         x = self.lstm(x.view(shape[0], shape[1], -1))
         x = self.fc(x).mean(1)
 
@@ -206,7 +206,7 @@ class LearnDeepNet(nn.Module):
         x = self.cnn(x.permute(0, 1, 3, 2))
 
         # [batch, channels, time, packets]
-        x = x.permute(0, 2, 1, 3).contiguous()     
+        x = x.permute(0, 2, 1, 3).contiguous()
 
         # "[batch, time, channels, packets]"
         x = self.dil_cnn(x)
@@ -387,19 +387,19 @@ def get_model(
                 input_shape = model_layer["input_shape"]
             else:
                 input_shape = None
-            
+
             if "transforms" in model_layer.keys():
                 transform = model_layer["transforms"]
             else:
                 transform = []
 
-
-            model_seq.append(parse_sequential(
-                model_list=model_layer["layers"],
-                input_shape=input_shape
-            ))
+            model_seq.append(
+                parse_sequential(
+                    model_list=model_layer["layers"], input_shape=input_shape
+                )
+            )
             transforms.append(transform)
-        
+
         if False not in model_seq:
             model = GridModelWrapper(
                 sequentials=model_seq,
@@ -407,7 +407,7 @@ def get_model(
             )
         else:
             raise RuntimeError("Model not valid.")
-    
+
     elif model_name == "modules":
         if check_dimensions(args.module(args), args.input_dim[1:]):
             model = args.module(args)
@@ -426,34 +426,38 @@ def parse_model_str(model_str):
         postfix = None
         if isinstance(element, list):
             postfix = element[0]
-            element = element[-1]   # bcause element = [module, layer]
+            element = element[-1]  # bcause element = [module, layer]
         if isinstance(element, str):
             split = element.split()
-            element_parts = [ast.literal_eval(part) for part in split[1:]]  # assuming pattern: "Class args"
+            element_parts = [
+                ast.literal_eval(part) for part in split[1:]
+            ]  # assuming pattern: "Class args"
             element_parts.insert(0, split[0])
         else:
             raise RuntimeError(f"Model string invalid at {element}.")
-                
+
         # get number of combinations. Must be the same for each layer element.
         for part in element_parts:
             if isinstance(part, list):
                 if output_els == 1:
                     output_els = len(part)
                     break
-                
+
         for i in range(output_els):
             output_list = []
 
             for part in element_parts:
                 if isinstance(part, list):
                     if output_els != len(part):
-                        raise RuntimeError(f"Model layers must contain the same amount of elements. Expected {output_els}, but got {len(part)}.")
+                        raise RuntimeError(
+                            f"Model layers must contain the same amount of elements. Expected {output_els}, but got {len(part)}."
+                        )
                     part = part[i]
                 output_list.append(str(part).replace(" ", ""))
             if postfix is not None:
                 output_list = [postfix, output_list]
             new_elements.append(output_list)
-                
+
         if len(parsed_output) > 0:
             last_layer = copy(parsed_output[-1])
         else:
@@ -506,9 +510,9 @@ def parse_sequential(model_list, input_shape=None) -> nn.Sequential | bool:
     for layer in model_list:
         if not isinstance(layer[0], str):
             module = layer[0]
-            layer_parts = layer[1]  
+            layer_parts = layer[1]
         else:
-            module = nn     # default
+            module = nn  # default
             layer_parts = layer
         try:
             layer_type = getattr(module, layer_parts[0])
@@ -522,18 +526,19 @@ def parse_sequential(model_list, input_shape=None) -> nn.Sequential | bool:
                 return False
 
         import ast
+
         layer_args = [ast.literal_eval(part) for part in layer_parts[1:]]
         layer = layer_type(*layer_args)
         layers.append(layer)
 
     model = nn.Sequential(*layers)
-    
+
     # only perform dim check if input_shape is given
     if input_shape is not None:
         dim_check = check_dimensions(model, input_shape)
         if not dim_check:
             return False
-    
+
     return model
 
 

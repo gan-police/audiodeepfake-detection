@@ -167,7 +167,9 @@ def load_transform_and_stack(
             try:
                 framed_audio = audio_res[0].unfold(0, window_size, window_size)
             except:
-                import pdb; pdb.set_trace()
+                import pdb
+
+                pdb.set_trace()
             framed_audio = framed_audio.unsqueeze(1)
             audio_list.extend(np.array(framed_audio))
             label = np.array(get_label(path_list[i], binary_classification))
@@ -438,10 +440,18 @@ def split_dataset_random(
             window_size, file_list, train_size, resample_rate=resample_rate
         )
         val_list_f, val_list_w, last_ind = get_frames(
-            window_size, file_list[last_ind + 1 :], val_size, last_ind + 1, resample_rate=resample_rate
+            window_size,
+            file_list[last_ind + 1 :],
+            val_size,
+            last_ind + 1,
+            resample_rate=resample_rate,
         )
         test_list_f, test_list_w, last_ind = get_frames(
-            window_size, file_list[last_ind + 1 :], test_size, last_ind + 1, resample_rate=resample_rate
+            window_size,
+            file_list[last_ind + 1 :],
+            test_size,
+            last_ind + 1,
+            resample_rate=resample_rate,
         )
         if folder == folder_list[0]:
             train_size = sum(train_list_w) * window_size
@@ -454,13 +464,22 @@ def split_dataset_random(
             percentage = 50 / folder_num if not equal_distr else 100 / folder_num
             print(f"dataset will contain only {percentage} % of this folder...")
             train_list_f, train_list_w, _ = get_frames(
-                window_size, train_list_f, train_size // folder_num, resample_rate=resample_rate
+                window_size,
+                train_list_f,
+                train_size // folder_num,
+                resample_rate=resample_rate,
             )
             val_list_f, val_list_w, _ = get_frames(
-                window_size, val_list_f, val_size // folder_num, resample_rate=resample_rate
+                window_size,
+                val_list_f,
+                val_size // folder_num,
+                resample_rate=resample_rate,
             )
             test_list_f, test_list_w, _ = get_frames(
-                window_size, test_list_f, test_size // folder_num, resample_rate=resample_rate
+                window_size,
+                test_list_f,
+                test_size // folder_num,
+                resample_rate=resample_rate,
             )
             if folder == folder_list[0]:
                 train_size = sum(train_list_w) * window_size * folder_num

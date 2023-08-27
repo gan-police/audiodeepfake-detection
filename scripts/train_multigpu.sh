@@ -4,7 +4,7 @@
 #SBATCH --job-name=train
 #SBATCH --gres=gpu:8
 #SBATCH --cpus-per-task=255
-#SBATCH --partition=A100short
+#SBATCH --partition=A100medium
 #SBATCH --output=exp/log5/slurm/train/train_%A_%a.out
 #SBATCH --error=exp/log5/slurm/train/train_%A_%a.err
 
@@ -25,7 +25,7 @@ conda activate py310
 
 echo -e "Training..."
 
-srun torchrun \
+torchrun \
 --nnodes 1 \
 --nproc_per_node 8 \
 --rdzv_id $SLURM_JOB_ID \

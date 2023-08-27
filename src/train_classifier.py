@@ -8,7 +8,7 @@ import torch
 from scipy.interpolate import interp1d
 from scipy.optimize import brentq
 from sklearn.metrics import roc_curve
-from torch.distributed import destroy_process_group, init_process_group, barrier
+from torch.distributed import barrier, destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DiDiP
 from torch.optim import Adam
 from torch.utils.data import DataLoader
@@ -19,17 +19,20 @@ from tqdm import tqdm
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
-from src.data_loader import CrossWavefakeDataset, LearnWavefakeDataset
+from src.data_loader import (
+    CrossWavefakeDataset,
+    LearnWavefakeDataset,
+    get_costum_dataset,
+)
 from src.models import get_model, save_model
 from src.utils import (
     DotDict,
     add_default_parser_args,
     add_noise,
     contrast,
+    get_input_dims,
     init_grid,
     set_seed,
-    get_input_dims,
-    debug
 )
 from src.wavelet_math import get_transforms
 
@@ -43,7 +46,7 @@ def ddp_setup() -> None:
 def create_data_loaders(
     args,
     limit: int = -1,
-    num_workers: int = 5,
+    num_workers: int = 8,
 ) -> tuple:
     """Create the data loaders needed for training.
 
@@ -56,10 +59,41 @@ def create_data_loaders(
     Returns:
         dataloaders (tuple): train_data_loader, val_data_loader, test_data_set
     """
-    train_data_set = LearnWavefakeDataset(args.data_prefix + "_train", limit=limit)
-    val_data_set = LearnWavefakeDataset(args.data_prefix + "_val", limit=limit)
-    test_data_set = LearnWavefakeDataset(args.data_prefix + "_test", limit=limit)
-
+    save_path = args.save_path
+    data_path = args.data_path
+    limit_train = args.limit_train
+    only_use = args.only_use
+    
+    train_data_set = get_costum_dataset(
+        data_path=data_path,
+        ds_type="train",
+        only_use=only_use,
+        save_path=save_path,
+        limit=limit_train[0],
+        asvspoof_name=f"{args.asvspoof_name}_T" if args.asvspoof_name is not None and "LA" in args.asvspoof_name else args.asvspoof_name,
+        file_type=args.file_type,
+        resample_rate=args.sample_rate,
+    )
+    val_data_set = get_costum_dataset(
+        data_path=data_path,
+        ds_type="val",
+        only_use=only_use,
+        save_path=save_path,
+        limit=limit_train[1],
+        asvspoof_name=f"{args.asvspoof_name}_D" if args.asvspoof_name is not None and "LA" in args.asvspoof_name else args.asvspoof_name,
+        file_type=args.file_type,
+        resample_rate=args.sample_rate,
+    )
+    test_data_set = get_costum_dataset(
+        data_path=data_path,
+        ds_type="test",
+        only_use=only_use,
+        save_path=save_path,
+        limit=limit_train[2],
+        asvspoof_name=f"{args.asvspoof_name}_E" if args.asvspoof_name is not None and "LA" in args.asvspoof_name else args.asvspoof_name,
+        file_type=args.file_type,
+        resample_rate=args.sample_rate,
+    )
     if args.ddp:
         train_sampler = DistributedSampler(
             train_data_set, shuffle=True, seed=args.seed, drop_last=True
@@ -101,27 +135,30 @@ def create_data_loaders(
 
     if args.unknown_prefix is not None or args.cross_dir is not None:
         if args.cross_dir is not None:
-            cross_set_test = CrossWavefakeDataset(
-                base_path=args.cross_dir,
-                prefix=args.cross_prefix,
-                sources=args.cross_sources,
-                limit=15360,     # same batches if trained with 1, 2, 4, 8 GPUs
+            cross_set_test = get_costum_dataset(
+                data_path=args.cross_data_path,
+                ds_type="test",
+                only_test_folders=args.only_test_folders,
+                only_use=args.cross_sources,
+                save_path=save_path,
+                limit=args.cross_limit[2],
+                asvspoof_name=args.asvspoof_name_cross,
+                file_type=args.file_type,
+                resample_rate=args.sample_rate,
             )
-            cross_set_val = CrossWavefakeDataset(
-                base_path=args.cross_dir,
-                prefix=args.cross_prefix,
-                sources=args.cross_sources,
-                limit=2048,
+            cross_set_val = get_costum_dataset(
+                data_path=args.cross_data_path,
+                ds_type="val",
+                only_test_folders=args.only_test_folders,
+                only_use=args.cross_sources,
+                save_path=save_path,
+                limit=args.cross_limit[1],
+                asvspoof_name=args.asvspoof_name_cross,
+                file_type=args.file_type,
+                resample_rate=args.sample_rate,
             )
         else:
-            cross_set_val = LearnWavefakeDataset(
-                args.unknown_prefix + "_val",
-                limit=2048,
-            )
-            cross_set_test = LearnWavefakeDataset(
-                args.unknown_prefix + "_test",
-                limit=2048,
-            )
+            raise NotImplementedError()
 
         if args.ddp:
             cross_val_sampler = DistributedSampler(
@@ -188,7 +225,7 @@ class Trainer:
         if self.args.ddp:
             self.local_rank = int(os.environ["LOCAL_RANK"])
             self.global_rank = int(os.environ["RANK"])
-            self.world_size = int(os.environ['WORLD_SIZE'])
+            self.world_size = int(os.environ["WORLD_SIZE"])
         else:
             self.local_rank = self.global_rank = torch.cuda.current_device()
             self.world_size = 1
@@ -356,7 +393,7 @@ class Trainer:
 
         if self.args.ddp:
             torch.cuda.synchronize()
-            barrier()   # synchronize all processes
+            barrier()  # synchronize all processes
 
         if is_lead(self.args):
             print(
@@ -430,6 +467,7 @@ class Trainer:
 
         for _it, batch in enumerate(self.bar):
             self.model.train()
+            self._run_batch(e, batch)
             self._run_batch(e, batch)
 
     def _run_validation(self, epoch):
@@ -528,9 +566,13 @@ class Trainer:
             self._run_epoch(epoch)
 
             if is_lead(self.args):
-                if (epoch > 0 and epoch % self.args.ckpt_every == 0) or (epoch == 0 and self.args.ckpt_every == 1):
+                if (epoch > 0 and epoch % self.args.ckpt_every == 0) or (
+                    epoch == 0 and self.args.ckpt_every == 1
+                ):
                     self._save_snapshot(epoch)
-            if (epoch > 0 and epoch % self.args.validation_interval == 0) or (epoch == 0 and self.args.validation_interval == 1):
+            if (epoch > 0 and epoch % self.args.validation_interval == 0) or (
+                epoch == 0 and self.args.validation_interval == 1
+            ):
                 self._run_validation(epoch)
             if epoch == max_epochs - 1:
                 if is_lead(self.args):
@@ -606,9 +648,9 @@ def main():
         if not args.random_seeds:
             griderator = init_grid(num_exp=5, init_seeds=[0, 1, 2, 3, 4])
         else:
-            griderator = init_grid(num_exp=4)
+            griderator = init_grid(num_exp=3)
         num_exp = griderator.get_len()
-
+    #import ipdb; ipdb.set_trace()
     for _exp_number in range(num_exp):
         if args.enable_gs:
             if is_lead(args):
@@ -619,8 +661,8 @@ def main():
                 print("---------------------------------------------------------")
             args, _ = griderator.update_step(args)
 
-        if args.f_max > args.sample_rate / 2:
-            print("Warning: maximum analyzed frequency is above nyquist rate.")
+        #if args.f_max > args.sample_rate / 2:
+        #    print("Warning: maximum analyzed frequency is above nyquist rate.")
 
         if args.features != "none" and args.model != "lcnn":
             raise NotImplementedError(
@@ -769,7 +811,7 @@ def main():
 
         loss_fun = torch.nn.CrossEntropyLoss()
 
-        lr = args.learning_rate * int(args.num_devices)     # num of gpus
+        lr = args.learning_rate * int(args.num_devices)  # num of gpus
         optimizer = Adam(
             model.parameters(),
             lr=lr,
@@ -792,11 +834,13 @@ def main():
             writer=writer,
         )
         if args.only_testing:
+            trainer._check_model_init()
             trainer.load_snapshot(trainer.snapshot_path)
-            trainer.testing()
+            trainer.test_results = trainer.testing()
         else:
             trainer.train(args.epochs)
-            trainer._save_snapshot(args.epochs - 1)
+            if is_lead(args):
+                trainer._save_snapshot(args.epochs - 1)
 
         if exp_results.get(args.seed) is None:
             exp_results[args.seed] = [trainer.test_results]
@@ -815,6 +859,34 @@ def main():
         print("results:", results)
         print(mean)
         print(std)
+        
+        if True:
+            print("evaluating results:")
+            min = results.min(0)
+            max = results.max(0)
+            stringer = []
+            stringer_2 = []
+            for i in range(len(mean)):
+                print("------------------------------------------------------------------")
+                stringer_2.append(
+                    {
+                        k: v
+                        for k, v in zip(
+                            griderator.get_keys(), griderator.grid_values[i]
+                        )
+                    }
+                )
+                stringer.append(rf"${max[i, 2]*100:.2f}$ & ${mean[i, 2]*100:.2f} \pm {std[i, 2]*100:.2f}$ & ${min[i, 3]:.3f}$ & ${mean[i, 3]:.3f} \pm {std[i, 3]:.3f}$")
+            
+            stringer = np.asarray(stringer, dtype=object)
+            stringer_2 = np.asarray(stringer_2, dtype=object)
+            wavelets = griderator.init_config["wavelet"]
+            cross_dirs = griderator.init_config["cross_sources"]
+            for i in range((len(mean) // len(cross_dirs))):
+                print(stringer_2[i::len(cross_dirs)]) # which configs
+                for k in range(len(wavelets)):
+                    print(rf"{wavelets[k]} & {stringer[i::len(cross_dirs)][k]}") # which values
+        print("------------------------------------------------------------------")
         print(
             f"Best unknown eer: {mean[np.argmin(mean[:,3]), 3]:.4f} +- {std[np.argmin(mean[:,3]), 3]:.4f}"
         )
