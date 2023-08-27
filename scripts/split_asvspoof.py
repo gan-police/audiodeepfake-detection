@@ -21,11 +21,11 @@ audio_path = "flac"
 label_path = ["ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.train.trn.txt", "ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.eval.trl.txt", "ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.dev.trl.txt"]
 
 # for ASVSpoof 2021
-year = 2021
-base_path = "/home/s6kogase/data/asvspoof/ASVspoof2021_DF_eval/"
-path = [""]
-audio_path = "flac"
-label_path = ["keys/DF/CM/trial_metadata.txt"]
+#year = 2021
+#base_path = "/home/s6kogase/data/asvspoof/ASVspoof2021_DF_eval/"
+#path = [""]
+#audio_path = "flac"
+#label_path = ["keys/DF/CM/trial_metadata.txt"]
 
 if __name__ == "__main__":
     if year == 2021:

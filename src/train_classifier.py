@@ -648,7 +648,7 @@ def main():
         if not args.random_seeds:
             griderator = init_grid(num_exp=5, init_seeds=[0, 1, 2, 3, 4])
         else:
-            griderator = init_grid(num_exp=4)
+            griderator = init_grid(num_exp=3)
         num_exp = griderator.get_len()
     #import ipdb; ipdb.set_trace()
     for _exp_number in range(num_exp):

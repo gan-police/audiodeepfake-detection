@@ -87,64 +87,36 @@ This process could take some time, because it reads the length of all audio file
 
 ### Preparation ASVSpoof
 We are using Logical Access (LA) train and eval sets of ASV Spoof Challenge 2019 and the DeepFake (DF)
-# 1. Download data
-# 1.2 download keys
-# 2. unzip data
-# 3. Adjust base_path
-# 4. Run python -m scripts.split_asvspoof from repository folder
+1. Download data
+1.2. download keys (for DF ASVspoof 21) and unpack them in the folder containing the data of ASVspoof 21
+2. unzip/untar data
+3. Adjust base_path
+4. Run `python -m scripts.split_asvspoof` from repository folder first for ASVspoof 2019
+5. Uncomment lines for ASVspoof 2021 and run `python -m scripts.split_asvspoof`
+6. Adjust `save_path` and `data_path` in `scripts/prepare_asvspoof.py` so that `save_path` is the folder for the datasets files that will be generated and `data_path` the directory with the structure e.g.
+└── cross_test
+      ├── A_asv2019real
+      |    └── real1.flac...
+      ├── B_asv2019fake
+      |    └── fake1.flac...
+      ├── A_asv2021real
+      |    └── real1.flac...
+      └── B_asv2021fake
+           └── fake1.flac...
 
 ### Training the Classifier
 
-Now you should be able to train a classifier using for example:
+Now you should be able to train a classifier using the config file in `scripts/gridsearch_config.py` and the train scripts. The train scripts start the training process with some configuration values that can be changed. These will be loaded into a variable dict named `args` wich is dot accessible (e.g. `args.epochs`). If you run e.g. `scripts/train_multigpu.py` python will run `src.train_classifier` using the grid search functionality. In this case the given training parameters will be overridden if found in the config dict in `scripts/gridsearch_config.py`. There you can also define new training args if you want to use them later in a model or somewhere else in the code. Each parameter expects a list of values with len(list) >= 1. If you only give one value it will run only this one experiment. If you give more than one value the script will run two different experiments, one for each value. If you give more than one value for e.g. two parameters, the script will run `2 * 2 = 4` experiments.
 
-```shell
-python -m src.train_classifier \
-    --data-prefix "${HOME}/data/fake_22050_11025_0.7_melgan" \
-    --batch-size 128 \
-    --learning-rate 0.0001 \
-    --weight-decay 0.0001   \
-    --epochs 10 \
-    --model "lcnn"  \
-    --wavelet "cmor3.3-4.17" \
-    --f-min 1000 \
-    --features "none" \
-    --hop-length 50 \
-    --transform packets \
-    --calc-normalization \
-    --f-max 9500 \
-    --num-of-scales 150 \
-    --sample-rate 22050 \
-    --flattend-size 352 \
-    --pbar \
-    --tensorboard
-```
+Keep in mind that each experiment will be run for 5 different seeds.
 
-This trains a cnn classifier using the chosen hyperparameters. The training, validation and test accuracy and loss values are stored in a file placed in a `log` folder. The state dict of the trained model is stored there as well. Using the argument `--adapt-wavelet` will make the wavelet bandwidth and center frequency part of the trainable parameters of the model. For a list of all optional arguments, open the help page via the `-h` argument.
+For asvspoof set `config = asv_config` in the gridsearch config, for wavefake set `config = wf_config`.
 
 ### Evaluating the Classifier
 
 #### Calculating accuracy and equal error rate (EER)
 
-To test a model that was already trained, set the argument `only-testing` in the initial training script to `True`.
-
-
-### Attributing the Classifier
-
-To get a grip of which parts of the input the classifier uses to discriminate the audios in real and fake, I implemented attribution via integrated gradients. These can be used like this:
-```shell
-python -m src.integrated_gradients \
-    --data-prefix "${HOME}/data/fake_22050_11025_0.7" \
-    --plot-path "plots/attribution/" \
-    --target-label 1 \
-    --times 5056 \
-    --model "learndeepnet"  \
-    --wavelet "cmor3.3-4.17" \
-    --num-of-scales 150 \
-    --sample-rate 22050 \
-    --flattend-size 21888 \
-    --gans "melgan"
-```
-This plots the saliency, the integrated gradients and the mean over all time of the integrated gradients as min-, max- and absolute histograms for all given frequencies and saves the plots to latex standalone scripts.
+To test a model that was already trained, set the argument `only_testing` in the initial training script or in `scripts/gridsearch_config.py` to `True`.
 
 
 ## Issues
