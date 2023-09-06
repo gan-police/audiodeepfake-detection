@@ -487,7 +487,7 @@ def get_input_dims(args, transforms) -> list:
         shape.insert(0, args.batch_size)
     else:
         shape[0] = args.batch_size
-    
+
     if args.asvspoof_name is not None:
         shape[3] = 77
     return shape

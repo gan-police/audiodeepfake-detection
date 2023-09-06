@@ -87,8 +87,8 @@ def get_config() -> dict:
         "num_of_scales": [256],
         "wavelet": ["sym8"],
         "cross_sources": [
-            #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "avocodo", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg", "lbigvgan", "bigvgan"],
-            #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
+            # ["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "avocodo", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg", "lbigvgan", "bigvgan"],
+            # ["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
             # ["ljspeech", "avocodo"],
             ["ljspeech", "lbigvgan", "bigvgan"],
         ],
@@ -117,7 +117,7 @@ def get_config() -> dict:
         "data_path": ["/home/s6kogase/data/data/asvspoof"],
         "cross_limit": [(7472, 7672, 21320)],
         "cross_sources": [["asv2019real", "asv2019fake"]],
-        "asvspoof_name_cross": ["LA"],    # or DF_E or None
+        "asvspoof_name_cross": ["LA"],  # or DF_E or None
         "cross_data_path": ["/home/s6kogase/data/data/asvspoof"],
         "limit_train": [(44368, 6336, 12672)],
         "file_type": ["flac"],
@@ -128,10 +128,10 @@ def get_config() -> dict:
         "num_of_scales": [256],
         "wavelet": ["sym8"],
         "only_use": [
-            #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "avocodo", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg", "lbigvgan", "bigvgan"],
-            #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
+            # ["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "avocodo", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg", "lbigvgan", "bigvgan"],
+            # ["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
             # ["ljspeech", "avocodo"],
-            #["ljspeech", "lbigvgan", "bigvgan"],
+            # ["ljspeech", "lbigvgan", "bigvgan"],
             ["asv2021real", "asv2021fake"]
         ],
         "epochs": [10, 5],
