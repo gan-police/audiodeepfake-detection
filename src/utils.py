@@ -9,7 +9,7 @@ import torch
 import torchaudio
 
 from scripts.gridsearch_config import get_config
-from src.data_loader import LearnWavefakeDataset
+from src.data_loader import get_costum_dataset
 
 
 def set_seed(seed: int):
@@ -475,7 +475,16 @@ class DotDict(dict):
 
 def get_input_dims(args, transforms) -> list:
     """Return dimensions of transformed audio."""
-    dataset = LearnWavefakeDataset(args.data_prefix + "_train")
+    dataset = get_costum_dataset(
+            data_path=args.data_path,
+            ds_type="train",
+            only_use=args.only_use,
+            save_path=args.save_path,
+            limit=args.limit_train[0],
+            asvspoof_name=f"{args.asvspoof_name}_T" if args.asvspoof_name is not None and "LA" in args.asvspoof_name else args.asvspoof_name,
+            file_type=args.file_type,
+            resample_rate=args.sample_rate,
+    )
     with torch.no_grad():
         freq_time_dt, _ = transforms(
             dataset.__getitem__(0)["audio"].cuda(non_blocking=True)
@@ -488,8 +497,6 @@ def get_input_dims(args, transforms) -> list:
     else:
         shape[0] = args.batch_size
 
-    if args.asvspoof_name is not None:
-        shape[3] = 77
     return shape
 
 
