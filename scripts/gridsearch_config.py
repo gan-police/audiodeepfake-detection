@@ -74,11 +74,11 @@ def get_config() -> dict:
     wf_config = {
         "learning_rate": [0.0001],
         "weight_decay": [0.001],
-        "save_path": ["/home/s6kogase/data/data/run3"],
-        "data_path": ["/home/s6kogase/data/data/cross_test"],
+        "save_path": ["/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run2"],
+        "data_path": ["/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/fake"],
         "only_use": [["ljspeech", "fbmelgan"]],
         "limit_train": [(55504, 7504, 15504)],
-        "cross_data_path": ["/home/s6kogase/data/data/cross_test"],
+        "cross_data_path": ["/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/fake"],
         "cross_limit": [(55500, 7304, 14600)],
         "only_test_folders": [["conformer", "jsutmbmelgan", "jsutpwg"]],
         "file_type": ["wav"],
@@ -87,12 +87,12 @@ def get_config() -> dict:
         "num_of_scales": [256],
         "wavelet": ["sym8"],
         "cross_sources": [
-            # ["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "avocodo", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg", "lbigvgan", "bigvgan"],
-            # ["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
+            ["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "avocodo", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg", "lbigvgan", "bigvgan"],
+            #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
             # ["ljspeech", "avocodo"],
-            ["ljspeech", "lbigvgan", "bigvgan"],
+            #["ljspeech", "lbigvgan", "bigvgan"],
         ],
-        "epochs": [10, 5],
+        "epochs": [10],
         "validation_interval": [10],
         "block_norm": [False],
         "batch_size": [128],
@@ -101,12 +101,12 @@ def get_config() -> dict:
         "model_data": model_data,
         "module": [TestNet],
         "kernel1": [3],
-        "num_devices": [8],
-        "ochannels1": [64, 32],
-        "ochannels2": [32, 64],
+        "num_devices": [4],
+        "ochannels1": [64],
+        "ochannels2": [64],
         "ochannels3": [96],
         "ochannels4": [128],
-        "ochannels5": [32, 64],
+        "ochannels5": [32],
         "only_testing": [False],
     }
 
@@ -152,7 +152,7 @@ def get_config() -> dict:
         "only_testing": [False],
     }
 
-    config = asv_config
+    config = wf_config
 
     # parse model data if exists
     if "model_data" in config.keys() and config["model_data"][0] is not None:

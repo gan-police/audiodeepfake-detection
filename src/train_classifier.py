@@ -629,7 +629,7 @@ def main():
     parsed_args = _parse_args()
     args = DotDict(vars(parsed_args))
 
-    args.num_workers = 4
+    args.num_workers = 10
 
     if args.ddp:
         ddp_setup()

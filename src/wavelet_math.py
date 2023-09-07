@@ -17,8 +17,7 @@ from torchaudio import functional
 from torchaudio.transforms import AmplitudeToDB, ComputeDeltas, Spectrogram
 from tqdm import tqdm
 
-from .data_loader import LearnWavefakeDataset, WelfordEstimator
-
+from .data_loader import LearnWavefakeDataset, WelfordEstimator, get_costum_dataset
 
 class STFTLayer(torch.nn.Module):
     """A base class for STFT transformation."""
@@ -345,7 +344,16 @@ def get_transforms(
     elif normalization:
         if verbose:
             print("computing mean and std values.", flush=True)
-        dataset = LearnWavefakeDataset(data_prefix + "_train")
+        dataset = get_costum_dataset(
+            data_path=args.data_path,
+            ds_type="train",
+            only_use=args.only_use,
+            save_path=args.save_path,
+            limit=args.limit_train[0],
+            asvspoof_name=f"{args.asvspoof_name}_T" if args.asvspoof_name is not None and "LA" in args.asvspoof_name else args.asvspoof_name,
+            file_type=args.file_type,
+            resample_rate=args.sample_rate,
+        )
         norm_dataset_loader = torch.utils.data.DataLoader(
             dataset,
             batch_size=4000,
