@@ -8,7 +8,7 @@ import numpy as np
 import tikzplotlib as tikz
 import torch
 import pywt
-import ptwt
+
 
 import src.plot_util as util
 from intro_plot import compute_pytorch_packet_representation
@@ -33,7 +33,7 @@ def plot_mean_std(steps, mean, std, label="", marker="."):
 
 
 def _compute_fingerprint_rfft(
-    directory: str, gen_name: str='', seconds: int = 3
+    directory: str, gen_name: str='', seconds: int = 1
 ) -> torch.Tensor:
     dataset = util.AudioDataset(
         directory,
@@ -43,29 +43,32 @@ def _compute_fingerprint_rfft(
     for clip, _fs in dataset:
         if clip.shape[-1] > seconds*SAMPLE_RATE:
             clip = clip[:, :seconds*SAMPLE_RATE]
-            clips.append(clip)
+            clips.append(clip.numpy())
     print(f"Clip no: {len(clips)}")
-    clip_array = torch.stack(clips)
-    freq_clips = torch.fft.rfft(clip_array, axis=-1)
+    clip_array = np.stack(clips)
+    del clips
+    freq_clips = np.fft.rfft(clip_array, axis=-1)
     freqs = freq_clips.shape[-1]
     use = freqs//8
-    zeros = torch.zeros_like(freq_clips)[:, :, :-use]
+    zeros = np.zeros_like(freq_clips)[:, :, :-use]
     freq_clips = freq_clips[:, :, -use:]
-    masked_freq = torch.cat([zeros, freq_clips], -1)
-    masked_time = torch.fft.irfft(masked_freq)
-    masked_time_mean = torch.mean(masked_time, 0)[0]
-    # masked_time_std = torch.std(masked_time, 0)[0]
+    masked_freq = np.concatenate([zeros, freq_clips], -1)
+    masked_time = np.fft.irfft(masked_freq)
+    masked_time_mean = np.mean(masked_time, 0)[0]
 
-    mean_ln_abs_fft = torch.log(torch.abs(torch.fft.rfft(masked_time_mean)[-use:]))
-    # std_ln_abs_fft = torch.log(torch.abs(torch.fft.rfft(masked_time_std)[-use:]))
-
-    # plt.subplot(2,1,1)
+    mean_ln_abs_fft = np.log(np.abs(np.fft.rfft(masked_time_mean)[-use:]))
+    # std_ln_abs_fft = np.log(np.abs(np.fft.rfft(masked_time_std)[-use:]))
+    freqs = np.fft.rfftfreq(masked_time_mean.shape[-1], 1./SAMPLE_RATE)[-use:]
+    # plt.subplot(2, 1, 1)
     # plt.title(f"{gen_name} - time")
     # plt.plot(masked_time_mean)
-    # plt.subplot(2,1,2)
-    plt.title(f"{gen_name} - ln(abs(rfft(x))))")
-    plt.plot(mean_ln_abs_fft.cpu().numpy(), label=gen_name)
+    # plt.subplot(2, 1, 2)
+    plt.title(f"fingerprint - {gen_name} - ln(abs(rfft(x))))")
+    plt.plot(freqs, mean_ln_abs_fft, label=gen_name)
+    plt.xlabel('frequency [Hz]')
+    plt.ylabel('magnitude')
     plt.savefig(f'./plots/fingerprints/rfft_{gen_name}.png')
+    tikz.save(f'./plots/fingerprints/rfft_{gen_name}.tex', standalone=True)
     plt.clf()
 
 
@@ -106,7 +109,6 @@ def _compute_fingerprint_wpt(
     wp_nodes = pywt_wp_tree.get_level(level, order='freq')
     to_plot = np.stack([n.data for n in wp_nodes[use:]])
 
-    pass
     # norm_list = [torch.max(torch.abs(p)) for p in packet_list]
     # if max_norm:
     #     packet_list = [p / pmax for p, pmax in zip(packet_list, norm_list)]
@@ -138,6 +140,6 @@ if __name__ == "__main__":
     for path in paths:
         print(f"Processing {path}.", flush=True)
         name = path.split('/')[-2]
-        _compute_fingerprint_wpt(path, name)
+        # _compute_fingerprint_wpt(path, name)
         _compute_fingerprint_rfft(path, name)
 
