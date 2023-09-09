@@ -82,8 +82,8 @@ def get_config() -> dict:
         "cross_limit": [(55500, 7304, 14600)],
         "only_test_folders": [["conformer", "jsutmbmelgan", "jsutpwg"]],
         "file_type": ["wav"],
-        "dropout_cnn": [0.6],
-        "dropout_lstm": [0.2],
+        "dropout_cnn": [0.5, 0.6, 0.4],
+        "dropout_lstm": [0.3, 0.2, 0.4],
         "num_of_scales": [256],
         "wavelet": ["sym8"],
         "cross_sources": [

@@ -88,7 +88,7 @@ This process could take some time, because it reads the length of all audio file
 ### Preparation ASVSpoof
 We are using Logical Access (LA) train and eval sets of ASV Spoof Challenge 2019 and the DeepFake (DF)
 1. Download data
-1.2. download keys (for DF ASVspoof 21) and unpack them in the folder containing the data of ASVspoof 21
+1.2. download keys (for DF ASVspoof 21) from [here](https://www.asvspoof.org/index2021.html) and unpack them in the folder containing the data of ASVspoof 21 with `tar xzfv DF-keys-full.tar.gz`.
 2. unzip/untar data
 3. Adjust base_path
 4. Run `python -m scripts.split_asvspoof` from repository folder first for ASVspoof 2019

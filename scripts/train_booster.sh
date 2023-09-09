@@ -9,7 +9,7 @@
 #SBATCH --mem=300GB
 #SBATCH --cpus-per-task=24
 #SBATCH --partition booster
-#SBATCH --time=08:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%j.out
 #SBATCH --error=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log1/slurm/train/train_%j.err
 source ${HOME}/.bashrc
@@ -44,7 +44,7 @@ src/train_classifier.py \
     --weight-decay 0.001   \
     --epochs 10 \
     --validation-interval 1 \
-    --ckpt-every 1 \
+    --ckpt-every 9 \
     --data-prefix "${HOME}/project_drive/kgasenzer/audiodeepfakes/data/run1/fake_22050_22050_0.7_$2" \
     --cross-dir "${HOME}/project_drive/kgasenzer/audiodeepfakes/data/run1/" \
     --cross-prefix "fake_22050_22050_0.7_" \
