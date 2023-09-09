@@ -1,8 +1,8 @@
 from src.data_loader import get_costum_dataset
 
 if __name__ == "__main__":
-    save_path = "/home/s6kogase/data/data/run3"
-    data_path = "/home/s6kogase/data/data/asvspoof"
+    save_path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run2"
+    data_path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/asv"
     limit_train = (7472, 7672, 21320)
 
     only_use = ["asv2019real", "asv2019fake"]

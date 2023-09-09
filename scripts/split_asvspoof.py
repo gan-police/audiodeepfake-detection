@@ -25,11 +25,11 @@ label_path = [
 ]
 
 # for ASVSpoof 2021
-# year = 2021
-# base_path = "/home/s6kogase/data/asvspoof/ASVspoof2021_DF_eval/"
-# path = [""]
-# audio_path = "flac"
-# label_path = ["keys/DF/CM/trial_metadata.txt"]
+year = 2021
+base_path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/asvspoof/ASVspoof2021_DF_eval/"
+path = [""]
+audio_path = "flac"
+label_path = ["keys/DF/CM/trial_metadata.txt"]
 
 if __name__ == "__main__":
     if year == 2021:
@@ -60,7 +60,7 @@ if __name__ == "__main__":
         raise ValueError("Choose a year from {2019, 2021}.")
 
     for i in range(len(path)):
-        path = path[i]
+        set_path = path[i]
         label_path = label_path[i]
         pd_protocol = pandas.read_csv(
             f"{base_path}/{label_path}", sep=" ", names=p_names, skipinitialspace=True
@@ -77,7 +77,7 @@ if __name__ == "__main__":
         os.makedirs(real_target_path, exist_ok=True)
         os.makedirs(fake_target_path, exist_ok=True)
 
-        file_list = glob.glob(f"{base_path}/{path}/{audio_path}/*.flac")
+        file_list = glob.glob(f"{base_path}/{set_path}/{audio_path}/*.flac")
 
         count = 0
         for file in file_list:

@@ -465,7 +465,7 @@ class CustomDataset(Dataset):
                         if limit == -1:
                             num_train = 55500
                         else:
-                            num_train = limit[0]
+                            num_train = limit
 
                 sample_count.append([num_train, num_val, num_test])
                 path_num += 1
@@ -604,8 +604,14 @@ def get_costum_dataset(
         ):
             continue
         desired_label = ord(path.name.split("_")[0]) - 65
-        if len(labels) > 0 and desired_label != max(labels) + 1:
-            desired_label = max(labels) + 1
+        if desired_label in labels:
+            for i in range(len(labels)):
+                new_des_label = desired_label + i + 1
+                if new_des_label in labels:
+                    continue
+                else:
+                    desired_label = new_des_label
+                    break
         labels.append(desired_label)
         str_paths.append(str(path))
 

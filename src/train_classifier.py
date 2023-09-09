@@ -656,7 +656,6 @@ def main():
         else:
             griderator = init_grid(num_exp=3)
         num_exp = griderator.get_len()
-    # import ipdb; ipdb.set_trace()
     for _exp_number in range(num_exp):
         if args.enable_gs:
             if is_lead(args):
