@@ -432,14 +432,17 @@ class Trainer:
             val_acc = 0
         return val_acc, eer  # type: ignore
 
-    def _run_test(self) -> tuple[float, float, float, float]:
+    def _run_test(self, only_unknown: bool = False) -> tuple[float, float, float, float]:
         self.model.eval()
         with torch.no_grad():
-            test_acc, test_eer = self.val_test_loop(
-                data_loader=self.test_data_loader,
-                pbar=self.args.pbar,
-                name="test known",
-            )
+            if not only_unknown:
+                test_acc, test_eer = self.val_test_loop(
+                    data_loader=self.test_data_loader,
+                    pbar=self.args.pbar,
+                    name="test known",
+                )
+            else:
+                test_acc = test_eer = 0
             if self.args.unknown_prefix is not None or self.args.cross_dir is not None:
                 cr_test_acc, cr_test_eer = self.val_test_loop(
                     data_loader=self.cross_loader_test,
@@ -593,10 +596,10 @@ class Trainer:
                         unknown eer {test_results[3]:.3f}"
                     )
 
-    def testing(self) -> tuple[float, float, float, float]:
+    def testing(self, only_unknown: bool = False) -> tuple[float, float, float, float]:
         """Iterate over test set."""
         self._check_model_init()
-        return self._run_test()
+        return self._run_test(only_unknown=only_unknown)
 
 
 def is_lead(args) -> bool:
@@ -652,7 +655,7 @@ def main():
             print("--------------- Starting grid search -----------------")
 
         if not args.random_seeds:
-            griderator = init_grid(num_exp=5, init_seeds=[0, 1, 2, 3, 4])
+            griderator = init_grid(num_exp=2, init_seeds=[0, 1, 2, 3, 4])
         else:
             griderator = init_grid(num_exp=3)
         num_exp = griderator.get_len()
@@ -841,7 +844,7 @@ def main():
         if args.only_testing:
             trainer._check_model_init()
             trainer.load_snapshot(trainer.snapshot_path)
-            trainer.test_results = trainer.testing()
+            trainer.test_results = trainer.testing(only_unknown=True)
         else:
             trainer.train(args.epochs)
             if is_lead(args):
@@ -891,19 +894,20 @@ def main():
             stringer_2 = np.asarray(stringer_2, dtype=object)
             wavelets = griderator.init_config["wavelet"]
             cross_dirs = griderator.init_config["cross_sources"]
-            for i in range((len(mean) // len(cross_dirs))):
-                print(stringer_2[i :: len(cross_dirs)])  # which configs
+            for i in range((len(stringer) // len(cross_dirs))):
+                print("+---------------------+")
+                print(cross_dirs[i])  # which configs
                 for k in range(len(wavelets)):
                     print(
-                        rf"{wavelets[k]} & {stringer[i::len(cross_dirs)][k]}"
+                        rf"{wavelets[k]} & {stringer[i*len(cross_dirs):(i+1)*len(cross_dirs)][k]}"
                     )  # which values
+            print("+---------------------+")
         print("------------------------------------------------------------------")
         print(
             f"Best unknown eer: {mean[np.argmin(mean[:,3]), 3]:.4f} +- {std[np.argmin(mean[:,3]), 3]:.4f}"
         )
 
         if args.enable_gs:
-            print(griderator.grid_values)
             best_config = {
                 k: v
                 for k, v in zip(
