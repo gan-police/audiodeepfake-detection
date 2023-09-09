@@ -492,11 +492,11 @@ class CustomDataset(Dataset):
         # proceed with preparation for loading
 
         # apply limit per label
-        #import pdb; pdb.set_trace()
-        result_set = result_set[:, : limit]
+        # import pdb; pdb.set_trace()
+        result_set = result_set[:, :limit]
 
         # make sure, all frames will result in the same window size after resampling
-        
+
         min_sample_rate = result_set[:, :, 2].min()
         if resample_rate > min_sample_rate:
             raise RuntimeError(
@@ -588,7 +588,7 @@ def get_costum_dataset(
     asvspoof_name: str = None,
     train_ratio: float = 0.7,
     val_ratio: float = 0.1,
-    file_type: str = "wav"
+    file_type: str = "wav",
 ) -> CustomDataset:
     paths = list(Path(data_path).glob(f"./*_*"))
     if len(paths) == 0:
@@ -632,5 +632,5 @@ def get_costum_dataset(
         asvspoof_name=asvspoof_name,
         train_ratio=train_ratio,
         val_ratio=val_ratio,
-        filetype=file_type
+        filetype=file_type,
     )

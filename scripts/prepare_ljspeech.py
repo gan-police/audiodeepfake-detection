@@ -34,7 +34,7 @@ if __name__ == "__main__":
 
     only_test_folders = ["conformer", "jsutmbmelgan", "jsutpwg"]
     limit_cross = (55500, 7304, 14600)
-    
+
     cross_set_test = get_costum_dataset(
         data_path=data_path,
         ds_type="test",
@@ -92,7 +92,7 @@ if __name__ == "__main__":
             "jsutpwg",
             "avocodo",
             "bigvgan",
-            "lbigvgan"
+            "lbigvgan",
         ],
         save_path=save_path,
         limit=limit_cross[2],
@@ -143,7 +143,10 @@ if __name__ == "__main__":
         data_path=data_path,
         ds_type="test",
         only_test_folders=only_test_folders,
-        only_use=["ljspeech", "avocodo",],
+        only_use=[
+            "ljspeech",
+            "avocodo",
+        ],
         save_path=save_path,
         limit=limit_cross[2],
         seconds=seconds,
@@ -152,7 +155,10 @@ if __name__ == "__main__":
         data_path=data_path,
         ds_type="val",
         only_test_folders=only_test_folders,
-        only_use=["ljspeech", "avocodo",],
+        only_use=[
+            "ljspeech",
+            "avocodo",
+        ],
         save_path=save_path,
         limit=limit_cross[0],
         seconds=seconds,

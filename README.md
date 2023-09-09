@@ -90,10 +90,11 @@ We are using Logical Access (LA) train and eval sets of ASV Spoof Challenge 2019
 1. Download data
 1.2. download keys (for DF ASVspoof 21) from [here](https://www.asvspoof.org/index2021.html) and unpack them in the folder containing the data of ASVspoof 21 with `tar xzfv DF-keys-full.tar.gz`.
 2. unzip/untar data
-3. Adjust base_path
+3. Adjust `base_path` in `scripts/split_asvspoof.py`.
 4. Run `python -m scripts.split_asvspoof` from repository folder first for ASVspoof 2019
 5. Uncomment lines for ASVspoof 2021 and run `python -m scripts.split_asvspoof`
 6. Adjust `save_path` and `data_path` in `scripts/prepare_asvspoof.py` so that `save_path` is the folder for the datasets files that will be generated and `data_path` the directory with the structure e.g.
+```
 └── cross_test
       ├── A_asv2019real
       |    └── real1.flac...
@@ -103,6 +104,7 @@ We are using Logical Access (LA) train and eval sets of ASV Spoof Challenge 2019
       |    └── real1.flac...
       └── B_asv2021fake
            └── fake1.flac...
+```
 
 ### Training the Classifier
 

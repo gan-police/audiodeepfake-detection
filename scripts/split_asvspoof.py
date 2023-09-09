@@ -18,7 +18,11 @@ year = 2019
 base_path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/asvspoof/LA"
 path = ["ASVspoof2019_LA_train", "ASVspoof2019_LA_eval", "ASVspoof2019_LA_dev"]
 audio_path = "flac"
-label_path = ["ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.train.trn.txt", "ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.eval.trl.txt", "ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.dev.trl.txt"]
+label_path = [
+    "ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.train.trn.txt",
+    "ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.eval.trl.txt",
+    "ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.dev.trl.txt",
+]
 
 # for ASVSpoof 2021
 year = 2021

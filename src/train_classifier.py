@@ -63,14 +63,16 @@ def create_data_loaders(
     data_path = args.data_path
     limit_train = args.limit_train
     only_use = args.only_use
-    
+
     train_data_set = get_costum_dataset(
         data_path=data_path,
         ds_type="train",
         only_use=only_use,
         save_path=save_path,
         limit=limit_train[0],
-        asvspoof_name=f"{args.asvspoof_name}_T" if args.asvspoof_name is not None and "LA" in args.asvspoof_name else args.asvspoof_name,
+        asvspoof_name=f"{args.asvspoof_name}_T"
+        if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+        else args.asvspoof_name,
         file_type=args.file_type,
         resample_rate=args.sample_rate,
     )
@@ -80,7 +82,9 @@ def create_data_loaders(
         only_use=only_use,
         save_path=save_path,
         limit=limit_train[1],
-        asvspoof_name=f"{args.asvspoof_name}_D" if args.asvspoof_name is not None and "LA" in args.asvspoof_name else args.asvspoof_name,
+        asvspoof_name=f"{args.asvspoof_name}_D"
+        if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+        else args.asvspoof_name,
         file_type=args.file_type,
         resample_rate=args.sample_rate,
     )
@@ -90,7 +94,9 @@ def create_data_loaders(
         only_use=only_use,
         save_path=save_path,
         limit=limit_train[2],
-        asvspoof_name=f"{args.asvspoof_name}_E" if args.asvspoof_name is not None and "LA" in args.asvspoof_name else args.asvspoof_name,
+        asvspoof_name=f"{args.asvspoof_name}_E"
+        if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+        else args.asvspoof_name,
         file_type=args.file_type,
         resample_rate=args.sample_rate,
     )
@@ -650,7 +656,6 @@ def main():
         else:
             griderator = init_grid(num_exp=3)
         num_exp = griderator.get_len()
-
     for _exp_number in range(num_exp):
         if args.enable_gs:
             if is_lead(args):
@@ -661,7 +666,7 @@ def main():
                 print("---------------------------------------------------------")
             args, _ = griderator.update_step(args)
 
-        #if args.f_max > args.sample_rate / 2:
+        # if args.f_max > args.sample_rate / 2:
         #    print("Warning: maximum analyzed frequency is above nyquist rate.")
 
         if args.features != "none" and args.model != "lcnn":
@@ -859,7 +864,7 @@ def main():
         print("results:", results)
         print(mean)
         print(std)
-        
+
         if True:
             print("evaluating results:")
             min = results.min(0)
@@ -867,7 +872,9 @@ def main():
             stringer = []
             stringer_2 = []
             for i in range(len(mean)):
-                print("------------------------------------------------------------------")
+                print(
+                    "------------------------------------------------------------------"
+                )
                 stringer_2.append(
                     {
                         k: v
@@ -876,16 +883,20 @@ def main():
                         )
                     }
                 )
-                stringer.append(rf"${max[i, 2]*100:.2f}$ & ${mean[i, 2]*100:.2f} \pm {std[i, 2]*100:.2f}$ & ${min[i, 3]:.3f}$ & ${mean[i, 3]:.3f} \pm {std[i, 3]:.3f}$")
-            
+                stringer.append(
+                    rf"${max[i, 2]*100:.2f}$ & ${mean[i, 2]*100:.2f} \pm {std[i, 2]*100:.2f}$ & ${min[i, 3]:.3f}$ & ${mean[i, 3]:.3f} \pm {std[i, 3]:.3f}$"
+                )
+
             stringer = np.asarray(stringer, dtype=object)
             stringer_2 = np.asarray(stringer_2, dtype=object)
             wavelets = griderator.init_config["wavelet"]
             cross_dirs = griderator.init_config["cross_sources"]
             for i in range((len(mean) // len(cross_dirs))):
-                print(stringer_2[i::len(cross_dirs)]) # which configs
+                print(stringer_2[i :: len(cross_dirs)])  # which configs
                 for k in range(len(wavelets)):
-                    print(rf"{wavelets[k]} & {stringer[i::len(cross_dirs)][k]}") # which values
+                    print(
+                        rf"{wavelets[k]} & {stringer[i::len(cross_dirs)][k]}"
+                    )  # which values
         print("------------------------------------------------------------------")
         print(
             f"Best unknown eer: {mean[np.argmin(mean[:,3]), 3]:.4f} +- {std[np.argmin(mean[:,3]), 3]:.4f}"

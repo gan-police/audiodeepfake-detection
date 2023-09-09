@@ -496,7 +496,7 @@ def get_input_dims(args, transforms) -> list:
         shape.insert(0, args.batch_size)
     else:
         shape[0] = args.batch_size
-    
+
     return shape
 
 
