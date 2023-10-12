@@ -2,6 +2,7 @@
 import argparse
 import os
 import sys
+from typing import Tuple
 
 import numpy as np
 import torch
@@ -15,6 +16,9 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
+from captum.attr import IntegratedGradients, Saliency
+import matplotlib.pyplot as plt
+import matplotlib.colors as colors
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
@@ -35,6 +39,7 @@ from src.utils import (
     set_seed,
 )
 from src.wavelet_math import get_transforms
+from src.integrated_gradients import Mean, im_plot, bar_plot, plot_img_attributions, integral_approximation, interpolate_images
 
 
 def ddp_setup() -> None:
@@ -47,7 +52,7 @@ def create_data_loaders(
     args,
     limit: int = -1,
     num_workers: int = 8,
-) -> tuple:
+) -> Tuple:
     """Create the data loaders needed for training.
 
     The test set is created outside a loader.
@@ -57,7 +62,7 @@ def create_data_loaders(
         batch_size (int): preferred training batch size.
 
     Returns:
-        dataloaders (tuple): train_data_loader, val_data_loader, test_data_set
+        dataloaders (Tuple): train_data_loader, val_data_loader, test_data_set
     """
     save_path = args.save_path
     data_path = args.data_path
@@ -75,6 +80,7 @@ def create_data_loaders(
         else args.asvspoof_name,
         file_type=args.file_type,
         resample_rate=args.sample_rate,
+        seconds=args.seconds,
     )
     val_data_set = get_costum_dataset(
         data_path=data_path,
@@ -87,6 +93,7 @@ def create_data_loaders(
         else args.asvspoof_name,
         file_type=args.file_type,
         resample_rate=args.sample_rate,
+        seconds=args.seconds,
     )
     test_data_set = get_costum_dataset(
         data_path=data_path,
@@ -99,6 +106,7 @@ def create_data_loaders(
         else args.asvspoof_name,
         file_type=args.file_type,
         resample_rate=args.sample_rate,
+        seconds=args.seconds,
     )
     if args.ddp:
         train_sampler = DistributedSampler(
@@ -151,6 +159,7 @@ def create_data_loaders(
                 asvspoof_name=args.asvspoof_name_cross,
                 file_type=args.file_type,
                 resample_rate=args.sample_rate,
+                seconds=args.seconds,
             )
             cross_set_val = get_costum_dataset(
                 data_path=args.cross_data_path,
@@ -162,6 +171,7 @@ def create_data_loaders(
                 asvspoof_name=args.asvspoof_name_cross,
                 file_type=args.file_type,
                 resample_rate=args.sample_rate,
+                seconds=args.seconds,
             )
         else:
             raise NotImplementedError()
@@ -261,7 +271,7 @@ class Trainer:
         self.loss_list: list = []
         self.accuracy_list: list = []
         self.step_total: int = 0
-        self.test_results: tuple = ()
+        self.test_results: Tuple = ()
 
     def init_model(self, model) -> None:
         """Initialize model.
@@ -314,7 +324,7 @@ class Trainer:
         data_loader,
         name: str = "",
         pbar: bool = False,
-    ) -> tuple[float, float]:
+    ) -> Tuple[float, float]:
         """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
 
         Args:
@@ -432,7 +442,251 @@ class Trainer:
             val_acc = 0
         return val_acc, eer  # type: ignore
 
-    def _run_test(self, only_unknown: bool = False) -> tuple[float, float, float, float]:
+    def integrated_grad(
+        self,
+        baseline,
+        image,
+        target_class_idx,
+        m_steps=50,
+        batch_size=32
+    ):
+        # Generate alphas.
+        alphas = torch.linspace(start=0.0, end=1.0, steps=m_steps+1).to(self.local_rank, non_blocking=True)
+
+        # Collect gradients.    
+        gradient_batches = []
+
+        # Iterate alphas range and batch computation for speed, memory efficiency, and scaling to larger m_steps.
+        for from_ in range(0, len(alphas), batch_size):
+            to = min(from_ + batch_size, len(alphas))
+            alpha_batch = alphas[from_:to]
+
+            gradient_batch = self.one_batch(baseline, image, alpha_batch, target_class_idx)
+            gradient_batches.append(gradient_batch)
+
+        # Concatenate path gradients together row-wise into single tensor.
+        total_gradients = torch.cat(gradient_batches, dim=0)
+
+        # Integral approximation through averaging gradients.
+        avg_gradients = integral_approximation(gradients=total_gradients)
+
+        # Scale integrated gradients with respect to input.
+        integrated_gradients = (image - baseline) * avg_gradients
+
+        return integrated_gradients
+
+    def one_batch(self, baseline, image, alpha_batch, target_class_idx):
+        # Generate interpolated inputs between baseline and input.
+        interpolated_path_input_batch = interpolate_images(
+            baseline=baseline,
+            image=image,
+            alphas=alpha_batch
+        )
+
+        # Compute gradients between model outputs and interpolated inputs.
+        gradient_batch = self.compute_gradients(
+            images=interpolated_path_input_batch,
+            target_class_idx=target_class_idx
+        )
+        return gradient_batch
+
+
+                
+    def compute_gradients(self,images, target_class_idx):
+        images.requires_grad = True
+        logits = self.model(images)
+        probs = torch.nn.functional.softmax(logits, dim=-1)[:, target_class_idx]
+        probs.backward(torch.ones_like(probs))
+        return images.grad
+
+    def integrated_gradients(
+        self,
+        pbar: bool = True,
+    ) -> Tuple[float, float]:
+        """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
+
+        Args:
+            data_loader (DataLoader): A DataLoader loading the data set on which the performance should be measured,
+                e.g. a test or validation set in a data split.
+            name (str): Name for tqdm bar (default: "").
+            pbar (bool): Disable/Enable tqdm bar (default: False).
+
+        Returns:
+            Tuple[float, Any]: The measured accuracy and eer of the model on the data set.
+        """
+
+        plot_path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log2/plots"
+
+        welford_ig = Mean()
+        welford_sal = Mean()
+
+        data_loader = self.cross_loader_test
+        bar = tqdm(
+                iter(data_loader), desc="integrate grads", total=len(data_loader), disable=not pbar
+            )
+
+        # integrated_gradients = IntegratedGradients(self.model)
+        # saliency = Saliency(self.model)
+        index = 0
+        target = 1
+        times = 1
+        batch_size = 128
+        m_steps = 200
+            
+        self.model.zero_grad()
+            
+        for val_batch in bar:
+            label = (val_batch["label"].to(self.local_rank, non_blocking=True) != 0).type(torch.long)
+            if label.shape[0] != batch_size:
+                continue
+
+            label[label > 0] = 1
+        
+            freq_time_dt, _ = self.transforms(
+                val_batch["audio"].to(self.local_rank, non_blocking=True)
+            )
+            freq_time_dt_norm = self.normalize(freq_time_dt)
+            #import pdb; pdb.set_trace()
+            baseline = torch.zeros_like(freq_time_dt_norm[0]).to(self.local_rank, non_blocking=True)
+            for i in tqdm(range(freq_time_dt_norm.shape[0])):
+                image = freq_time_dt_norm[i]
+                c_label = label[i]
+
+                attributions = self.integrated_grad(
+                    baseline=baseline,
+                    image=image,
+                    target_class_idx=c_label,
+                    m_steps=m_steps
+                )
+
+                attribution_mask = torch.sum(torch.abs(attributions), dim=0).unsqueeze(0)
+                welford_ig.update(attribution_mask)
+                welford_sal.update(image)
+            """attributions_ig = integrated_gradients.attribute(
+                    freq_time_dt_norm,
+                        target=label,
+                        n_steps=100,
+                        internal_batch_size=128
+                ).squeeze(0)
+            welford_ig.update(attributions_ig)
+            del attributions_ig
+
+            attributions_sals = saliency.attribute(
+                        freq_time_dt_norm, target=label
+                    ).squeeze(0)
+            welford_sal.update(attributions_sals)
+            del attributions_sals"""
+
+            torch.cuda.empty_cache()
+
+            index += 1
+            if index == times:
+                break
+        
+        with torch.no_grad():
+            import pdb; pdb.set_trace()
+            mean_ig = welford_ig.finalize()
+            mean_sal = welford_sal.finalize()
+
+            if is_lead(self.args):
+                _ = plot_img_attributions(
+                    image=image.squeeze().detach().cpu().numpy(),
+                    baseline=baseline.squeeze().detach().cpu().numpy(),
+                    cmap=plt.cm.inferno,
+                    overlay_alpha=0.4,
+                    attribution_mask=torch.log(mean_ig).detach().cpu().numpy()
+                )
+                plt.savefig(plot_path + "_test_3.png")
+
+            exit(0)
+            if self.local_rank == 0:
+                output_list = [torch.zeros_like(mean_ig) for _ in range(self.world_size)]
+                torch.distributed.gather(mean_ig, gather_list=output_list)
+                combined_attr_ig = torch.cat(output_list)
+                output_list = [torch.zeros_like(mean_sal) for _ in range(self.world_size)]
+                torch.distributed.gather(mean_sal, gather_list=output_list)
+                combined_attr_sal = torch.cat(output_list)
+                # Rank 0 prints the combined attribution tensor after gathering
+                #print(combined_attr)
+            else:
+                torch.distributed.gather(mean_ig)
+                torch.distributed.gather(mean_sal)
+            
+            if self.local_rank == 0:
+                mean_ig_max = torch.max(mean_ig, dim=1)[0]
+                mean_ig_min = torch.min(mean_ig, dim=1)[0]
+                audio_packets = torch.mean(freq_time_dt, dim=0)
+
+                inital = audio_packets.cpu().detach().numpy()
+                attr_ig = mean_ig.cpu().detach().numpy()
+                attr_sal = mean_sal.cpu().detach().numpy()
+                ig_max = mean_ig_max.cpu().detach().numpy()
+                ig_min = mean_ig_min.cpu().detach().numpy()
+                ig_abs = np.abs(ig_max + np.abs(ig_min))
+
+        if self.local_rank == 0:
+            seconds = 4
+            sample_rate = 22050
+            num_of_scales = 256
+            postfix = "fbmelgan"
+            postfix += f"_target{target}_x{times*128}"
+            postfix = postfix.split("/")[-1]
+
+            t = np.linspace(0, seconds, int(seconds // (1 / sample_rate)))
+            bins = np.int64(num_of_scales)
+            n = list(range(int(bins)))
+            freqs = (sample_rate / 2) * (n / bins)  # type: ignore
+
+            x_ticks = list(range(inital.shape[-1]))[:: inital.shape[-1] // 10]
+            x_labels = np.around(np.linspace(min(t), max(t), inital.shape[-1]), 2)[
+                :: inital.shape[-1] // 10
+            ]
+
+            y_ticks = n[:: freqs.shape[0] // 10]
+            y_labels = np.around(freqs[:: freqs.shape[0] // 10] / 1000, 1)
+            im_plot(
+                freq_time_dt[0].squeeze(0).cpu().detach().numpy(),
+                f"{plot_path}/raw_{postfix}",
+                cmap="turbo",
+                x_ticks=x_ticks,
+                x_labels=x_labels,
+                y_ticks=y_ticks,
+                y_labels=y_labels,
+                vmax=np.max(attr_ig).item(),
+                vmin=np.min(attr_ig).item(),
+            )
+            im_plot(
+                attr_ig,
+                f"{plot_path}/attr_ig_{postfix}",
+                cmap="viridis_r",
+                x_ticks=x_ticks,
+                x_labels=x_labels,
+                y_ticks=y_ticks,
+                y_labels=y_labels,
+                vmax=np.max(attr_ig).item(),
+                vmin=np.min(attr_ig).item(),
+            )
+            im_plot(
+                attr_sal,
+                f"{plot_path}/attr_sal_{postfix}",
+                cmap="plasma",
+                vmax=np.max(attr_sal).item(),
+                vmin=np.min(attr_sal).item(),
+                x_ticks=x_ticks,
+                x_labels=x_labels,
+                y_ticks=y_ticks,
+                y_labels=y_labels,
+                norm=colors.SymLogNorm(linthresh=0.01),
+            )
+
+            # bar_plot(ig_max, x_ticks, x_ticklabels, f"{plot_path}/attr_max_{postfix}")
+            # bar_plot(ig_min, x_ticks, x_ticklabels, f"{plot_path}/attr_min_{postfix}")
+            bar_plot(ig_abs, y_ticks, y_labels, f"{plot_path}/attr_abs_{postfix}")
+            plt.close()
+    
+    def _run_test(
+        self, only_unknown: bool = False
+    ) -> Tuple[float, float, float, float]:
         self.model.eval()
         with torch.no_grad():
             if not only_unknown:
@@ -555,7 +809,7 @@ class Trainer:
     def _save_snapshot(self, epoch) -> None:
         """Save snapshot of current model."""
         snapshot = {
-            "MODEL_STATE": self.model.module.state_dict() if self.args.ddp else self.model.state_dict(),  # type: ignore
+            "MODEL_STATE": self.model.module.module.state_dict() if self.args.ddp else self.model.state_dict(),  # type: ignore
             "EPOCHS_RUN": epoch,
         }
         torch.save(snapshot, self.snapshot_path)
@@ -596,7 +850,7 @@ class Trainer:
                         unknown eer {test_results[3]:.3f}"
                     )
 
-    def testing(self, only_unknown: bool = False) -> tuple[float, float, float, float]:
+    def testing(self, only_unknown: bool = False) -> Tuple[float, float, float, float]:
         """Iterate over test set."""
         self._check_model_init()
         return self._run_test(only_unknown=only_unknown)
@@ -655,10 +909,11 @@ def main():
             print("--------------- Starting grid search -----------------")
 
         if not args.random_seeds:
-            griderator = init_grid(num_exp=2, init_seeds=[0, 1, 2, 3, 4])
+            griderator = init_grid(num_exp=5, init_seeds=[0, 1, 2, 3, 4])
         else:
             griderator = init_grid(num_exp=3)
         num_exp = griderator.get_len()
+
     for _exp_number in range(num_exp):
         if args.enable_gs:
             if is_lead(args):
@@ -739,6 +994,8 @@ def main():
             + "_"
             + known_gen_name
             + "_"
+            + str(args.seconds)
+            + "secs_"
             + str(args.seed)
         )
 
@@ -845,6 +1102,10 @@ def main():
             trainer._check_model_init()
             trainer.load_snapshot(trainer.snapshot_path)
             trainer.test_results = trainer.testing(only_unknown=True)
+        elif args.only_ig:
+            trainer._check_model_init()
+            trainer.load_snapshot(trainer.snapshot_path)
+            trainer.integrated_gradients()
         else:
             trainer.train(args.epochs)
             if is_lead(args):
@@ -862,6 +1123,9 @@ def main():
 
     if is_lead(args):
         results = np.asarray(list(exp_results.values()))
+        if results.shape[0] == 0:
+            exit(0)
+        np.save("test.npy", results)
         mean = results.mean(0)
         std = results.std(0)
         print("results:", results)
@@ -887,19 +1151,21 @@ def main():
                     }
                 )
                 stringer.append(
-                    rf"${max[i, 2]*100:.2f}$ & ${mean[i, 2]*100:.2f} \pm {std[i, 2]*100:.2f}$ & ${min[i, 3]:.3f}$ & ${mean[i, 3]:.3f} \pm {std[i, 3]:.3f}$"
+                    rf"& ${max[i, 2]*100:.2f}$ & ${mean[i, 2]*100:.2f} \pm {std[i, 2]*100:.2f}$ & ${min[i, 3]:.3f}$ & ${mean[i, 3]:.3f} \pm {std[i, 3]:.3f}$ \\"
                 )
 
             stringer = np.asarray(stringer, dtype=object)
+            print(stringer)
             stringer_2 = np.asarray(stringer_2, dtype=object)
             wavelets = griderator.init_config["wavelet"]
             cross_dirs = griderator.init_config["cross_sources"]
-            for i in range((len(stringer) // len(cross_dirs))):
+            stringer = stringer.reshape((len(wavelets), len(cross_dirs)))
+            for i in range(len(cross_dirs)):
                 print("+---------------------+")
                 print(cross_dirs[i])  # which configs
                 for k in range(len(wavelets)):
                     print(
-                        rf"{wavelets[k]} & {stringer[i*len(cross_dirs):(i+1)*len(cross_dirs)][k]}"
+                        rf"{wavelets[k]} & {stringer[k][i]}"
                     )  # which values
             print("+---------------------+")
         print("------------------------------------------------------------------")

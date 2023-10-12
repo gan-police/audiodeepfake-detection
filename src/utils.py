@@ -476,14 +476,17 @@ class DotDict(dict):
 def get_input_dims(args, transforms) -> list:
     """Return dimensions of transformed audio."""
     dataset = get_costum_dataset(
-            data_path=args.data_path,
-            ds_type="train",
-            only_use=args.only_use,
-            save_path=args.save_path,
-            limit=args.limit_train[0],
-            asvspoof_name=f"{args.asvspoof_name}_T" if args.asvspoof_name is not None and "LA" in args.asvspoof_name else args.asvspoof_name,
-            file_type=args.file_type,
-            resample_rate=args.sample_rate,
+        data_path=args.data_path,
+        ds_type="train",
+        only_use=args.only_use,
+        save_path=args.save_path,
+        limit=args.limit_train[0],
+        asvspoof_name=f"{args.asvspoof_name}_T"
+        if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+        else args.asvspoof_name,
+        file_type=args.file_type,
+        resample_rate=args.sample_rate,
+        seconds=args.seconds
     )
     with torch.no_grad():
         freq_time_dt, _ = transforms(

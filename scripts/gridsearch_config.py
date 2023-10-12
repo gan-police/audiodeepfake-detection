@@ -74,23 +74,31 @@ def get_config() -> dict:
     wf_config = {
         "learning_rate": [0.0001],
         "weight_decay": [0.001],
-        "save_path": ["/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run2"],
-        "data_path": ["/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/fake"],
+        "save_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run2"
+        ],
+        "data_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/fake"
+        ],
         "only_use": [["ljspeech", "fbmelgan"]],
         "limit_train": [(55504, 7504, 15504)],
-        "cross_data_path": ["/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/fake"],
+        "cross_data_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/fake"
+        ],
         "cross_limit": [(55500, 7304, 14600)],
         "only_test_folders": [["conformer", "jsutmbmelgan", "jsutpwg"]],
         "file_type": ["wav"],
-        "dropout_cnn": [0.5, 0.6, 0.4],
-        "dropout_lstm": [0.3, 0.2, 0.4],
+        "dropout_cnn": [0.6],
+        "dropout_lstm": [0.2],
         "num_of_scales": [256],
         "wavelet": ["sym8"],
+        "seconds": [1],
+        "sample_rate": [22050],
         "cross_sources": [
-            ["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "avocodo", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg", "lbigvgan", "bigvgan"],
+            #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "avocodo", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg", "lbigvgan", "bigvgan"],
             #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
-            # ["ljspeech", "avocodo"],
-            #["ljspeech", "lbigvgan", "bigvgan"],
+            #["ljspeech", "avocodo"],
+            ["ljspeech", "lbigvgan", "bigvgan"],
         ],
         "epochs": [10],
         "validation_interval": [10],
@@ -108,23 +116,72 @@ def get_config() -> dict:
         "ochannels4": [128],
         "ochannels5": [32],
         "only_testing": [False],
+        "only_ig": [False],
+    }
+
+    itw_config = {
+        "learning_rate": [0.0001],
+        "weight_decay": [0.001],
+        "save_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run2"
+        ],
+        "data_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/fake"
+        ],
+        "only_use": [["ljspeech", "fbmelgan"]],
+        "limit_train": [(55504, 7504, 15504)],
+        "cross_data_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/inthewild/set"
+        ],
+        "seconds": [1],
+        "cross_limit": [(38968, 5568, 11136)],
+        "file_type": ["wav"],
+        "dropout_cnn": [0.6],
+        "dropout_lstm": [0.2],
+        "num_of_scales": [256],
+        "wavelet": ["sym8"],
+        "cross_sources": [["inthewildReal", "inthewildFake"]],
+        "epochs": [10],
+        "validation_interval": [10],
+        "sample_rate": [16000],
+        "block_norm": [False],
+        "batch_size": [128],
+        "aug_contrast": [False],
+        "model": ["modules"],
+        "model_data": model_data,
+        "module": [TestNet],
+        "kernel1": [3],
+        "num_devices": [4],
+        "ochannels1": [64],
+        "ochannels2": [64],
+        "ochannels3": [96],
+        "ochannels4": [128],
+        "ochannels5": [32],
+        "only_testing": [False],
+        "only_ig": [False]
     }
 
     asv_config = {
-        "learning_rate": [0.0001, 0.0005],
-        "weight_decay": [0.01, 0.001],
-        "save_path": ["/home/s6kogase/data/data/run3"],
-        "data_path": ["/home/s6kogase/data/data/asvspoof"],
+        "learning_rate": [0.0001],
+        "weight_decay": [0.001],
+        "save_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run2"
+        ],
+        "data_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/asv"
+        ],
         "cross_limit": [(7472, 7672, 21320)],
         "cross_sources": [["asv2019real", "asv2019fake"]],
         "asvspoof_name_cross": ["LA"],  # or DF_E or None
-        "cross_data_path": ["/home/s6kogase/data/data/asvspoof"],
+        "cross_data_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/asv"
+        ],
         "limit_train": [(44368, 6336, 12672)],
         "file_type": ["flac"],
         "asvspoof_name": ["DF_E"],
         "sample_rate": [16000],
         "dropout_cnn": [0.6],
-        "dropout_lstm": [0.2],
+        "dropout_lstm": [0.2, 0.1],
         "num_of_scales": [256],
         "wavelet": ["sym8"],
         "only_use": [
@@ -134,7 +191,7 @@ def get_config() -> dict:
             # ["ljspeech", "lbigvgan", "bigvgan"],
             ["asv2021real", "asv2021fake"]
         ],
-        "epochs": [10, 5],
+        "epochs": [10],
         "validation_interval": [10],
         "block_norm": [False],
         "batch_size": [128],
@@ -143,12 +200,12 @@ def get_config() -> dict:
         "model_data": model_data,
         "module": [TestNet],
         "kernel1": [3],
-        "num_devices": [8],
-        "ochannels1": [64, 32],
-        "ochannels2": [32, 64],
+        "num_devices": [4],
+        "ochannels1": [64],
+        "ochannels2": [64],
         "ochannels3": [96],
         "ochannels4": [128],
-        "ochannels5": [32, 64],
+        "ochannels5": [32, 64, 16],
         "only_testing": [False],
     }
 
@@ -283,7 +340,7 @@ class TestNet(torch.nn.Module):
         # self.upsample = nn.ConvTranspose2d(1, 1, (1, 3), stride=(1, 2), padding=(0, 1))
 
         self.lcnn = nn.Sequential(
-            nn.Conv2d(1, args.ochannels1, args.kernel1, 1, padding=2),
+            nn.Conv2d(args.input_dim[1], args.ochannels1, args.kernel1, 1, padding=2),
             nn.PReLU(),
             nn.MaxPool2d(2, 2),
             nn.SyncBatchNorm(args.ochannels1, affine=False),
@@ -306,7 +363,7 @@ class TestNet(torch.nn.Module):
             nn.Dropout(args.dropout_cnn),
         )
 
-        time_dim = ((args.input_dim[-1])) // 8
+        time_dim = ((args.input_dim[-1])) // 8# +1
         if args.asvspoof_name is not None:  # cheap workaround
             time_dim = 9
 
@@ -336,6 +393,7 @@ class TestNet(torch.nn.Module):
 
             pdb.set_trace()
         # x = self.upsample(x)
+        #import pdb; pdb.set_trace()
 
         # [batch, channels, packets, time]
         x = self.lcnn(x.permute(0, 1, 3, 2))

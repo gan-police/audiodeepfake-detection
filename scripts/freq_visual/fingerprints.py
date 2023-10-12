@@ -5,13 +5,12 @@ from pathlib import Path
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import pywt
 import tikzplotlib as tikz
 import torch
-import pywt
-
+from intro_plot import compute_pytorch_packet_representation
 
 import src.plot_util as util
-from intro_plot import compute_pytorch_packet_representation
 
 DEBUG = True
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -33,7 +32,7 @@ def plot_mean_std(steps, mean, std, label="", marker="."):
 
 
 def _compute_fingerprint_rfft(
-    directory: str, gen_name: str='', seconds: int = 1
+    directory: str, gen_name: str = "", seconds: int = 1
 ) -> torch.Tensor:
     dataset = util.AudioDataset(
         directory,
@@ -41,15 +40,15 @@ def _compute_fingerprint_rfft(
     )
     clips = []
     for clip, _fs in dataset:
-        if clip.shape[-1] > seconds*SAMPLE_RATE:
-            clip = clip[:, :seconds*SAMPLE_RATE]
+        if clip.shape[-1] > seconds * SAMPLE_RATE:
+            clip = clip[:, : seconds * SAMPLE_RATE]
             clips.append(clip.numpy())
     print(f"Clip no: {len(clips)}")
     clip_array = np.stack(clips)
     del clips
     freq_clips = np.fft.rfft(clip_array, axis=-1)
     freqs = freq_clips.shape[-1]
-    use = freqs//8
+    use = freqs // 8
     zeros = np.zeros_like(freq_clips)[:, :, :-use]
     freq_clips = freq_clips[:, :, -use:]
     masked_freq = np.concatenate([zeros, freq_clips], -1)
@@ -58,23 +57,22 @@ def _compute_fingerprint_rfft(
 
     mean_ln_abs_fft = np.log(np.abs(np.fft.rfft(masked_time_mean)[-use:]))
     # std_ln_abs_fft = np.log(np.abs(np.fft.rfft(masked_time_std)[-use:]))
-    freqs = np.fft.rfftfreq(masked_time_mean.shape[-1], 1./SAMPLE_RATE)[-use:]
+    freqs = np.fft.rfftfreq(masked_time_mean.shape[-1], 1.0 / SAMPLE_RATE)[-use:]
     # plt.subplot(2, 1, 1)
     # plt.title(f"{gen_name} - time")
     # plt.plot(masked_time_mean)
     # plt.subplot(2, 1, 2)
     plt.title(f"fingerprint - {gen_name} - ln(abs(rfft(x))))")
     plt.plot(freqs, mean_ln_abs_fft, label=gen_name)
-    plt.xlabel('frequency [Hz]')
-    plt.ylabel('magnitude')
-    plt.savefig(f'./plots/fingerprints/rfft_{gen_name}.png')
-    tikz.save(f'./plots/fingerprints/rfft_{gen_name}.tex', standalone=True)
+    plt.xlabel("frequency [Hz]")
+    plt.ylabel("magnitude")
+    plt.savefig(f"./plots/fingerprints/rfft_{gen_name}.png")
+    tikz.save(f"./plots/fingerprints/rfft_{gen_name}.tex", standalone=True)
     plt.clf()
 
 
 def _compute_fingerprint_wpt(
-    directory: str, gen_name: str='', seconds: int = 1,
-    wavelet_str: str = 'sym8'
+    directory: str, gen_name: str = "", seconds: int = 1, wavelet_str: str = "sym8"
 ) -> torch.Tensor:
     dataset = util.AudioDataset(
         directory,
@@ -82,8 +80,8 @@ def _compute_fingerprint_wpt(
     )
     clips = []
     for clip, _fs in dataset:
-        if clip.shape[-1] > seconds*SAMPLE_RATE:
-            clip = clip[:, :seconds*SAMPLE_RATE]
+        if clip.shape[-1] > seconds * SAMPLE_RATE:
+            clip = clip[:, : seconds * SAMPLE_RATE]
             clips.append(clip)
     print(f"Clip no: {len(clips)}")
     clip_array = torch.stack(clips).numpy()
@@ -93,20 +91,20 @@ def _compute_fingerprint_wpt(
 
     # get the pytorch decomposition
     level = 8
-    wp_nodes = pywt_wp_tree.get_level(level, order='freq')
+    wp_nodes = pywt_wp_tree.get_level(level, order="freq")
     wp_paths = [n.path for n in wp_nodes]
 
-    use = len(wp_nodes) - len(wp_nodes)//2
+    use = len(wp_nodes) - len(wp_nodes) // 2
 
     for pos, path in enumerate(wp_paths):
         if pos < use:
             pywt_wp_tree[path] = np.zeros_like(pywt_wp_tree[path].data)
-        
+
     filt_rec = pywt_wp_tree.reconstruct()
 
     mean_filt = np.mean(filt_rec, 0)
-    pywt_wp_tree = pywt.WaveletPacket(data=mean_filt, wavelet=wavelet, mode='reflect')
-    wp_nodes = pywt_wp_tree.get_level(level, order='freq')
+    pywt_wp_tree = pywt.WaveletPacket(data=mean_filt, wavelet=wavelet, mode="reflect")
+    wp_nodes = pywt_wp_tree.get_level(level, order="freq")
     to_plot = np.stack([n.data for n in wp_nodes[use:]])
 
     # norm_list = [torch.max(torch.abs(p)) for p in packet_list]
@@ -116,9 +114,8 @@ def _compute_fingerprint_wpt(
     mean_ln_abs_wpt = np.log(np.abs(np.mean(np.squeeze(to_plot, 1), -1)))
     plt.title(f"{gen_name} - ln(abs(wpt(x)))")
     plt.plot(mean_ln_abs_wpt)
-    plt.savefig(f'./plots/fingerprints/wpt_{gen_name}.png')
+    plt.savefig(f"./plots/fingerprints/wpt_{gen_name}.png")
     plt.clf()
-
 
 
 if __name__ == "__main__":
@@ -136,10 +133,8 @@ if __name__ == "__main__":
         "../data/ljspeech/H_ljspeech_full_band_melgan/",
     ]
 
-
     for path in paths:
         print(f"Processing {path}.", flush=True)
-        name = path.split('/')[-2]
+        name = path.split("/")[-2]
         # _compute_fingerprint_wpt(path, name)
         _compute_fingerprint_rfft(path, name)
-

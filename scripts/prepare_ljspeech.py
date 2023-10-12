@@ -6,7 +6,7 @@ if __name__ == "__main__":
     limit_train = (55504, 7504, 15504)
     seconds = 1
 
-    only_use = ["ljspeech", "fbmelgan"]
+    only_use = ["ljspeech", "hifigan"]
     train_data_set = get_costum_dataset(
         data_path=data_path,
         ds_type="train",
@@ -115,7 +115,7 @@ if __name__ == "__main__":
             "jsutpwg",
             "avocodo",
             "bigvgan",
-            "lbigvgan"
+            "lbigvgan",
         ],
         save_path=save_path,
         limit=limit_cross[1],

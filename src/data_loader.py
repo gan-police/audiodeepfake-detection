@@ -492,7 +492,6 @@ class CustomDataset(Dataset):
         # proceed with preparation for loading
 
         # apply limit per label
-        # import pdb; pdb.set_trace()
         result_set = result_set[:, :limit]
 
         # make sure, all frames will result in the same window size after resampling
