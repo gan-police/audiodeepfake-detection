@@ -49,7 +49,7 @@ def _compute_fingerprint_rfft(
     del clips
     freq_clips = np.fft.rfft(clip_array, axis=-1)
     freqs = freq_clips.shape[-1]
-    use = freqs//8
+    use = freqs//4
     zeros = np.zeros_like(freq_clips)[:, :, :-use]
     freq_clips = freq_clips[:, :, -use:]
     masked_freq = np.concatenate([zeros, freq_clips], -1)
@@ -67,8 +67,8 @@ def _compute_fingerprint_rfft(
     plt.plot(freqs, mean_ln_abs_fft, label=gen_name)
     plt.xlabel('frequency [Hz]')
     plt.ylabel('magnitude')
-    plt.savefig(f'./plots/fingerprints/rfft_{gen_name}.png')
     tikz.save(f'./plots/fingerprints/rfft_{gen_name}.tex', standalone=True)
+    plt.savefig(f'./plots/fingerprints/rfft_{gen_name}.png')
     plt.clf()
 
 
