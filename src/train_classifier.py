@@ -594,6 +594,8 @@ class Trainer:
                     continue
                 elif both and index_0 == times_0 and index_1 == times_1:
                     break
+                elif not both and index == times:
+                    break
 
                 attributions = self.integrated_grad(
                     baseline=baseline,
@@ -613,14 +615,11 @@ class Trainer:
                 elif c_label == target_1:
                     index_1 += 1
                 index += 1
-                
-                if index == times:
-                    break
 
             torch.cuda.empty_cache()
             if both and index_0 == times_0 and index_1 == times_1:
                 break
-            elif index == times:
+            elif not both and index == times:
                 break
 
         with torch.no_grad():
@@ -1186,6 +1185,7 @@ def main():
             trainer.load_snapshot(trainer.snapshot_path)
             path = f"{args.transform}_{args.sample_rate}_{args.seconds}_{args.seed}_{args.only_use[-1]}_{args.wavelet}_{args.power}_{str(loss_less)}"
             trainer.integrated_gradients(path)
+            exit(0)
         else:
             trainer.train(args.epochs)
         if exp_results.get(args.seed) is None:
