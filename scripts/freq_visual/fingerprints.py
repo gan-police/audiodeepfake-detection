@@ -8,6 +8,7 @@ import numpy as np
 import pywt
 import tikzplotlib as tikz
 import torch
+from tqdm import tqdm
 
 DEBUG = True
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -42,16 +43,16 @@ def _compute_fingerprint_rfft(
         sample_rate=SAMPLE_RATE,
     )
     clips = []
-    for clip, _fs in dataset:
+    for clip, _fs in tqdm(dataset, desc="load dataset", total=len(dataset)):
         if clip.shape[-1] > seconds * SAMPLE_RATE:
             clip = clip[:, : seconds * SAMPLE_RATE]
             clips.append(clip.numpy())
-    print(f"Clip no: {len(clips)}")
+    print(f"Clip count: {len(clips)}")
     clip_array = np.stack(clips)
     del clips
     freq_clips = np.fft.rfft(clip_array, axis=-1)
     freqs = freq_clips.shape[-1]
-    use = freqs // 8
+    use = freqs // 4
     zeros = np.zeros_like(freq_clips)[:, :, :-use]
     freq_clips = freq_clips[:, :, -use:]
     masked_freq = np.concatenate([zeros, freq_clips], -1)
@@ -67,10 +68,11 @@ def _compute_fingerprint_rfft(
     # plt.subplot(2, 1, 2)
     plt.title(f"fingerprint - {gen_name} - ln(abs(rfft(x))))")
     plt.plot(freqs, mean_ln_abs_fft, label=gen_name)
+    plt.ylim(-12, 3)
     plt.xlabel("frequency [Hz]")
     plt.ylabel("magnitude")
-    plt.savefig(f"{plot_path}/rfft_{gen_name}.png")
     tikz.save(f"{plot_path}/rfft_{gen_name}.tex", standalone=True)
+    plt.savefig(f"{plot_path}/rfft_{gen_name}.png")
     plt.clf()
 
 
