@@ -72,6 +72,7 @@ def get_config() -> dict:
         model_data = [None]
 
     wf_config = {
+        "transform": ["packets", "stft"],
         "learning_rate": [0.0001],
         "weight_decay": [0.001],
         "save_path": [
@@ -95,10 +96,27 @@ def get_config() -> dict:
         "seconds": [1],
         "sample_rate": [22050],
         "cross_sources": [
-            #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "avocodo", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg", "lbigvgan", "bigvgan"],
-            #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
-            #["ljspeech", "avocodo"],
-            ["ljspeech", "lbigvgan", "bigvgan"],
+            [
+                "ljspeech",
+                "melgan",
+                "lmelgan",
+                "mbmelgan",
+                "pwg",
+                "waveglow",
+                "avocodo",
+                "hifigan",
+                "conformer",
+                "jsutmbmelgan",
+                "jsutpwg",
+                "lbigvgan",
+                "bigvgan",
+            ],
+            # ["ljspeech", "hifigan"],
+            # ["ljspeech", "mbmelgan"],
+            # ["ljspeech", "pwg"],
+            # ["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
+            # ["ljspeech", "avocodo"],
+            # ["ljspeech", "lbigvgan", "bigvgan"],
         ],
         "epochs": [10],
         "validation_interval": [10],
@@ -116,7 +134,7 @@ def get_config() -> dict:
         "ochannels4": [128],
         "ochannels5": [32],
         "only_testing": [False],
-        "only_ig": [False],
+        "target": [0, 1, None],
     }
 
     itw_config = {
@@ -158,7 +176,7 @@ def get_config() -> dict:
         "ochannels4": [128],
         "ochannels5": [32],
         "only_testing": [False],
-        "only_ig": [False]
+        "only_ig": [True],
     }
 
     asv_config = {
@@ -363,7 +381,7 @@ class TestNet(torch.nn.Module):
             nn.Dropout(args.dropout_cnn),
         )
 
-        time_dim = ((args.input_dim[-1])) // 8# +1
+        time_dim = ((args.input_dim[-1])) // 8  # +1
         if args.asvspoof_name is not None:  # cheap workaround
             time_dim = 9
 
@@ -393,7 +411,7 @@ class TestNet(torch.nn.Module):
 
             pdb.set_trace()
         # x = self.upsample(x)
-        #import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
         # [batch, channels, packets, time]
         x = self.lcnn(x.permute(0, 1, 3, 2))

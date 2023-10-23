@@ -294,6 +294,11 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         action="store_true",
         help="Use distributed data parallel from pytorch.",
     )
+    parser.add_argument(
+        "--only-ig",
+        action="store_true",
+        help="Use distributed data parallel from pytorch.",
+    )
 
     return parser
 
@@ -486,7 +491,7 @@ def get_input_dims(args, transforms) -> list:
         else args.asvspoof_name,
         file_type=args.file_type,
         resample_rate=args.sample_rate,
-        seconds=args.seconds
+        seconds=args.seconds,
     )
     with torch.no_grad():
         freq_time_dt, _ = transforms(

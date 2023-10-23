@@ -362,7 +362,7 @@ def get_transforms(
             else args.asvspoof_name,
             file_type=args.file_type,
             resample_rate=args.sample_rate,
-            seconds=args.seconds
+            seconds=args.seconds,
         )
         norm_dataset_loader = torch.utils.data.DataLoader(
             dataset,

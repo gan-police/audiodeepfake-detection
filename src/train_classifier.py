@@ -4,8 +4,11 @@ import os
 import sys
 from typing import Tuple
 
+import matplotlib.colors as colors
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from captum.attr import IntegratedGradients, Saliency
 from scipy.interpolate import interp1d
 from scipy.optimize import brentq
 from sklearn.metrics import roc_curve
@@ -16,9 +19,6 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
-from captum.attr import IntegratedGradients, Saliency
-import matplotlib.pyplot as plt
-import matplotlib.colors as colors
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
@@ -27,6 +27,14 @@ from src.data_loader import (
     CrossWavefakeDataset,
     LearnWavefakeDataset,
     get_costum_dataset,
+)
+from src.integrated_gradients import (
+    Mean,
+    bar_plot,
+    im_plot,
+    integral_approximation,
+    interpolate_images,
+    plot_img_attributions,
 )
 from src.models import get_model, save_model
 from src.utils import (
@@ -39,7 +47,6 @@ from src.utils import (
     set_seed,
 )
 from src.wavelet_math import get_transforms
-from src.integrated_gradients import Mean, im_plot, bar_plot, plot_img_attributions, integral_approximation, interpolate_images
 
 
 def ddp_setup() -> None:
@@ -443,17 +450,14 @@ class Trainer:
         return val_acc, eer  # type: ignore
 
     def integrated_grad(
-        self,
-        baseline,
-        image,
-        target_class_idx,
-        m_steps=50,
-        batch_size=32
+        self, baseline, image, target_class_idx, m_steps=50, batch_size=32
     ):
         # Generate alphas.
-        alphas = torch.linspace(start=0.0, end=1.0, steps=m_steps+1).to(self.local_rank, non_blocking=True)
+        alphas = torch.linspace(start=0.0, end=1.0, steps=m_steps + 1).to(
+            self.local_rank, non_blocking=True
+        )
 
-        # Collect gradients.    
+        # Collect gradients.
         gradient_batches = []
 
         # Iterate alphas range and batch computation for speed, memory efficiency, and scaling to larger m_steps.
@@ -461,7 +465,9 @@ class Trainer:
             to = min(from_ + batch_size, len(alphas))
             alpha_batch = alphas[from_:to]
 
-            gradient_batch = self.one_batch(baseline, image, alpha_batch, target_class_idx)
+            gradient_batch = self.one_batch(
+                baseline, image, alpha_batch, target_class_idx
+            )
             gradient_batches.append(gradient_batch)
 
         # Concatenate path gradients together row-wise into single tensor.
@@ -478,21 +484,16 @@ class Trainer:
     def one_batch(self, baseline, image, alpha_batch, target_class_idx):
         # Generate interpolated inputs between baseline and input.
         interpolated_path_input_batch = interpolate_images(
-            baseline=baseline,
-            image=image,
-            alphas=alpha_batch
+            baseline=baseline, image=image, alphas=alpha_batch
         )
 
         # Compute gradients between model outputs and interpolated inputs.
         gradient_batch = self.compute_gradients(
-            images=interpolated_path_input_batch,
-            target_class_idx=target_class_idx
+            images=interpolated_path_input_batch, target_class_idx=target_class_idx
         )
         return gradient_batch
 
-
-                
-    def compute_gradients(self,images, target_class_idx):
+    def compute_gradients(self, images, target_class_idx):
         images.requires_grad = True
         logits = self.model(images)
         probs = torch.nn.functional.softmax(logits, dim=-1)[:, target_class_idx]
@@ -501,6 +502,7 @@ class Trainer:
 
     def integrated_gradients(
         self,
+        model_file: str = "ig",
         pbar: bool = True,
     ) -> Tuple[float, float]:
         """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
@@ -515,51 +517,74 @@ class Trainer:
             Tuple[float, Any]: The measured accuracy and eer of the model on the data set.
         """
 
-        plot_path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log2/plots"
+        plot_path = self.args.log_dir + "/plots/"
 
         welford_ig = Mean()
         welford_sal = Mean()
+        # welford_saliency = Mean()
 
         data_loader = self.cross_loader_test
         bar = tqdm(
-                iter(data_loader), desc="integrate grads", total=len(data_loader), disable=not pbar
-            )
+            iter(data_loader),
+            desc="integrate grads",
+            total=len(data_loader),
+            disable=not pbar,
+        )
 
         # integrated_gradients = IntegratedGradients(self.model)
         # saliency = Saliency(self.model)
         index = 0
-        target = 1
-        times = 1
+        both = False
+        if self.args.target is None:
+            both = True
+            target_value = 1
+        else:
+            try:
+                target_value = int(self.args.target)
+            except ValueError:
+                target_value = 1
+
+        target = torch.tensor(target_value).to(self.local_rank, non_blocking=True)
+
+        times = 40
         batch_size = 128
         m_steps = 200
-            
+
         self.model.zero_grad()
-            
+
         for val_batch in bar:
-            label = (val_batch["label"].to(self.local_rank, non_blocking=True) != 0).type(torch.long)
+            label = (
+                val_batch["label"].to(self.local_rank, non_blocking=True) != 0
+            ).type(torch.long)
             if label.shape[0] != batch_size:
                 continue
 
             label[label > 0] = 1
-        
+
             freq_time_dt, _ = self.transforms(
                 val_batch["audio"].to(self.local_rank, non_blocking=True)
             )
             freq_time_dt_norm = self.normalize(freq_time_dt)
-            #import pdb; pdb.set_trace()
-            baseline = torch.zeros_like(freq_time_dt_norm[0]).to(self.local_rank, non_blocking=True)
+            # import pdb; pdb.set_trace()
+            baseline = torch.zeros_like(freq_time_dt_norm[0]).to(
+                self.local_rank, non_blocking=True
+            )
             for i in tqdm(range(freq_time_dt_norm.shape[0])):
                 image = freq_time_dt_norm[i]
                 c_label = label[i]
+                if c_label != target and not both:
+                    continue
 
                 attributions = self.integrated_grad(
                     baseline=baseline,
                     image=image,
                     target_class_idx=c_label,
-                    m_steps=m_steps
+                    m_steps=m_steps,
                 )
 
-                attribution_mask = torch.sum(torch.abs(attributions), dim=0).unsqueeze(0)
+                attribution_mask = torch.sum(torch.abs(attributions), dim=0).unsqueeze(
+                    0
+                )
                 welford_ig.update(attribution_mask)
                 welford_sal.update(image)
             """attributions_ig = integrated_gradients.attribute(
@@ -582,23 +607,55 @@ class Trainer:
             index += 1
             if index == times:
                 break
-        
+
         with torch.no_grad():
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             mean_ig = welford_ig.finalize()
             mean_sal = welford_sal.finalize()
 
             if is_lead(self.args):
-                _ = plot_img_attributions(
+                mean_ig_max = torch.max(mean_ig, dim=1)[0]
+                mean_ig_min = torch.min(mean_ig, dim=1)[0]
+                ig_max = torch.log(mean_ig_max).cpu().detach().numpy()
+                ig_min = torch.log(mean_ig_min).cpu().detach().numpy()
+                ig_abs = np.abs(ig_max + np.abs(ig_min))
+
+                if both:
+                    target_str = "01"
+                else:
+                    target_str = str(target.detach().cpu())
+
+                path = (
+                    plot_path
+                    + model_file.replace("/", "_")
+                    + "_"
+                    + "-".join(self.args.cross_sources)
+                    + f"x{times * batch_size}_target-{target_str}"
+                )
+                np.save(
+                    path + "_integrated_gradients.npy",
+                    torch.log(mean_ig).detach().cpu().numpy(),
+                )
+                np.save(
+                    path + "_mean_images.npy", mean_sal.squeeze().detach().cpu().numpy()
+                )
+                np.save(
+                    path + "_last_image.npy", image.squeeze().detach().cpu().numpy()
+                )
+                np.save(path + "_ig_max.npy", ig_max)
+                np.save(path + "_ig_min.npy", ig_min)
+                np.save(path + "_ig_abs.npy", ig_abs)
+                """_ = plot_img_attributions(
                     image=image.squeeze().detach().cpu().numpy(),
                     baseline=baseline.squeeze().detach().cpu().numpy(),
                     cmap=plt.cm.inferno,
                     overlay_alpha=0.4,
                     attribution_mask=torch.log(mean_ig).detach().cpu().numpy()
                 )
-                plt.savefig(plot_path + "_test_3.png")
+                plt.savefig(path + "_integrated_gradients.png")
+                """
 
-            exit(0)
+            """
             if self.local_rank == 0:
                 output_list = [torch.zeros_like(mean_ig) for _ in range(self.world_size)]
                 torch.distributed.gather(mean_ig, gather_list=output_list)
@@ -623,11 +680,12 @@ class Trainer:
                 ig_max = mean_ig_max.cpu().detach().numpy()
                 ig_min = mean_ig_min.cpu().detach().numpy()
                 ig_abs = np.abs(ig_max + np.abs(ig_min))
-
+        """
+        """
         if self.local_rank == 0:
-            seconds = 4
-            sample_rate = 22050
-            num_of_scales = 256
+            seconds = self.args.seconds
+            sample_rate = self.args.sample_rate
+            num_of_scales = self.args.num_of_scales
             postfix = "fbmelgan"
             postfix += f"_target{target}_x{times*128}"
             postfix = postfix.split("/")[-1]
@@ -636,10 +694,10 @@ class Trainer:
             bins = np.int64(num_of_scales)
             n = list(range(int(bins)))
             freqs = (sample_rate / 2) * (n / bins)  # type: ignore
-
-            x_ticks = list(range(inital.shape[-1]))[:: inital.shape[-1] // 10]
-            x_labels = np.around(np.linspace(min(t), max(t), inital.shape[-1]), 2)[
-                :: inital.shape[-1] // 10
+            
+            x_ticks = list(range(image.shape[-1]))[:: image.shape[-1] // 10]
+            x_labels = np.around(np.linspace(min(t), max(t), image.shape[-1]), 2)[
+                :: image.shape[-1] // 10
             ]
 
             y_ticks = n[:: freqs.shape[0] // 10]
@@ -681,9 +739,9 @@ class Trainer:
 
             # bar_plot(ig_max, x_ticks, x_ticklabels, f"{plot_path}/attr_max_{postfix}")
             # bar_plot(ig_min, x_ticks, x_ticklabels, f"{plot_path}/attr_min_{postfix}")
-            bar_plot(ig_abs, y_ticks, y_labels, f"{plot_path}/attr_abs_{postfix}")
-            plt.close()
-    
+            bar_plot(ig_abs, y_ticks, y_labels, f'{plot_path}/attr_abs_{model_file.replace("/", "_")}_{"-".join(self.args.cross_sources)}.png')
+            plt.close()"""
+
     def _run_test(
         self, only_unknown: bool = False
     ) -> Tuple[float, float, float, float]:
@@ -731,7 +789,7 @@ class Trainer:
         for _it, batch in enumerate(self.bar):
             self.model.train()
             self._run_batch(e, batch)
-            self._run_batch(e, batch)
+            # self._run_batch(e, batch)
 
     def _run_validation(self, epoch):
         """Iterate over validation data."""
@@ -809,7 +867,7 @@ class Trainer:
     def _save_snapshot(self, epoch) -> None:
         """Save snapshot of current model."""
         snapshot = {
-            "MODEL_STATE": self.model.module.module.state_dict() if self.args.ddp else self.model.state_dict(),  # type: ignore
+            "MODEL_STATE": self.model.state_dict() if self.args.ddp else self.model.state_dict(),  # type: ignore
             "EPOCHS_RUN": epoch,
         }
         torch.save(snapshot, self.snapshot_path)
@@ -818,6 +876,7 @@ class Trainer:
     def load_snapshot(self, snapshot_path):
         """Load snapshot from given path."""
         loc = f"cuda:{self.local_rank}"
+        loc = {"cuda:%d" % 0: "cuda:%d" % self.local_rank}
         snapshot = torch.load(snapshot_path, map_location=loc)
         self.model.load_state_dict(snapshot["MODEL_STATE"])
         self.epochs_run = snapshot["EPOCHS_RUN"]
@@ -829,8 +888,10 @@ class Trainer:
             self._run_epoch(epoch)
 
             if is_lead(self.args):
-                if (epoch > 0 and epoch % self.args.ckpt_every == 0) or (
-                    epoch == 0 and self.args.ckpt_every == 1
+                if (
+                    (epoch > 0 and epoch % self.args.ckpt_every == 0)
+                    or (epoch == 0 and self.args.ckpt_every == 1)
+                    or (epoch == max_epochs)
                 ):
                     self._save_snapshot(epoch)
             if (epoch > 0 and epoch % self.args.validation_interval == 0) or (
@@ -909,7 +970,7 @@ def main():
             print("--------------- Starting grid search -----------------")
 
         if not args.random_seeds:
-            griderator = init_grid(num_exp=5, init_seeds=[0, 1, 2, 3, 4])
+            griderator = init_grid(num_exp=1, init_seeds=[0])
         else:
             griderator = init_grid(num_exp=3)
         num_exp = griderator.get_len()
@@ -992,7 +1053,7 @@ def main():
             + "_power"
             + str(args.power)
             + "_"
-            + known_gen_name
+            + str(args.only_use[1])
             + "_"
             + str(args.seconds)
             + "secs_"
@@ -1104,13 +1165,12 @@ def main():
             trainer.test_results = trainer.testing(only_unknown=True)
         elif args.only_ig:
             trainer._check_model_init()
+            print("loading " + trainer.snapshot_path)
             trainer.load_snapshot(trainer.snapshot_path)
-            trainer.integrated_gradients()
+            path = f"{args.transform}_{args.sample_rate}_{args.seconds}_{args.seed}_{args.only_use[-1]}_{args.wavelet}_{args.power}_{str(loss_less)}"
+            trainer.integrated_gradients(path)
         else:
             trainer.train(args.epochs)
-            if is_lead(args):
-                trainer._save_snapshot(args.epochs - 1)
-
         if exp_results.get(args.seed) is None:
             exp_results[args.seed] = [trainer.test_results]
         elif type(exp_results[args.seed]) is list:
@@ -1125,7 +1185,7 @@ def main():
         results = np.asarray(list(exp_results.values()))
         if results.shape[0] == 0:
             exit(0)
-        np.save("test.npy", results)
+        np.save(args.log_dir + "/last_results.npy", results)
         mean = results.mean(0)
         std = results.std(0)
         print("results:", results)
@@ -1164,9 +1224,7 @@ def main():
                 print("+---------------------+")
                 print(cross_dirs[i])  # which configs
                 for k in range(len(wavelets)):
-                    print(
-                        rf"{wavelets[k]} & {stringer[k][i]}"
-                    )  # which values
+                    print(rf"{wavelets[k]} & {stringer[k][i]}")  # which values
             print("+---------------------+")
         print("------------------------------------------------------------------")
         print(

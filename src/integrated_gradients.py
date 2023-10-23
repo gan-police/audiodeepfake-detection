@@ -6,7 +6,6 @@ import numpy as np
 import torch
 
 
-
 class Mean:
     """Compute running mean."""
 
@@ -42,6 +41,7 @@ class Mean:
             torch.Tensor: Estimated mean.
         """
         return torch.mean(self.mean, dim=0).squeeze() / self.count
+
 
 def bar_plot(data, x_ticks, x_labels, path):
     """Plot histogram of model attribution."""
@@ -98,13 +98,15 @@ def save_plot(path):
         override_externals=True,
     )"""
 
+
 def interpolate_images(baseline, image, alphas):
     alphas_x = alphas.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
     baseline_x = torch.unsqueeze(baseline, 0)
     input_x = torch.unsqueeze(image, 0)
     delta = input_x - baseline_x
-    images = baseline_x +  alphas_x * delta
+    images = baseline_x + alphas_x * delta
     return images
+
 
 def integral_approximation(gradients):
     # riemann_trapezoidal
@@ -114,25 +116,21 @@ def integral_approximation(gradients):
 
 
 def plot_img_attributions(
-    baseline,
-    image,
-    attribution_mask,
-    cmap=None,
-    overlay_alpha=0.4
+    baseline, image, attribution_mask, cmap=None, overlay_alpha=0.4
 ):
     fig, axs = plt.subplots(nrows=1, ncols=3, squeeze=False, figsize=(8, 8))
 
-    axs[0, 0].set_title('Original image')
-    axs[0, 0].imshow(image)
-    axs[0, 0].axis('off')
+    axs[0, 0].set_title("Original image")
+    axs[0, 0].imshow(image, aspect="auto")
+    axs[0, 0].axis("off")
 
-    axs[0, 1].set_title('Attribution mask')
-    axs[0, 1].imshow(attribution_mask, cmap=cmap)
-    axs[0, 1].axis('off')
-    axs[0, 2].set_title('Overlay')
-    axs[0, 2].imshow(attribution_mask, cmap=cmap)
-    axs[0, 2].imshow(image, alpha=overlay_alpha)
-    axs[0, 2].axis('off')
+    axs[0, 1].set_title("Attribution mask")
+    axs[0, 1].imshow(attribution_mask, aspect="auto", cmap=cmap)
+    axs[0, 1].axis("off")
+    axs[0, 2].set_title("Overlay")
+    axs[0, 2].imshow(attribution_mask, aspect="auto", cmap=cmap)
+    axs[0, 2].imshow(image, aspect="auto", alpha=overlay_alpha)
+    axs[0, 2].axis("off")
 
     plt.tight_layout()
     return fig

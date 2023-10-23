@@ -9,7 +9,7 @@
 #SBATCH --mem=300GB
 #SBATCH --cpus-per-task=24
 #SBATCH --partition booster
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log2/slurm/train/train_%j.out
 #SBATCH --error=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log2/slurm/train/train_%j.err
 source ${HOME}/.bashrc
@@ -36,7 +36,7 @@ srun --cpu-bind=none torchrun \
 --rdzv_backend c10d \
 --rdzv_endpoint $head_node_ip:29400 \
 --nnodes 1 \
---nproc_per_node 4 \
+--nproc_per_node 1 \
 src/train_classifier.py \
     --log-dir "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log2/" \
     --batch-size 128 \
@@ -67,7 +67,7 @@ src/train_classifier.py \
     --enable-gs \
     --calc-normalization \
     --ddp \
-    --pbar
+    --only-ig
 
 echo -e "Training process finished."
 echo "Goodbye at $(date)."
