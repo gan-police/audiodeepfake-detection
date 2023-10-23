@@ -534,6 +534,8 @@ class Trainer:
         # integrated_gradients = IntegratedGradients(self.model)
         # saliency = Saliency(self.model)
         index = 0
+        index_0 = 0
+        index_1 = 0
         both = False
         if self.args.target is None:
             both = True
@@ -546,7 +548,13 @@ class Trainer:
 
         target = torch.tensor(target_value).to(self.local_rank, non_blocking=True)
 
-        times = 5000
+        if self.args.ig_times_per_target is not None:
+            times = times_0 = times_1 = self.args.ig_times_per_target
+        else:
+            times = times_0 = times_1 = 2500
+
+        target_0 = torch.tensor(0).to(self.local_rank, non_blocking=True)
+        target_1 = torch.tensor(1).to(self.local_rank, non_blocking=True)
         batch_size = 128
         m_steps = 200
 
@@ -562,6 +570,10 @@ class Trainer:
             label[label > 0] = 1
             if not both and target not in label:
                 continue
+            elif both and index_0 == times_0 and index_1 != times_1 and target_1 not in label:
+                continue
+            elif both and index_1 == times_1 and index_0 != times_0 and target_0 not in label:
+                continue
 
             freq_time_dt, _ = self.transforms(
                 val_batch["audio"].to(self.local_rank, non_blocking=True)
@@ -574,8 +586,14 @@ class Trainer:
             for i in tqdm(range(freq_time_dt_norm.shape[0])):
                 image = freq_time_dt_norm[i]
                 c_label = label[i]
-                if c_label != target and not both:
+                if not both and c_label != target:
                     continue
+                elif both and c_label == target_0 and index_0 == times_0 and index_1 != times_1:
+                    continue
+                elif both and c_label == target_1 and index_1 == times_1 and index_0 != times_0:
+                    continue
+                elif both and index_0 == times_0 and index_1 == times_1:
+                    break
 
                 attributions = self.integrated_grad(
                     baseline=baseline,
@@ -590,15 +608,25 @@ class Trainer:
                 welford_ig.update(attribution_mask)
                 welford_sal.update(image)
 
+                if c_label == target_0:
+                    index_0 += 1
+                elif c_label == target_1:
+                    index_1 += 1
                 index += 1
+                
                 if index == times:
                     break
 
             torch.cuda.empty_cache()
-            if index == times:
+            if both and index_0 == times_0 and index_1 == times_1:
+                break
+            elif index == times:
                 break
 
         with torch.no_grad():
+            print("index 0 ", index_0)
+            print("index 1 ", index_1)
+            print("index ", index)
             mean_ig = welford_ig.finalize()
             mean_sal = welford_sal.finalize()
 
@@ -612,14 +640,14 @@ class Trainer:
                 if both:
                     target_str = "01"
                 else:
-                    target_str = str(target.detach().cpu())
+                    target_str = str(target.detach().cpu().item())
 
                 path = (
                     plot_path
                     + model_file.replace("/", "_")
                     + "_"
                     + "-".join(self.args.cross_sources)
-                    + f"x{times * batch_size}_target-{target_str}"
+                    + f"x{times}_target-{target_str}"
                 )
                 np.save(
                     path + "_integrated_gradients.npy",
