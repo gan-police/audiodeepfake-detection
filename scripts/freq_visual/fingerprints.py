@@ -153,6 +153,6 @@ if __name__ == "__main__":
     for path in paths:
         path = base_path + "data/fake/" + path
         print(f"Processing {path}.", flush=True)
-        name = path.split("/")[-1].split("_")[-1]
+        name = path.split("/")[-2].split("_")[-1]
         # _compute_fingerprint_wpt(directory=path, gen_name=name, plot_path=plot_path)
         _compute_fingerprint_rfft(directory=path, gen_name=name, plot_path=plot_path)
