@@ -8,9 +8,6 @@ import numpy as np
 import pywt
 import tikzplotlib as tikz
 import torch
-from intro_plot import compute_pytorch_packet_representation
-
-import src.plot_util as util
 
 DEBUG = True
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -18,6 +15,9 @@ BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if DEBUG:
     # Set python path automatically to base directory
     sys.path.append(BASE_PATH)
+
+import src.plot_util as util
+from scripts.freq_visual.intro_plot import compute_pytorch_packet_representation
 
 RES = 150
 SAMPLE_RATE = 22_050
@@ -32,7 +32,10 @@ def plot_mean_std(steps, mean, std, label="", marker="."):
 
 
 def _compute_fingerprint_rfft(
-    directory: str, gen_name: str = "", seconds: int = 1
+    directory: str,
+    gen_name: str = "",
+    seconds: int = 1,
+    plot_path="./plots/fingerprints/",
 ) -> torch.Tensor:
     dataset = util.AudioDataset(
         directory,
@@ -66,13 +69,17 @@ def _compute_fingerprint_rfft(
     plt.plot(freqs, mean_ln_abs_fft, label=gen_name)
     plt.xlabel("frequency [Hz]")
     plt.ylabel("magnitude")
-    plt.savefig(f"./plots/fingerprints/rfft_{gen_name}.png")
-    tikz.save(f"./plots/fingerprints/rfft_{gen_name}.tex", standalone=True)
+    plt.savefig(f"{plot_path}/rfft_{gen_name}.png")
+    tikz.save(f"{plot_path}/rfft_{gen_name}.tex", standalone=True)
     plt.clf()
 
 
 def _compute_fingerprint_wpt(
-    directory: str, gen_name: str = "", seconds: int = 1, wavelet_str: str = "sym8"
+    directory: str,
+    gen_name: str = "",
+    seconds: int = 1,
+    wavelet_str: str = "sym8",
+    plot_path="./plots/fingerprints/",
 ) -> torch.Tensor:
     dataset = util.AudioDataset(
         directory,
@@ -114,27 +121,38 @@ def _compute_fingerprint_wpt(
     mean_ln_abs_wpt = np.log(np.abs(np.mean(np.squeeze(to_plot, 1), -1)))
     plt.title(f"{gen_name} - ln(abs(wpt(x)))")
     plt.plot(mean_ln_abs_wpt)
-    plt.savefig(f"./plots/fingerprints/wpt_{gen_name}.png")
+    plt.savefig(f"{plot_path}/wpt_{gen_name}.png")
     plt.clf()
 
 
 if __name__ == "__main__":
-    Path("./plots/fingerprints").mkdir(parents=True, exist_ok=True)
+    base_path = (
+        "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/"
+    )
+    plot_path = base_path + "logs/log2/plots/fingerprints"
+    Path(plot_path).mkdir(parents=True, exist_ok=True)
 
     # Important: Put corresponding data directories here!
     paths = [
-        "../data/ljspeech/A_wavs/",
-        "../data/ljspeech/B_ljspeech_melgan/",
-        "../data/ljspeech/C_ljspeech_hifiGAN/",
-        "../data/ljspeech/D_ljspeech_melgan_large/",
-        "../data/ljspeech/E_ljspeech_multi_band_melgan/",
-        "../data/ljspeech/F_ljspeech_parallel_wavegan/",
-        "../data/ljspeech/G_ljspeech_waveglow/",
-        "../data/ljspeech/H_ljspeech_full_band_melgan/",
+        "A_ljspeech/",
+        "B_melgan/",
+        "C_hifigan/",
+        "D_mbmelgan/",
+        "E_fbmelgan/",
+        "F_waveglow/",
+        "G_pwg/",
+        "H_lmelgan/",
+        "I_avocodo/",
+        "J_bigvgan/",
+        "K_lbigvgan/",
+        "L_conformer/",
+        "M_jsutmbmelgan/",
+        "N_jsutpwg/",
     ]
 
     for path in paths:
+        path = base_path + "data/fake/" + path
         print(f"Processing {path}.", flush=True)
-        name = path.split("/")[-2]
-        # _compute_fingerprint_wpt(path, name)
-        _compute_fingerprint_rfft(path, name)
+        name = path.split("/")[-1].split("_")[-1]
+        # _compute_fingerprint_wpt(directory=path, gen_name=name, plot_path=plot_path)
+        _compute_fingerprint_rfft(directory=path, gen_name=name, plot_path=plot_path)

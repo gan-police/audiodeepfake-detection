@@ -546,7 +546,7 @@ class Trainer:
 
         target = torch.tensor(target_value).to(self.local_rank, non_blocking=True)
 
-        times = 40
+        times = 5000
         batch_size = 128
         m_steps = 200
 
@@ -560,12 +560,14 @@ class Trainer:
                 continue
 
             label[label > 0] = 1
+            if not both and target not in label:
+                continue
 
             freq_time_dt, _ = self.transforms(
                 val_batch["audio"].to(self.local_rank, non_blocking=True)
             )
             freq_time_dt_norm = self.normalize(freq_time_dt)
-            # import pdb; pdb.set_trace()
+
             baseline = torch.zeros_like(freq_time_dt_norm[0]).to(
                 self.local_rank, non_blocking=True
             )
@@ -587,29 +589,16 @@ class Trainer:
                 )
                 welford_ig.update(attribution_mask)
                 welford_sal.update(image)
-            """attributions_ig = integrated_gradients.attribute(
-                    freq_time_dt_norm,
-                        target=label,
-                        n_steps=100,
-                        internal_batch_size=128
-                ).squeeze(0)
-            welford_ig.update(attributions_ig)
-            del attributions_ig
 
-            attributions_sals = saliency.attribute(
-                        freq_time_dt_norm, target=label
-                    ).squeeze(0)
-            welford_sal.update(attributions_sals)
-            del attributions_sals"""
+                index += 1
+                if index == times:
+                    break
 
             torch.cuda.empty_cache()
-
-            index += 1
             if index == times:
                 break
 
         with torch.no_grad():
-            # import pdb; pdb.set_trace()
             mean_ig = welford_ig.finalize()
             mean_sal = welford_sal.finalize()
 
