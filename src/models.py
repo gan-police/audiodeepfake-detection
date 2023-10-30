@@ -549,12 +549,12 @@ def check_dimensions(
 ) -> bool:
     """Check if model is valid for given dimensions."""
     try:
-        summary(model, input_shape, verbose=0)
+        summary(model, input_shape, verbose=1)
     except RuntimeError as e:
         if verbose:
             print(f"Error: {e}")
         return False
-
+    #import pdb; pdb.set_trace()
     return True
 
 

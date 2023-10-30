@@ -9,7 +9,7 @@
 #SBATCH --mem=300GB
 #SBATCH --cpus-per-task=24
 #SBATCH --partition booster
-#SBATCH --time=6:00:00
+#SBATCH --time=06:00:00
 #SBATCH --output=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log2/slurm/train/train_%j.out
 #SBATCH --error=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log2/slurm/train/train_%j.err
 source ${HOME}/.bashrc

@@ -604,7 +604,7 @@ class Trainer:
                     m_steps=m_steps,
                 )
 
-                attribution_mask = torch.sum(torch.abs(attributions), dim=0).unsqueeze(
+                attribution_mask = torch.sum(attributions, dim=0).unsqueeze(
                     0
                 )
                 welford_ig.update(attribution_mask)
@@ -632,8 +632,8 @@ class Trainer:
             if is_lead(self.args):
                 mean_ig_max = torch.max(mean_ig, dim=1)[0]
                 mean_ig_min = torch.min(mean_ig, dim=1)[0]
-                ig_max = torch.log(mean_ig_max).cpu().detach().numpy()
-                ig_min = torch.log(mean_ig_min).cpu().detach().numpy()
+                ig_max = mean_ig_max.cpu().detach().numpy()
+                ig_min = mean_ig_min.cpu().detach().numpy()
                 ig_abs = np.abs(ig_max + np.abs(ig_min))
 
                 if both:
@@ -650,7 +650,7 @@ class Trainer:
                 )
                 np.save(
                     path + "_integrated_gradients.npy",
-                    torch.log(mean_ig).detach().cpu().numpy(),
+                    mean_ig.detach().cpu().numpy(),
                 )
                 np.save(
                     path + "_mean_images.npy", mean_sal.squeeze().detach().cpu().numpy()
@@ -986,7 +986,7 @@ def main():
             print("--------------- Starting grid search -----------------")
 
         if not args.random_seeds:
-            griderator = init_grid(num_exp=1, init_seeds=[0])
+            griderator = init_grid(num_exp=1, init_seeds=[0, 1, 2, 3, 4])
         else:
             griderator = init_grid(num_exp=3)
         num_exp = griderator.get_len()
@@ -1185,7 +1185,6 @@ def main():
             trainer.load_snapshot(trainer.snapshot_path)
             path = f"{args.transform}_{args.sample_rate}_{args.seconds}_{args.seed}_{args.only_use[-1]}_{args.wavelet}_{args.power}_{str(loss_less)}"
             trainer.integrated_gradients(path)
-            exit(0)
         else:
             trainer.train(args.epochs)
         if exp_results.get(args.seed) is None:
