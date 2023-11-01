@@ -24,17 +24,12 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
 from src.data_loader import (
-    CrossWavefakeDataset,
-    LearnWavefakeDataset,
     get_costum_dataset,
 )
 from src.integrated_gradients import (
     Mean,
-    bar_plot,
-    im_plot,
     integral_approximation,
     interpolate_images,
-    plot_img_attributions,
 )
 from src.models import get_model, save_model
 from src.utils import (

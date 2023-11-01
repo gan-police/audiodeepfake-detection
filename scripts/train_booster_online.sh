@@ -67,8 +67,7 @@ src/train_classifier.py \
     --features none \
     --enable-gs \
     --calc-normalization \
-    --ddp \
-    --only-ig
+    --ddp
 
 echo -e "Training process finished."
 echo "Goodbye at $(date)."

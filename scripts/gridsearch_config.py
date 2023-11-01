@@ -6,7 +6,7 @@ import torch
 import torchvision
 from torch import nn
 
-from src.models import BLSTMLayer, MaxFeatureMap2D, parse_model_str
+from src.models import parse_model_str, TestNet
 
 
 def get_config() -> dict:
@@ -72,7 +72,7 @@ def get_config() -> dict:
         model_data = [None]
 
     wf_config = {
-        "transform": ["stft"],
+        "transform": ["packets"],
         "learning_rate": [0.0001],
         "weight_decay": [0.001],
         "save_path": [
@@ -91,7 +91,7 @@ def get_config() -> dict:
         "file_type": ["wav"],
         "dropout_cnn": [0.6],
         "dropout_lstm": [0.2],
-        "num_of_scales": [256],
+        "num_of_scales": [128],
         "wavelet": ["sym8"],
         "seconds": [1],
         "sample_rate": [22050],
@@ -114,9 +114,9 @@ def get_config() -> dict:
             #["ljspeech", "hifigan"],
             #["ljspeech", "mbmelgan"],
             #["ljspeech", "pwg"],
-            ["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
-            ["ljspeech", "avocodo"],
-            ["ljspeech", "lbigvgan", "bigvgan"],
+            #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
+            #["ljspeech", "avocodo"],
+            #["ljspeech", "lbigvgan", "bigvgan"],
         ],
         "epochs": [10],
         "validation_interval": [10],
@@ -134,7 +134,7 @@ def get_config() -> dict:
         "ochannels4": [128],
         "ochannels5": [32],
         "hop_length": [220],
-        "only_testing": [True],
+        "only_testing": [False],
         #"target": [0, 1, None],
     }
 
@@ -264,88 +264,6 @@ def transf(x):
     return x.view(x.shape[0], x.shape[1], -1)
 
 
-class LCNN(nn.Module):
-    """Deep CNN with 2D convolutions for detecting audio deepfakes.
-
-    Fork of ASVSpoof Challenge 2021 LA Baseline.
-    """
-
-    def __init__(
-        self,
-        args,
-        classes: int = 2,
-    ) -> None:
-        """Define network sturcture."""
-        super(LCNN, self).__init__()
-
-        # LCNN from AVSpoofChallenge 2021
-        self.lcnn = nn.Sequential(
-            nn.Conv2d(1, args.ochannels1, args.kernel1, 1, padding=2),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Conv2d(args.ochannels1, 64, 1, 1, padding=0),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.SyncBatchNorm(64, affine=False),
-            nn.Conv2d(64, 96, 3, 1, padding=1),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.SyncBatchNorm(96, affine=False),
-            nn.Conv2d(96, 96, 1, 1, padding=0),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.SyncBatchNorm(96, affine=False),
-            nn.Conv2d(96, 128, 3, 1, padding=1),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Conv2d(128, 128, 1, 1, padding=0),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.SyncBatchNorm(128, affine=False),
-            nn.Conv2d(128, 64, 3, 1, padding=1),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.SyncBatchNorm(64, affine=False),
-            nn.Conv2d(64, 64, 1, 1, padding=0),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.SyncBatchNorm(64, affine=False),
-            nn.Conv2d(64, 64, 3, 1, padding=1),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Dropout(args.dropout_cnn),
-        )
-        size = int(args.num_of_scales * 4)
-        self.lstm = nn.Sequential(
-            BLSTMLayer(size, size),
-            BLSTMLayer(size, size),
-            nn.Dropout(args.dropout_lstm),
-        )
-
-        self.fc = nn.Linear(size, classes)
-
-    def forward(self, x) -> torch.Tensor:
-        """Forward pass."""
-        # import pdb; pdb.set_trace()
-        # [batch, channels, packets, time]
-        x = self.lcnn(x.permute(0, 1, 3, 2))
-
-        # [batch, channels, time, packets]
-        x = x.permute(0, 2, 1, 3).contiguous()
-        shape = x.shape
-
-        # [batch, time, channels, packets]
-        # import pdb; pdb.set_trace()
-        x = self.lstm(x.view(shape[0], shape[1], -1))
-        x = self.fc(x).mean(1)
-
-        return x
-
-
 class TestNet(torch.nn.Module):
     """Deep CNN."""
 
@@ -411,8 +329,7 @@ class TestNet(torch.nn.Module):
             import pdb
 
             pdb.set_trace()
-        # x = self.upsample(x)
-        #import pdb; pdb.set_trace()
+        import pdb; pdb.set_trace()
 
         # [batch, channels, packets, time]
         x = self.lcnn(x.permute(0, 1, 3, 2))

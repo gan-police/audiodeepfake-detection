@@ -17,7 +17,7 @@ from torchaudio import functional
 from torchaudio.transforms import AmplitudeToDB, ComputeDeltas, Spectrogram
 from tqdm import tqdm
 
-from .data_loader import LearnWavefakeDataset, WelfordEstimator, get_costum_dataset
+from .data_loader import WelfordEstimator, get_costum_dataset
 
 
 class STFTLayer(torch.nn.Module):

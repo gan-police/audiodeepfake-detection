@@ -239,8 +239,6 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
     parser.add_argument(
         "--model",
         choices=[
-            "onednet",
-            "learndeepnet",
             "lcnn",
             "gridmodel",
             "modules",
