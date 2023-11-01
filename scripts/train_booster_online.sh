@@ -31,8 +31,7 @@ echo $SLURM_JOB_NUM_NODES
 
 echo -e "Training..."
 
-#srun --cpu-bind=none 
-torchrun \
+srun --cpu-bind=none torchrun \
 --rdzv_id $RANDOM \
 --rdzv_backend c10d \
 --rdzv_endpoint $head_node_ip:29400 \
@@ -67,7 +66,8 @@ src/train_classifier.py \
     --features none \
     --enable-gs \
     --calc-normalization \
-    --ddp
+    --ddp \
+    --only-ig
 
 echo -e "Training process finished."
 echo "Goodbye at $(date)."

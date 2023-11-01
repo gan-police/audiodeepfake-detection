@@ -72,7 +72,7 @@ def get_config() -> dict:
         model_data = [None]
 
     wf_config = {
-        "transform": ["packets"],
+        "transform": ["stft"],
         "learning_rate": [0.0001],
         "weight_decay": [0.001],
         "save_path": [
@@ -91,7 +91,7 @@ def get_config() -> dict:
         "file_type": ["wav"],
         "dropout_cnn": [0.6],
         "dropout_lstm": [0.2],
-        "num_of_scales": [128],
+        "num_of_scales": [256],
         "wavelet": ["sym8"],
         "seconds": [1],
         "sample_rate": [22050],
@@ -135,7 +135,7 @@ def get_config() -> dict:
         "ochannels5": [32],
         "hop_length": [220],
         "only_testing": [False],
-        #"target": [0, 1, None],
+        "target": [0, 1, None],
     }
 
     itw_config = {

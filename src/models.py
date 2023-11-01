@@ -338,7 +338,7 @@ class BLSTMLayer(nn.Module):
 
 
 class TestNet(torch.nn.Module):
-    """Deep CNN."""
+    """Deep CNN with dilated convolutions."""
 
     def __init__(
         self,
@@ -400,7 +400,7 @@ class TestNet(torch.nn.Module):
             import pdb
 
             pdb.set_trace()
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
 
         # [batch, channels, packets, time]
         x = self.lcnn(x.permute(0, 1, 3, 2))
@@ -427,7 +427,6 @@ class Regression(torch.nn.Module):
         super().__init__()
         self.linear = torch.nn.Linear(args.num_of_scales * 101, 2)
 
-        # self.activation = torch.nn.Sigmoid()
         self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -441,7 +440,6 @@ class Regression(torch.nn.Module):
             torch.Tensor: A logsoftmax scaled output of shape
                 [batch_size, classes].
         """
-        # import pdb; pdb.set_trace()
         x_flat = torch.reshape(x, [x.shape[0], -1])
         return self.logsoftmax(self.linear(x_flat))
 
