@@ -347,7 +347,7 @@ class TestNet(torch.nn.Module):
         """Define network sturcture."""
         super(TestNet, self).__init__()
 
-        self.lcnn = nn.Sequential(
+        self.cnn = nn.Sequential(
             nn.Conv2d(args.input_dim[1], args.ochannels1, args.kernel1, 1, padding=2),
             nn.PReLU(),
             nn.MaxPool2d(2, 2),
@@ -396,14 +396,8 @@ class TestNet(torch.nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        if self.single_gpu:
-            import pdb
-
-            pdb.set_trace()
-        #import pdb; pdb.set_trace()
-
         # [batch, channels, packets, time]
-        x = self.lcnn(x.permute(0, 1, 3, 2))
+        x = self.cnn(x.permute(0, 1, 3, 2))
 
         # [batch, channels, time, packets]
         x = x.permute(0, 2, 1, 3).contiguous()
