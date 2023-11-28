@@ -67,14 +67,16 @@ def _compute_fingerprint_rfft(
     plt.plot(freqs, mean_ln_abs_fft, label=gen_name)
     plt.xlabel('frequency [Hz]')
     plt.ylabel('magnitude')
-    tikz.save(f'./plots/fingerprints/rfft_{gen_name}.tex', standalone=True)
-    plt.savefig(f'./plots/fingerprints/rfft_{gen_name}.png')
+    if 0:
+        tikz.save(f'./plots/fingerprints/rfft_{gen_name}.tex', standalone=True)
+        plt.savefig(f'./plots/fingerprints/rfft_{gen_name}.png')
     plt.clf()
+    return (freqs, mean_ln_abs_fft, gen_name)
 
 
 def _compute_fingerprint_wpt(
-    directory: str, gen_name: str='', seconds: int = 1,
-    wavelet_str: str = 'sym8'
+    directory: str, seconds: int = 1,
+    wavelet_str: str = 'haar'
 ) -> torch.Tensor:
     dataset = util.AudioDataset(
         directory,
@@ -86,39 +88,24 @@ def _compute_fingerprint_wpt(
             clip = clip[:, :seconds*SAMPLE_RATE]
             clips.append(clip)
     print(f"Clip no: {len(clips)}")
-    clip_array = torch.stack(clips).numpy()
+    clip_array = torch.stack(clips[:2500]).numpy()
 
     wavelet = pywt.Wavelet(wavelet_str)
     pywt_wp_tree = pywt.WaveletPacket(data=clip_array, wavelet=wavelet, mode="reflect")
 
     # get the pytorch decomposition
-    level = 8
+    level = 10 # 22
+    level = 12 # 6
+    level = 14
     wp_nodes = pywt_wp_tree.get_level(level, order='freq')
     wp_paths = [n.path for n in wp_nodes]
 
-    use = len(wp_nodes) - len(wp_nodes)//2
-
-    for pos, path in enumerate(wp_paths):
-        if pos < use:
-            pywt_wp_tree[path] = np.zeros_like(pywt_wp_tree[path].data)
+    packet_list = []
+    for path in wp_paths:
+       packet_list.append(pywt_wp_tree[path].data)
         
-    filt_rec = pywt_wp_tree.reconstruct()
-
-    mean_filt = np.mean(filt_rec, 0)
-    pywt_wp_tree = pywt.WaveletPacket(data=mean_filt, wavelet=wavelet, mode='reflect')
-    wp_nodes = pywt_wp_tree.get_level(level, order='freq')
-    to_plot = np.stack([n.data for n in wp_nodes[use:]])
-
-    # norm_list = [torch.max(torch.abs(p)) for p in packet_list]
-    # if max_norm:
-    #     packet_list = [p / pmax for p, pmax in zip(packet_list, norm_list)]
-
-    mean_ln_abs_wpt = np.log(np.abs(np.mean(np.squeeze(to_plot, 1), -1)))
-    plt.title(f"{gen_name} - ln(abs(wpt(x)))")
-    plt.plot(mean_ln_abs_wpt)
-    plt.savefig(f'./plots/fingerprints/wpt_{gen_name}.png')
-    plt.clf()
-
+    packets = np.stack(packet_list, -1)
+    return np.mean(np.abs(packets), (0, 1, 2))
 
 
 if __name__ == "__main__":
@@ -127,19 +114,31 @@ if __name__ == "__main__":
     # Important: Put corresponding data directories here!
     paths = [
         "../data/ljspeech/A_wavs/",
-        "../data/ljspeech/B_ljspeech_melgan/",
-        "../data/ljspeech/C_ljspeech_hifiGAN/",
+        # "../data/ljspeech/B_ljspeech_melgan/",
+        #"../data/ljspeech/C_ljspeech_hifiGAN/",
         "../data/ljspeech/D_ljspeech_melgan_large/",
-        "../data/ljspeech/E_ljspeech_multi_band_melgan/",
-        "../data/ljspeech/F_ljspeech_parallel_wavegan/",
-        "../data/ljspeech/G_ljspeech_waveglow/",
-        "../data/ljspeech/H_ljspeech_full_band_melgan/",
+        #"../data/ljspeech/E_ljspeech_multi_band_melgan/",
+        #"../data/ljspeech/F_ljspeech_parallel_wavegan/",
+        #"../data/ljspeech/G_ljspeech_waveglow/",
+        #"../data/ljspeech/H_ljspeech_full_band_melgan/",
     ]
 
-
+    plot_tuples = []
+    wp_means = []
     for path in paths:
         print(f"Processing {path}.", flush=True)
         name = path.split('/')[-2]
         # _compute_fingerprint_wpt(path, name)
-        _compute_fingerprint_rfft(path, name)
+        wp_means.append((_compute_fingerprint_wpt(path), name))
+        # plot_tuples.append(_compute_fingerprint_rfft(path, name))
 
+    # for pos, plot_tuple in enumerate(plot_tuples):
+    #     plt.subplot(2, 4, pos+1)
+    #     plt.title(plot_tuple[2])
+    #     plt.plot(plot_tuple[0], plot_tuple[1])
+    # tikz.save('./plots/fingerprints/groupplot.tex', standalone=True)
+    # [0], [-2]
+    [plt.semilogy(wps[0], label=wps[1]) for wps in wp_means]
+    plt.legend()
+    plt.show()
+    pass
