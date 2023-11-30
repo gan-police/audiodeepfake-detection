@@ -8,6 +8,7 @@ import numpy as np
 import tikzplotlib as tikz
 import torch
 import pywt
+from scipy.io.wavfile import write
 
 
 import src.plot_util as util
@@ -45,38 +46,44 @@ def _compute_fingerprint_rfft(
             clip = clip[:, :seconds*SAMPLE_RATE]
             clips.append(clip.numpy())
     print(f"Clip no: {len(clips)}")
-    clip_array = np.stack(clips)
+    clip_array = np.stack(clips[:2500])
     del clips
     freq_clips = np.fft.rfft(clip_array, axis=-1)
     freqs = freq_clips.shape[-1]
-    use = freqs//4
+    use = freqs # //2
     zeros = np.zeros_like(freq_clips)[:, :, :-use]
     freq_clips = freq_clips[:, :, -use:]
     masked_freq = np.concatenate([zeros, freq_clips], -1)
     masked_time = np.fft.irfft(masked_freq)
     masked_time_mean = np.mean(masked_time, 0)[0]
 
-    mean_ln_abs_fft = np.log(np.abs(np.fft.rfft(masked_time_mean)[-use:]))
+    mean_ln_abs_fft = np.abs(np.fft.rfft(masked_time_mean)[-use:])
     # std_ln_abs_fft = np.log(np.abs(np.fft.rfft(masked_time_std)[-use:]))
     freqs = np.fft.rfftfreq(masked_time_mean.shape[-1], 1./SAMPLE_RATE)[-use:]
     # plt.subplot(2, 1, 1)
     # plt.title(f"{gen_name} - time")
     # plt.plot(masked_time_mean)
     # plt.subplot(2, 1, 2)
-    plt.title(f"fingerprint - {gen_name} - ln(abs(rfft(x))))")
-    plt.plot(freqs, mean_ln_abs_fft, label=gen_name)
+    plt.title(f"{gen_name}")
+    plt.semilogy(freqs, mean_ln_abs_fft, label=gen_name)
     plt.xlabel('frequency [Hz]')
-    plt.ylabel('magnitude')
-    if 0:
+    plt.ylabel('mean absolute Fourier coefficient magnitude')
+    plt.grid(True)
+    if 1:
         tikz.save(f'./plots/fingerprints/rfft_{gen_name}.tex', standalone=True)
         plt.savefig(f'./plots/fingerprints/rfft_{gen_name}.png')
     plt.clf()
+
+    data = np.fft.irfft(masked_time_mean);
+    scaled = np.int16(data / np.max(np.abs(data)) * 32767)
+    write(f'./wavs/{gen_name}.wav', SAMPLE_RATE, scaled)
+
     return (freqs, mean_ln_abs_fft, gen_name)
 
 
 def _compute_fingerprint_wpt(
     directory: str, seconds: int = 1,
-    wavelet_str: str = 'haar'
+    wavelet_str: str = 'haar', gen_name: str = ""
 ) -> torch.Tensor:
     dataset = util.AudioDataset(
         directory,
@@ -105,7 +112,17 @@ def _compute_fingerprint_wpt(
        packet_list.append(pywt_wp_tree[path].data)
         
     packets = np.stack(packet_list, -1)
-    return np.mean(np.abs(packets), (0, 1, 2))
+    freqs = np.linspace(0, SAMPLE_RATE//2, len(wp_paths))
+    mean_packets = np.mean(np.abs(packets), (0, 1, 2))
+    plt.title(gen_name)
+    plt.semilogy(freqs, mean_packets, label=gen_name)
+    plt.xlabel('frequency [Hz]')
+    plt.ylabel('mean wavelet packet magnitude')
+    if 1:
+        tikz.save(f'./plots/fingerprints/wpt_{gen_name}.tex', standalone=True)
+        plt.savefig(f'./plots/fingerprints/wpt_{gen_name}.png')
+    plt.clf()
+    return freqs, mean_packets
 
 
 if __name__ == "__main__":
@@ -114,13 +131,13 @@ if __name__ == "__main__":
     # Important: Put corresponding data directories here!
     paths = [
         "../data/ljspeech/A_wavs/",
-        # "../data/ljspeech/B_ljspeech_melgan/",
-        #"../data/ljspeech/C_ljspeech_hifiGAN/",
+        "../data/ljspeech/B_ljspeech_melgan/",
+        "../data/ljspeech/C_ljspeech_hifiGAN/",
         "../data/ljspeech/D_ljspeech_melgan_large/",
-        #"../data/ljspeech/E_ljspeech_multi_band_melgan/",
-        #"../data/ljspeech/F_ljspeech_parallel_wavegan/",
-        #"../data/ljspeech/G_ljspeech_waveglow/",
-        #"../data/ljspeech/H_ljspeech_full_band_melgan/",
+        "../data/ljspeech/E_ljspeech_multi_band_melgan/",
+        "../data/ljspeech/F_ljspeech_parallel_wavegan/",
+        "../data/ljspeech/G_ljspeech_waveglow/",
+        "../data/ljspeech/H_ljspeech_full_band_melgan/",
     ]
 
     plot_tuples = []
@@ -129,8 +146,8 @@ if __name__ == "__main__":
         print(f"Processing {path}.", flush=True)
         name = path.split('/')[-2]
         # _compute_fingerprint_wpt(path, name)
-        wp_means.append((_compute_fingerprint_wpt(path), name))
-        # plot_tuples.append(_compute_fingerprint_rfft(path, name))
+        wp_means.append((_compute_fingerprint_wpt(path, gen_name=name), name))
+        plot_tuples.append(_compute_fingerprint_rfft(path, name))
 
     # for pos, plot_tuple in enumerate(plot_tuples):
     #     plt.subplot(2, 4, pos+1)
@@ -138,7 +155,7 @@ if __name__ == "__main__":
     #     plt.plot(plot_tuple[0], plot_tuple[1])
     # tikz.save('./plots/fingerprints/groupplot.tex', standalone=True)
     # [0], [-2]
-    [plt.semilogy(wps[0], label=wps[1]) for wps in wp_means]
+    [plt.semilogy(wps[0][0], wps[0][1], label=wps[1]) for wps in wp_means]
     plt.legend()
     plt.show()
     pass
