@@ -8,6 +8,10 @@ import numpy as np
 import pywt
 import tikzplotlib as tikz
 import torch
+
+from scipy.io.wavfile import write
+import src.plot_util as util
+from intro_plot import compute_pytorch_packet_representation
 from tqdm import tqdm
 
 DEBUG = True
@@ -47,41 +51,49 @@ def _compute_fingerprint_rfft(
         if clip.shape[-1] > seconds * SAMPLE_RATE:
             clip = clip[:, : seconds * SAMPLE_RATE]
             clips.append(clip.numpy())
-    print(f"Clip count: {len(clips)}")
-    clip_array = np.stack(clips)
+
+    print(f"Clip no: {len(clips)}")
+    clip_array = np.stack(clips[:2500])
     del clips
     freq_clips = np.fft.rfft(clip_array, axis=-1)
     freqs = freq_clips.shape[-1]
-    use = freqs // 4
+    use = freqs # //2
+
     zeros = np.zeros_like(freq_clips)[:, :, :-use]
     freq_clips = freq_clips[:, :, -use:]
     masked_freq = np.concatenate([zeros, freq_clips], -1)
     masked_time = np.fft.irfft(masked_freq)
     masked_time_mean = np.mean(masked_time, 0)[0]
 
-    mean_ln_abs_fft = np.log(np.abs(np.fft.rfft(masked_time_mean)[-use:]))
+    mean_ln_abs_fft = np.abs(np.fft.rfft(masked_time_mean)[-use:])
     # std_ln_abs_fft = np.log(np.abs(np.fft.rfft(masked_time_std)[-use:]))
     freqs = np.fft.rfftfreq(masked_time_mean.shape[-1], 1.0 / SAMPLE_RATE)[-use:]
     # plt.subplot(2, 1, 1)
     # plt.title(f"{gen_name} - time")
     # plt.plot(masked_time_mean)
     # plt.subplot(2, 1, 2)
-    plt.title(f"fingerprint - {gen_name} - ln(abs(rfft(x))))")
-    plt.plot(freqs, mean_ln_abs_fft, label=gen_name)
-    plt.ylim(-12, 3)
-    plt.xlabel("frequency [Hz]")
-    plt.ylabel("magnitude")
-    tikz.save(f"{plot_path}/rfft_{gen_name}.tex", standalone=True)
-    plt.savefig(f"{plot_path}/rfft_{gen_name}.png")
+
+    plt.title(f"{gen_name}")
+    plt.semilogy(freqs, mean_ln_abs_fft, label=gen_name)
+    plt.xlabel('frequency [Hz]')
+    plt.ylabel('mean absolute Fourier coefficient magnitude')
+    plt.grid(True)
+    if 1:
+        tikz.save(f'./plots/fingerprints/rfft_{gen_name}.tex', standalone=True)
+        plt.savefig(f'./plots/fingerprints/rfft_{gen_name}.png')
+
     plt.clf()
+
+    data = np.fft.irfft(masked_time_mean);
+    scaled = np.int16(data / np.max(np.abs(data)) * 32767)
+    write(f'./wavs/{gen_name}.wav', SAMPLE_RATE, scaled)
+
+    return (freqs, mean_ln_abs_fft, gen_name)
 
 
 def _compute_fingerprint_wpt(
-    directory: str,
-    gen_name: str = "",
-    seconds: int = 1,
-    wavelet_str: str = "sym8",
-    plot_path="./plots/fingerprints/",
+    directory: str, seconds: int = 1,
+    wavelet_str: str = 'haar', gen_name: str = ""
 ) -> torch.Tensor:
     dataset = util.AudioDataset(
         directory,
@@ -93,39 +105,36 @@ def _compute_fingerprint_wpt(
             clip = clip[:, : seconds * SAMPLE_RATE]
             clips.append(clip)
     print(f"Clip no: {len(clips)}")
-    clip_array = torch.stack(clips).numpy()
+    clip_array = torch.stack(clips[:2500]).numpy()
 
     wavelet = pywt.Wavelet(wavelet_str)
     pywt_wp_tree = pywt.WaveletPacket(data=clip_array, wavelet=wavelet, mode="reflect")
 
     # get the pytorch decomposition
-    level = 8
-    wp_nodes = pywt_wp_tree.get_level(level, order="freq")
+
+    level = 10 # 22
+    level = 12 # 6
+    level = 14
+    wp_nodes = pywt_wp_tree.get_level(level, order='freq')
     wp_paths = [n.path for n in wp_nodes]
 
-    use = len(wp_nodes) - len(wp_nodes) // 2
+    packet_list = []
+    for path in wp_paths:
+       packet_list.append(pywt_wp_tree[path].data)
+        
+    packets = np.stack(packet_list, -1)
+    freqs = np.linspace(0, SAMPLE_RATE//2, len(wp_paths))
+    mean_packets = np.mean(np.abs(packets), (0, 1, 2))
+    plt.title(gen_name)
+    plt.semilogy(freqs, mean_packets, label=gen_name)
+    plt.xlabel('frequency [Hz]')
+    plt.ylabel('mean wavelet packet magnitude')
+    if 1:
+        tikz.save(f'./plots/fingerprints/wpt_{gen_name}.tex', standalone=True)
+        plt.savefig(f'./plots/fingerprints/wpt_{gen_name}.png')
 
-    for pos, path in enumerate(wp_paths):
-        if pos < use:
-            pywt_wp_tree[path] = np.zeros_like(pywt_wp_tree[path].data)
-
-    filt_rec = pywt_wp_tree.reconstruct()
-
-    mean_filt = np.mean(filt_rec, 0)
-    pywt_wp_tree = pywt.WaveletPacket(data=mean_filt, wavelet=wavelet, mode="reflect")
-    wp_nodes = pywt_wp_tree.get_level(level, order="freq")
-    to_plot = np.stack([n.data for n in wp_nodes[use:]])
-
-    # norm_list = [torch.max(torch.abs(p)) for p in packet_list]
-    # if max_norm:
-    #     packet_list = [p / pmax for p, pmax in zip(packet_list, norm_list)]
-
-    mean_ln_abs_wpt = np.log(np.abs(np.mean(np.squeeze(to_plot, 1), -1)))
-    plt.title(f"{gen_name} - ln(abs(wpt(x)))")
-    plt.plot(mean_ln_abs_wpt)
-    plt.savefig(f"{plot_path}/wpt_{gen_name}.png")
     plt.clf()
-
+    return freqs, mean_packets
 
 if __name__ == "__main__":
     base_path = (
@@ -152,9 +161,25 @@ if __name__ == "__main__":
         "N_jsutpwg/",
     ]
 
+    plot_tuples = []
+    wp_means = []
+
     for path in paths:
         path = base_path + "data/fake/" + path
         print(f"Processing {path}.", flush=True)
-        name = path.split("/")[-2].split("_")[-1]
-        # _compute_fingerprint_wpt(directory=path, gen_name=name, plot_path=plot_path)
-        _compute_fingerprint_rfft(directory=path, gen_name=name, plot_path=plot_path)
+        name = path.split('/')[-2]
+        # _compute_fingerprint_wpt(path, name)
+        wp_means.append((_compute_fingerprint_wpt(path, gen_name=name), name))
+        plot_tuples.append(_compute_fingerprint_rfft(path, name))
+
+    # for pos, plot_tuple in enumerate(plot_tuples):
+    #     plt.subplot(2, 4, pos+1)
+    #     plt.title(plot_tuple[2])
+    #     plt.plot(plot_tuple[0], plot_tuple[1])
+    # tikz.save('./plots/fingerprints/groupplot.tex', standalone=True)
+    # [0], [-2]
+    [plt.semilogy(wps[0][0], wps[0][1], label=wps[1]) for wps in wp_means]
+    plt.legend()
+    plt.show()
+    pass
+
