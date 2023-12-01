@@ -371,9 +371,7 @@ class TestNet(torch.nn.Module):
             nn.Dropout(args.dropout_cnn),
         )
 
-        time_dim = ((args.input_dim[-1])) // 8  #+1
-        if args.asvspoof_name is not None:  # cheap workaround
-            time_dim = 9
+        time_dim = ((args.input_dim[-1])) // 8 + args.time_dim_add
 
         self.dil_conv = nn.Sequential(
             nn.SyncBatchNorm(time_dim, affine=True),
@@ -396,6 +394,7 @@ class TestNet(torch.nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
+        #import pdb; pdb.set_trace()
         # [batch, channels, packets, time]
         x = self.cnn(x.permute(0, 1, 3, 2))
 

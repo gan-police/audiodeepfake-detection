@@ -31,14 +31,15 @@ echo $SLURM_JOB_NUM_NODES
 
 echo -e "Training..."
 
-srun --cpu-bind=none torchrun \
+#srun --cpu-bind=none 
+torchrun \
 --rdzv_id $RANDOM \
 --rdzv_backend c10d \
 --rdzv_endpoint $head_node_ip:29400 \
 --nnodes 1 \
 --nproc_per_node 1 \
 src/train_classifier.py \
-    --log-dir "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log2/" \
+    --log-dir "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log3/" \
     --batch-size 128 \
     --learning-rate 0.0001 \
     --weight-decay 0.001   \

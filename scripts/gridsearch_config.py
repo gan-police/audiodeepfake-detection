@@ -72,11 +72,11 @@ def get_config() -> dict:
         model_data = [None]
 
     wf_config = {
-        "transform": ["stft"],
+        "transform": ["packets"],
         "learning_rate": [0.0001],
         "weight_decay": [0.001],
         "save_path": [
-            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run2"
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run3"
         ],
         "data_path": [
             "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/fake"
@@ -92,31 +92,31 @@ def get_config() -> dict:
         "dropout_cnn": [0.6],
         "dropout_lstm": [0.2],
         "num_of_scales": [256],
-        "wavelet": ["sym8"],
         "seconds": [1],
+        "time_dim_add": [1],
         "sample_rate": [22050],
         "cross_sources": [
-            [
-                "ljspeech",
-                "melgan",
-                "lmelgan",
-                "mbmelgan",
-                "pwg",
-                "waveglow",
-                "avocodo",
-                "hifigan",
-                "conformer",
-                "jsutmbmelgan",
-                "jsutpwg",
-                "lbigvgan",
-                "bigvgan",
-            ],
+            # [
+            #     "ljspeech",
+            #     "melgan",
+            #     "lmelgan",
+            #     "mbmelgan",
+            #     "pwg",
+            #     "waveglow",
+            #     "avocodo",
+            #     "hifigan",
+            #     "conformer",
+            #     "jsutmbmelgan",
+            #     "jsutpwg",
+            #     "lbigvgan",
+            #     "bigvgan",
+            # ],
             #["ljspeech", "hifigan"],
             #["ljspeech", "mbmelgan"],
             #["ljspeech", "pwg"],
             #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
             #["ljspeech", "avocodo"],
-            #["ljspeech", "lbigvgan", "bigvgan"],
+            ["ljspeech", "lbigvgan", "bigvgan"],
         ],
         "epochs": [10],
         "validation_interval": [10],
@@ -135,7 +135,7 @@ def get_config() -> dict:
         "ochannels5": [32],
         "hop_length": [220],
         "only_testing": [False],
-        "target": [0, 1, None],
+        #"target": [0, 1, None],
     }
 
     itw_config = {
