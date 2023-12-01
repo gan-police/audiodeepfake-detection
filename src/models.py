@@ -394,7 +394,7 @@ class TestNet(torch.nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         # [batch, channels, packets, time]
         x = self.cnn(x.permute(0, 1, 3, 2))
 

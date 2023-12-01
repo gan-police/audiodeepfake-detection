@@ -10,8 +10,6 @@ import tikzplotlib as tikz
 import torch
 
 from scipy.io.wavfile import write
-import src.plot_util as util
-from intro_plot import compute_pytorch_packet_representation
 from tqdm import tqdm
 
 DEBUG = True
@@ -22,7 +20,6 @@ if DEBUG:
     sys.path.append(BASE_PATH)
 
 import src.plot_util as util
-from scripts.freq_visual.intro_plot import compute_pytorch_packet_representation
 
 RES = 150
 SAMPLE_RATE = 22_050
@@ -79,21 +76,22 @@ def _compute_fingerprint_rfft(
     plt.ylabel('mean absolute Fourier coefficient magnitude')
     plt.grid(True)
     if 1:
-        tikz.save(f'./plots/fingerprints/rfft_{gen_name}.tex', standalone=True)
-        plt.savefig(f'./plots/fingerprints/rfft_{gen_name}.png')
+        tikz.save(f'{plot_path}/rfft_{gen_name}.tex', standalone=True)
+        plt.savefig(f'{plot_path}/rfft_{gen_name}.png')
 
     plt.clf()
 
     data = np.fft.irfft(masked_time_mean);
     scaled = np.int16(data / np.max(np.abs(data)) * 32767)
-    write(f'./wavs/{gen_name}.wav', SAMPLE_RATE, scaled)
+    write(f'{plot_path}/wavs/{gen_name}.wav', SAMPLE_RATE, scaled)
 
     return (freqs, mean_ln_abs_fft, gen_name)
 
 
 def _compute_fingerprint_wpt(
     directory: str, seconds: int = 1,
-    wavelet_str: str = 'haar', gen_name: str = ""
+    wavelet_str: str = 'haar', gen_name: str = "",
+    plot_path: str = "./plots/fingerprints/"
 ) -> torch.Tensor:
     dataset = util.AudioDataset(
         directory,
@@ -130,8 +128,8 @@ def _compute_fingerprint_wpt(
     plt.xlabel('frequency [Hz]')
     plt.ylabel('mean wavelet packet magnitude')
     if 1:
-        tikz.save(f'./plots/fingerprints/wpt_{gen_name}.tex', standalone=True)
-        plt.savefig(f'./plots/fingerprints/wpt_{gen_name}.png')
+        tikz.save(f'{plot_path}/wpt_{gen_name}.tex', standalone=True)
+        plt.savefig(f'{plot_path}/wpt_{gen_name}.png')
 
     plt.clf()
     return freqs, mean_packets
@@ -140,7 +138,7 @@ if __name__ == "__main__":
     base_path = (
         "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/"
     )
-    plot_path = base_path + "logs/log2/plots/fingerprints"
+    plot_path = base_path + "logs/log3/plots/fingerprints"
     Path(plot_path).mkdir(parents=True, exist_ok=True)
 
     # Important: Put corresponding data directories here!
@@ -153,9 +151,9 @@ if __name__ == "__main__":
         "F_waveglow/",
         "G_pwg/",
         "H_lmelgan/",
-        "I_avocodo/",
-        "J_bigvgan/",
-        "K_lbigvgan/",
+        # "I_avocodo/",
+        # "J_bigvgan/",
+        # "K_lbigvgan/",
         "L_conformer/",
         "M_jsutmbmelgan/",
         "N_jsutpwg/",
@@ -169,14 +167,16 @@ if __name__ == "__main__":
         print(f"Processing {path}.", flush=True)
         name = path.split('/')[-2]
         # _compute_fingerprint_wpt(path, name)
-        wp_means.append((_compute_fingerprint_wpt(path, gen_name=name), name))
-        plot_tuples.append(_compute_fingerprint_rfft(path, name))
+        wp_means.append((_compute_fingerprint_wpt(path, gen_name=name, plot_path=plot_path)))
+        plot_tuples.append(_compute_fingerprint_rfft(path, name, plot_path=plot_path))
+    
+        #import pdb; pdb.set_trace()
 
-    # for pos, plot_tuple in enumerate(plot_tuples):
-    #     plt.subplot(2, 4, pos+1)
-    #     plt.title(plot_tuple[2])
-    #     plt.plot(plot_tuple[0], plot_tuple[1])
-    # tikz.save('./plots/fingerprints/groupplot.tex', standalone=True)
+    for pos, plot_tuple in enumerate(plot_tuples):
+        plt.subplot(2, 4, pos+1)
+        plt.title(plot_tuple[2])
+        plt.plot(plot_tuple[0], plot_tuple[1])
+    tikz.save(f'{plot_path}/groupplot.tex', standalone=True)
     # [0], [-2]
     [plt.semilogy(wps[0][0], wps[0][1], label=wps[1]) for wps in wp_means]
     plt.legend()
