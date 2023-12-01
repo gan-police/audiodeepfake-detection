@@ -288,6 +288,12 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         help="Save model after a fixed number of epochs. (default: 1)",
     )
     parser.add_argument(
+        "--time-dim-add",
+        type=int,
+        default=0,
+        help="Add to input dim in dil conv layer. (default: 0)",
+    )
+    parser.add_argument(
         "--ddp",
         action="store_true",
         help="Use distributed data parallel from pytorch.",

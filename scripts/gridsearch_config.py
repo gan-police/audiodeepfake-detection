@@ -93,7 +93,6 @@ def get_config() -> dict:
         "dropout_lstm": [0.2],
         "num_of_scales": [256],
         "seconds": [1],
-        "time_dim_add": [1],
         "sample_rate": [22050],
         "cross_sources": [
             # [

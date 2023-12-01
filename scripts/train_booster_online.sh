@@ -58,6 +58,7 @@ src/train_classifier.py \
     --power $5 \
     --loss-less $6 \
     --flattend-size $7 \
+    --time-dim-add $8 \
     --hop-length 100 \
     --log-scale \
     --f-min 1 \
@@ -68,7 +69,7 @@ src/train_classifier.py \
     --enable-gs \
     --calc-normalization \
     --ddp \
-    --only-ig
+    --pbar
 
 echo -e "Training process finished."
 echo "Goodbye at $(date)."

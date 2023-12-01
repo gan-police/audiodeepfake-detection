@@ -57,6 +57,7 @@ src/train_classifier.py \
     --power $5 \
     --loss-less $6 \
     --flattend-size $7 \
+    --time-dim-add $8 \
     --hop-length 100 \
     --log-scale \
     --f-min 1 \
