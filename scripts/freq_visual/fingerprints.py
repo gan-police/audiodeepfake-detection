@@ -5,14 +5,14 @@ from pathlib import Path
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import pywt
 import tikzplotlib as tikz
 import torch
-import pywt
+
 from scipy.io.wavfile import write
-
-
 import src.plot_util as util
 from intro_plot import compute_pytorch_packet_representation
+from tqdm import tqdm
 
 DEBUG = True
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,6 +20,9 @@ BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if DEBUG:
     # Set python path automatically to base directory
     sys.path.append(BASE_PATH)
+
+import src.plot_util as util
+from scripts.freq_visual.intro_plot import compute_pytorch_packet_representation
 
 RES = 150
 SAMPLE_RATE = 22_050
@@ -34,23 +37,28 @@ def plot_mean_std(steps, mean, std, label="", marker="."):
 
 
 def _compute_fingerprint_rfft(
-    directory: str, gen_name: str='', seconds: int = 1
+    directory: str,
+    gen_name: str = "",
+    seconds: int = 1,
+    plot_path="./plots/fingerprints/",
 ) -> torch.Tensor:
     dataset = util.AudioDataset(
         directory,
         sample_rate=SAMPLE_RATE,
     )
     clips = []
-    for clip, _fs in dataset:
-        if clip.shape[-1] > seconds*SAMPLE_RATE:
-            clip = clip[:, :seconds*SAMPLE_RATE]
+    for clip, _fs in tqdm(dataset, desc="load dataset", total=len(dataset)):
+        if clip.shape[-1] > seconds * SAMPLE_RATE:
+            clip = clip[:, : seconds * SAMPLE_RATE]
             clips.append(clip.numpy())
+
     print(f"Clip no: {len(clips)}")
     clip_array = np.stack(clips[:2500])
     del clips
     freq_clips = np.fft.rfft(clip_array, axis=-1)
     freqs = freq_clips.shape[-1]
     use = freqs # //2
+
     zeros = np.zeros_like(freq_clips)[:, :, :-use]
     freq_clips = freq_clips[:, :, -use:]
     masked_freq = np.concatenate([zeros, freq_clips], -1)
@@ -59,11 +67,12 @@ def _compute_fingerprint_rfft(
 
     mean_ln_abs_fft = np.abs(np.fft.rfft(masked_time_mean)[-use:])
     # std_ln_abs_fft = np.log(np.abs(np.fft.rfft(masked_time_std)[-use:]))
-    freqs = np.fft.rfftfreq(masked_time_mean.shape[-1], 1./SAMPLE_RATE)[-use:]
+    freqs = np.fft.rfftfreq(masked_time_mean.shape[-1], 1.0 / SAMPLE_RATE)[-use:]
     # plt.subplot(2, 1, 1)
     # plt.title(f"{gen_name} - time")
     # plt.plot(masked_time_mean)
     # plt.subplot(2, 1, 2)
+
     plt.title(f"{gen_name}")
     plt.semilogy(freqs, mean_ln_abs_fft, label=gen_name)
     plt.xlabel('frequency [Hz]')
@@ -72,6 +81,7 @@ def _compute_fingerprint_rfft(
     if 1:
         tikz.save(f'./plots/fingerprints/rfft_{gen_name}.tex', standalone=True)
         plt.savefig(f'./plots/fingerprints/rfft_{gen_name}.png')
+
     plt.clf()
 
     data = np.fft.irfft(masked_time_mean);
@@ -91,8 +101,8 @@ def _compute_fingerprint_wpt(
     )
     clips = []
     for clip, _fs in dataset:
-        if clip.shape[-1] > seconds*SAMPLE_RATE:
-            clip = clip[:, :seconds*SAMPLE_RATE]
+        if clip.shape[-1] > seconds * SAMPLE_RATE:
+            clip = clip[:, : seconds * SAMPLE_RATE]
             clips.append(clip)
     print(f"Clip no: {len(clips)}")
     clip_array = torch.stack(clips[:2500]).numpy()
@@ -101,6 +111,7 @@ def _compute_fingerprint_wpt(
     pywt_wp_tree = pywt.WaveletPacket(data=clip_array, wavelet=wavelet, mode="reflect")
 
     # get the pytorch decomposition
+
     level = 10 # 22
     level = 12 # 6
     level = 14
@@ -121,28 +132,40 @@ def _compute_fingerprint_wpt(
     if 1:
         tikz.save(f'./plots/fingerprints/wpt_{gen_name}.tex', standalone=True)
         plt.savefig(f'./plots/fingerprints/wpt_{gen_name}.png')
+
     plt.clf()
     return freqs, mean_packets
 
-
 if __name__ == "__main__":
-    Path("./plots/fingerprints").mkdir(parents=True, exist_ok=True)
+    base_path = (
+        "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/"
+    )
+    plot_path = base_path + "logs/log2/plots/fingerprints"
+    Path(plot_path).mkdir(parents=True, exist_ok=True)
 
     # Important: Put corresponding data directories here!
     paths = [
-        "../data/ljspeech/A_wavs/",
-        "../data/ljspeech/B_ljspeech_melgan/",
-        "../data/ljspeech/C_ljspeech_hifiGAN/",
-        "../data/ljspeech/D_ljspeech_melgan_large/",
-        "../data/ljspeech/E_ljspeech_multi_band_melgan/",
-        "../data/ljspeech/F_ljspeech_parallel_wavegan/",
-        "../data/ljspeech/G_ljspeech_waveglow/",
-        "../data/ljspeech/H_ljspeech_full_band_melgan/",
+        "A_ljspeech/",
+        "B_melgan/",
+        "C_hifigan/",
+        "D_mbmelgan/",
+        "E_fbmelgan/",
+        "F_waveglow/",
+        "G_pwg/",
+        "H_lmelgan/",
+        "I_avocodo/",
+        "J_bigvgan/",
+        "K_lbigvgan/",
+        "L_conformer/",
+        "M_jsutmbmelgan/",
+        "N_jsutpwg/",
     ]
 
     plot_tuples = []
     wp_means = []
+
     for path in paths:
+        path = base_path + "data/fake/" + path
         print(f"Processing {path}.", flush=True)
         name = path.split('/')[-2]
         # _compute_fingerprint_wpt(path, name)
@@ -159,3 +182,4 @@ if __name__ == "__main__":
     plt.legend()
     plt.show()
     pass
+

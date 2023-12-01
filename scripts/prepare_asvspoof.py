@@ -4,6 +4,7 @@ if __name__ == "__main__":
     save_path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run2"
     data_path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/asv"
     limit_train = (7472, 7672, 21320)
+    seconds = 2
 
     only_use = ["asv2019real", "asv2019fake"]
     train_data_set = get_costum_dataset(
@@ -17,6 +18,7 @@ if __name__ == "__main__":
         val_ratio=0.0,
         file_type="flac",
         resample_rate=16000,
+        seconds=seconds,
     )
     val_data_set = get_costum_dataset(
         data_path=data_path,
@@ -29,6 +31,7 @@ if __name__ == "__main__":
         val_ratio=1.0,
         file_type="flac",
         resample_rate=16000,
+        seconds=seconds,
     )
     test_data_set = get_costum_dataset(
         data_path=data_path,
@@ -41,6 +44,7 @@ if __name__ == "__main__":
         val_ratio=0.0,
         file_type="flac",
         resample_rate=16000,
+        seconds=seconds,
     )
 
     limit_train = (44368, 6336, 12672)
@@ -55,6 +59,7 @@ if __name__ == "__main__":
         asvspoof_name="DF_E",
         file_type="flac",
         resample_rate=16000,
+        seconds=seconds,
     )
     val_data_set = get_costum_dataset(
         data_path=data_path,
@@ -65,6 +70,7 @@ if __name__ == "__main__":
         asvspoof_name="DF_E",
         file_type="flac",
         resample_rate=16000,
+        seconds=seconds,
     )
     test_data_set = get_costum_dataset(
         data_path=data_path,
@@ -75,4 +81,5 @@ if __name__ == "__main__":
         asvspoof_name="DF_E",
         file_type="flac",
         resample_rate=16000,
+        seconds=seconds,
     )

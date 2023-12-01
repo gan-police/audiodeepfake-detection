@@ -17,7 +17,8 @@ from torchaudio import functional
 from torchaudio.transforms import AmplitudeToDB, ComputeDeltas, Spectrogram
 from tqdm import tqdm
 
-from .data_loader import LearnWavefakeDataset, WelfordEstimator, get_costum_dataset
+from .data_loader import WelfordEstimator, get_costum_dataset
+
 
 class STFTLayer(torch.nn.Module):
     """A base class for STFT transformation."""
@@ -212,6 +213,7 @@ def compute_pytorch_packet_representation(
         if loss_less:
             sign_pattern = ((wp_pt < 0).type(torch.float32) * (-1) + 0.5) * 2
             wp_pt = torch.stack([wp_pt_log, sign_pattern], 1)
+
         else:
             wp_pt = wp_pt_log.unsqueeze(1)
     else:
@@ -315,7 +317,7 @@ def get_transforms(
     norm_dir = (
         args.log_dir
         + "/norms/"
-        + args.data_prefix.replace("/", "_")
+        + args.data_path.replace("/", "_")
         + "_"
         + args.transform
         + "_"
@@ -325,6 +327,11 @@ def get_transforms(
         + "_"
         + str(args.power)
         + loss_less
+        + "_"
+        + str(args.sample_rate)
+        + "_"
+        + str(args.seconds)
+        + "secs"
     )
 
     if os.path.exists(f"{norm_dir}_mean_std.pkl") and args.block_norm is False:
@@ -350,9 +357,12 @@ def get_transforms(
             only_use=args.only_use,
             save_path=args.save_path,
             limit=args.limit_train[0],
-            asvspoof_name=f"{args.asvspoof_name}_T" if args.asvspoof_name is not None and "LA" in args.asvspoof_name else args.asvspoof_name,
+            asvspoof_name=f"{args.asvspoof_name}_T"
+            if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+            else args.asvspoof_name,
             file_type=args.file_type,
             resample_rate=args.sample_rate,
+            seconds=args.seconds,
         )
         norm_dataset_loader = torch.utils.data.DataLoader(
             dataset,
@@ -381,7 +391,7 @@ def get_transforms(
                     mean, std = welford_dict[key].finalize()
                     welford_dict[key] = {"mean": mean, "std": std}
 
-                torch.save(welford_dict, f"{norm_dir}_mean_std_bn.pt")
+                torch.save(welford_dict, f"{norm_dir}_mean_std_bn.pkl")
             else:
                 with open(f"{norm_dir}_mean_std.pkl", "wb") as f:
                     pickle.dump([mean.cpu().numpy(), std.cpu().numpy()], f)

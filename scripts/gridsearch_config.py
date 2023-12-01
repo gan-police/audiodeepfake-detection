@@ -6,7 +6,7 @@ import torch
 import torchvision
 from torch import nn
 
-from src.models import BLSTMLayer, MaxFeatureMap2D, parse_model_str
+from src.models import parse_model_str, TestNet
 
 
 def get_config() -> dict:
@@ -72,25 +72,50 @@ def get_config() -> dict:
         model_data = [None]
 
     wf_config = {
+        "transform": ["packets"],
         "learning_rate": [0.0001],
         "weight_decay": [0.001],
-        "save_path": ["/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run2"],
-        "data_path": ["/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/fake"],
+        "save_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run3"
+        ],
+        "data_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/fake"
+        ],
         "only_use": [["ljspeech", "fbmelgan"]],
         "limit_train": [(55504, 7504, 15504)],
-        "cross_data_path": ["/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/fake"],
+        "cross_data_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/fake"
+        ],
         "cross_limit": [(55500, 7304, 14600)],
         "only_test_folders": [["conformer", "jsutmbmelgan", "jsutpwg"]],
         "file_type": ["wav"],
-        "dropout_cnn": [0.5, 0.6, 0.4],
-        "dropout_lstm": [0.3, 0.2, 0.4],
+        "dropout_cnn": [0.6],
+        "dropout_lstm": [0.2],
         "num_of_scales": [256],
-        "wavelet": ["sym8"],
+        "seconds": [1],
+        "sample_rate": [22050],
         "cross_sources": [
-            ["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "avocodo", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg", "lbigvgan", "bigvgan"],
+            # [
+            #     "ljspeech",
+            #     "melgan",
+            #     "lmelgan",
+            #     "mbmelgan",
+            #     "pwg",
+            #     "waveglow",
+            #     "avocodo",
+            #     "hifigan",
+            #     "conformer",
+            #     "jsutmbmelgan",
+            #     "jsutpwg",
+            #     "lbigvgan",
+            #     "bigvgan",
+            # ],
+            #["ljspeech", "hifigan"],
+            #["ljspeech", "mbmelgan"],
+            #["ljspeech", "pwg"],
             #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
-            # ["ljspeech", "avocodo"],
-            #["ljspeech", "lbigvgan", "bigvgan"],
+            #["ljspeech", "avocodo"],
+            ["ljspeech", "lbigvgan", "bigvgan"],
         ],
         "epochs": [10],
         "validation_interval": [10],
@@ -107,24 +132,74 @@ def get_config() -> dict:
         "ochannels3": [96],
         "ochannels4": [128],
         "ochannels5": [32],
+        "hop_length": [220],
         "only_testing": [False],
+        #"target": [0, 1, None],
+    }
+
+    itw_config = {
+        "learning_rate": [0.0001],
+        "weight_decay": [0.001],
+        "save_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run2"
+        ],
+        "data_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/fake"
+        ],
+        "only_use": [["ljspeech", "fbmelgan"]],
+        "limit_train": [(55504, 7504, 15504)],
+        "cross_data_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/inthewild/set"
+        ],
+        "seconds": [1],
+        "cross_limit": [(38968, 5568, 11136)],
+        "file_type": ["wav"],
+        "dropout_cnn": [0.6],
+        "dropout_lstm": [0.2],
+        "num_of_scales": [256],
+        "wavelet": ["sym8"],
+        "cross_sources": [["inthewildReal", "inthewildFake"]],
+        "epochs": [10],
+        "validation_interval": [10],
+        "sample_rate": [16000],
+        "block_norm": [False],
+        "batch_size": [128],
+        "aug_contrast": [False],
+        "model": ["modules"],
+        "model_data": model_data,
+        "module": [TestNet],
+        "kernel1": [3],
+        "num_devices": [4],
+        "ochannels1": [64],
+        "ochannels2": [64],
+        "ochannels3": [96],
+        "ochannels4": [128],
+        "ochannels5": [32],
+        "only_testing": [False],
+        "only_ig": [True],
     }
 
     asv_config = {
-        "learning_rate": [0.0001, 0.0005],
-        "weight_decay": [0.01, 0.001],
-        "save_path": ["/home/s6kogase/data/data/run3"],
-        "data_path": ["/home/s6kogase/data/data/asvspoof"],
+        "learning_rate": [0.0001],
+        "weight_decay": [0.001],
+        "save_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run2"
+        ],
+        "data_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/asv"
+        ],
         "cross_limit": [(7472, 7672, 21320)],
         "cross_sources": [["asv2019real", "asv2019fake"]],
         "asvspoof_name_cross": ["LA"],  # or DF_E or None
-        "cross_data_path": ["/home/s6kogase/data/data/asvspoof"],
+        "cross_data_path": [
+            "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/asv"
+        ],
         "limit_train": [(44368, 6336, 12672)],
         "file_type": ["flac"],
         "asvspoof_name": ["DF_E"],
         "sample_rate": [16000],
         "dropout_cnn": [0.6],
-        "dropout_lstm": [0.2],
+        "dropout_lstm": [0.2, 0.1],
         "num_of_scales": [256],
         "wavelet": ["sym8"],
         "only_use": [
@@ -134,7 +209,7 @@ def get_config() -> dict:
             # ["ljspeech", "lbigvgan", "bigvgan"],
             ["asv2021real", "asv2021fake"]
         ],
-        "epochs": [10, 5],
+        "epochs": [10],
         "validation_interval": [10],
         "block_norm": [False],
         "batch_size": [128],
@@ -143,12 +218,12 @@ def get_config() -> dict:
         "model_data": model_data,
         "module": [TestNet],
         "kernel1": [3],
-        "num_devices": [8],
-        "ochannels1": [64, 32],
-        "ochannels2": [32, 64],
+        "num_devices": [4],
+        "ochannels1": [64],
+        "ochannels2": [64],
         "ochannels3": [96],
         "ochannels4": [128],
-        "ochannels5": [32, 64],
+        "ochannels5": [32, 64, 16],
         "only_testing": [False],
     }
 
@@ -186,196 +261,3 @@ def transf(x):
     x = x.permute(0, 2, 1, 3)
     x = x.contiguous()
     return x.view(x.shape[0], x.shape[1], -1)
-
-
-class LCNN(nn.Module):
-    """Deep CNN with 2D convolutions for detecting audio deepfakes.
-
-    Fork of ASVSpoof Challenge 2021 LA Baseline.
-    """
-
-    def __init__(
-        self,
-        args,
-        classes: int = 2,
-    ) -> None:
-        """Define network sturcture."""
-        super(LCNN, self).__init__()
-
-        # LCNN from AVSpoofChallenge 2021
-        self.lcnn = nn.Sequential(
-            nn.Conv2d(1, args.ochannels1, args.kernel1, 1, padding=2),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Conv2d(args.ochannels1, 64, 1, 1, padding=0),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.SyncBatchNorm(64, affine=False),
-            nn.Conv2d(64, 96, 3, 1, padding=1),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.SyncBatchNorm(96, affine=False),
-            nn.Conv2d(96, 96, 1, 1, padding=0),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.SyncBatchNorm(96, affine=False),
-            nn.Conv2d(96, 128, 3, 1, padding=1),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Conv2d(128, 128, 1, 1, padding=0),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.SyncBatchNorm(128, affine=False),
-            nn.Conv2d(128, 64, 3, 1, padding=1),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.SyncBatchNorm(64, affine=False),
-            nn.Conv2d(64, 64, 1, 1, padding=0),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.SyncBatchNorm(64, affine=False),
-            nn.Conv2d(64, 64, 3, 1, padding=1),
-            # MaxFeatureMap2D(),
-            nn.LeakyReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Dropout(args.dropout_cnn),
-        )
-        size = int(args.num_of_scales * 4)
-        self.lstm = nn.Sequential(
-            BLSTMLayer(size, size),
-            BLSTMLayer(size, size),
-            nn.Dropout(args.dropout_lstm),
-        )
-
-        self.fc = nn.Linear(size, classes)
-
-    def forward(self, x) -> torch.Tensor:
-        """Forward pass."""
-        # import pdb; pdb.set_trace()
-        # [batch, channels, packets, time]
-        x = self.lcnn(x.permute(0, 1, 3, 2))
-
-        # [batch, channels, time, packets]
-        x = x.permute(0, 2, 1, 3).contiguous()
-        shape = x.shape
-
-        # [batch, time, channels, packets]
-        # import pdb; pdb.set_trace()
-        x = self.lstm(x.view(shape[0], shape[1], -1))
-        x = self.fc(x).mean(1)
-
-        return x
-
-
-class TestNet(torch.nn.Module):
-    """Deep CNN."""
-
-    def __init__(
-        self,
-        args,
-    ) -> None:
-        """Define network sturcture."""
-        super(TestNet, self).__init__()
-
-        # self.upsample = nn.ConvTranspose2d(1, 1, (1, 3), stride=(1, 2), padding=(0, 1))
-
-        self.lcnn = nn.Sequential(
-            nn.Conv2d(1, args.ochannels1, args.kernel1, 1, padding=2),
-            nn.PReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.SyncBatchNorm(args.ochannels1, affine=False),
-            nn.Conv2d(args.ochannels1, args.ochannels2, 1, 1, padding=0),
-            nn.PReLU(),
-            nn.SyncBatchNorm(args.ochannels2, affine=False),
-            nn.Conv2d(args.ochannels2, args.ochannels3, 3, 1, padding=1),
-            nn.PReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.SyncBatchNorm(args.ochannels3, affine=False),
-            nn.Conv2d(args.ochannels3, args.ochannels4, 3, 1, padding=1),
-            nn.PReLU(),
-            nn.SyncBatchNorm(args.ochannels4, affine=False),
-            nn.Conv2d(args.ochannels4, args.ochannels5, 3, 1, padding=1),
-            nn.PReLU(),
-            nn.SyncBatchNorm(args.ochannels5, affine=False),
-            nn.Conv2d(args.ochannels5, 64, 3, 1, padding=1),
-            nn.PReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Dropout(args.dropout_cnn),
-        )
-
-        time_dim = ((args.input_dim[-1])) // 8
-        if args.asvspoof_name is not None:  # cheap workaround
-            time_dim = 9
-
-        self.dil_conv = nn.Sequential(
-            nn.SyncBatchNorm(time_dim, affine=True),
-            nn.Conv2d(time_dim, time_dim, 3, 1, padding=1, dilation=1),
-            nn.PReLU(),
-            nn.SyncBatchNorm(time_dim, affine=True),
-            nn.Conv2d(time_dim, time_dim, 5, 1, padding=2, dilation=2),
-            nn.PReLU(),
-            nn.SyncBatchNorm(time_dim, affine=True),
-            nn.Conv2d(time_dim, time_dim, 7, 1, padding=2, dilation=4),
-            nn.PReLU(),
-            nn.Dropout(args.dropout_lstm),
-        )
-
-        self.fc = nn.Sequential(
-            nn.Flatten(2),
-            nn.Linear(args.flattend_size, 2),
-        )
-        self.single_gpu = not args.ddp
-
-    def forward(self, x) -> torch.Tensor:
-        """Forward pass."""
-        if self.single_gpu:
-            import pdb
-
-            pdb.set_trace()
-        # x = self.upsample(x)
-
-        # [batch, channels, packets, time]
-        x = self.lcnn(x.permute(0, 1, 3, 2))
-
-        # [batch, channels, time, packets]
-        x = x.permute(0, 2, 1, 3).contiguous()
-
-        # "[batch, time, channels, packets]"
-        x = self.dil_conv(x)
-        x = self.fc(x).mean(1)
-
-        return x
-
-
-class Regression(torch.nn.Module):
-    """A shallow linear-regression model."""
-
-    def __init__(self, args):
-        """Create the regression model.
-
-        Args:
-            classes (int): The number of classes or sources to classify.
-        """
-        super().__init__()
-        self.linear = torch.nn.Linear(args.num_of_scales * 101, 2)
-
-        # self.activation = torch.nn.Sigmoid()
-        self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Compute the regression forward pass.
-
-        Args:
-            x (torch.Tensor): An input tensor of shape
-                [batch_size, ...]
-
-        Returns:
-            torch.Tensor: A logsoftmax scaled output of shape
-                [batch_size, classes].
-        """
-        # import pdb; pdb.set_trace()
-        x_flat = torch.reshape(x, [x.shape[0], -1])
-        return self.logsoftmax(self.linear(x_flat))

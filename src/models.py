@@ -147,41 +147,47 @@ class LCNN(nn.Module):
         return "LCNN"
 
 
-class LearnDeepNet(nn.Module):
-    """Deep CNN with 2D convolutions for detecting audio deepfakes."""
+class TestNet(torch.nn.Module):
+    """Deep CNN."""
 
     def __init__(
         self,
         args,
     ) -> None:
         """Define network sturcture."""
-        super(LearnDeepNet, self).__init__()
+        super(TestNet, self).__init__()
 
-        self.cnn = nn.Sequential(
-            nn.Conv2d(1, 64, 3, 1, padding=2),
+        # self.upsample = nn.ConvTranspose2d(1, 1, (1, 3), stride=(1, 2), padding=(0, 1))
+
+        self.lcnn = nn.Sequential(
+            nn.Conv2d(args.input_dim[1], args.ochannels1, args.kernel1, 1, padding=2),
             nn.PReLU(),
             nn.MaxPool2d(2, 2),
-            nn.SyncBatchNorm(64, affine=False),
-            nn.Conv2d(64, 32, 1, 1, padding=0),
+            nn.SyncBatchNorm(args.ochannels1, affine=False),
+            nn.Conv2d(args.ochannels1, args.ochannels2, 1, 1, padding=0),
             nn.PReLU(),
-            nn.SyncBatchNorm(32, affine=False),
-            nn.Conv2d(32, 96, 3, 1, padding=1),
-            nn.PReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.SyncBatchNorm(96, affine=False),
-            nn.Conv2d(96, 128, 3, 1, padding=1),
-            nn.PReLU(),
-            nn.SyncBatchNorm(128, affine=False),
-            nn.Conv2d(128, 32, 3, 1, padding=1),
-            nn.PReLU(),
-            nn.SyncBatchNorm(32, affine=False),
-            nn.Conv2d(32, 64, 3, 1, padding=1),
+            nn.SyncBatchNorm(args.ochannels2, affine=False),
+            nn.Conv2d(args.ochannels2, args.ochannels3, 3, 1, padding=1),
             nn.PReLU(),
             nn.MaxPool2d(2, 2),
-            nn.Dropout(0.6),
+            nn.SyncBatchNorm(args.ochannels3, affine=False),
+            nn.Conv2d(args.ochannels3, args.ochannels4, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(args.ochannels4, affine=False),
+            nn.Conv2d(args.ochannels4, args.ochannels5, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(args.ochannels5, affine=False),
+            nn.Conv2d(args.ochannels5, 64, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Dropout(args.dropout_cnn),
         )
-        time_dim = (args.input_dim[-1] + 2) // 8
-        self.dil_cnn = nn.Sequential(
+
+        time_dim = ((args.input_dim[-1])) // 8  #+1
+        if args.asvspoof_name is not None:  # cheap workaround
+            time_dim = 9
+
+        self.dil_conv = nn.Sequential(
             nn.SyncBatchNorm(time_dim, affine=True),
             nn.Conv2d(time_dim, time_dim, 3, 1, padding=1, dilation=1),
             nn.PReLU(),
@@ -191,7 +197,7 @@ class LearnDeepNet(nn.Module):
             nn.SyncBatchNorm(time_dim, affine=True),
             nn.Conv2d(time_dim, time_dim, 7, 1, padding=2, dilation=4),
             nn.PReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(args.dropout_lstm),
         )
 
         self.fc = nn.Sequential(
@@ -202,70 +208,54 @@ class LearnDeepNet(nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
+        if self.single_gpu:
+            import pdb
+
+            pdb.set_trace()
+        import pdb; pdb.set_trace()
+
         # [batch, channels, packets, time]
-        x = self.cnn(x.permute(0, 1, 3, 2))
+        x = self.lcnn(x.permute(0, 1, 3, 2))
 
         # [batch, channels, time, packets]
         x = x.permute(0, 2, 1, 3).contiguous()
 
         # "[batch, time, channels, packets]"
-        x = self.dil_cnn(x)
+        x = self.dil_conv(x)
         x = self.fc(x).mean(1)
 
         return x
 
 
-class OneDNet(nn.Module):
-    """Deep CNN with 1D convolutions for detecting audio deepfakes."""
+class Regression(torch.nn.Module):
+    """A shallow linear-regression model."""
 
-    def __init__(
-        self,
-        classes: int = 2,
-        flattend_size: int = 21888,
-        in_channels: int = 32,
-        num_of_scales: int = 256,
-        stride: int = 1,
-    ) -> None:
-        """Define network structure."""
+    def __init__(self, args):
+        """Create the regression model.
+
+        Args:
+            classes (int): The number of classes or sources to classify.
+        """
         super().__init__()
+        self.linear = torch.nn.Linear(args.num_of_scales * 101, 2)
 
-        self.cnn = nn.Sequential(
-            nn.Conv1d(num_of_scales, in_channels, kernel_size=20, stride=stride),
-            nn.SyncBatchNorm(in_channels),
-            nn.ReLU(),
-            nn.Conv1d(32, 32, kernel_size=3, stride=stride),
-            nn.SyncBatchNorm(32),
-            nn.ReLU(),
-            nn.Conv1d(32, 32, kernel_size=3, stride=stride),
-            nn.SyncBatchNorm(32),
-            nn.ReLU(),
-            nn.Conv1d(32, 64, kernel_size=3, stride=stride),
-            nn.SyncBatchNorm(64),
-            nn.ReLU(),
-            nn.Conv1d(64, 64, kernel_size=3, stride=stride),
-            nn.SyncBatchNorm(64),
-            nn.ReLU(),
-            nn.Conv1d(64, 64, kernel_size=3, stride=stride),
-            nn.SyncBatchNorm(64),
-            nn.ReLU(),
-            nn.AvgPool1d(2),
-            nn.Dropout(0.7),
-        )
-        self.fc = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(flattend_size, classes),
-        )
+        # self.activation = torch.nn.Sigmoid()
         self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
 
-    def forward(self, x) -> torch.Tensor:
-        """Forward pass."""
-        x = self.cnn(x.squeeze())
-        x = self.fc(x)
-        return self.logsoftmax(x)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute the regression forward pass.
 
-    def get_name(self) -> str:
-        """Return custom string identifier."""
-        return "OneDNet"
+        Args:
+            x (torch.Tensor): An input tensor of shape
+                [batch_size, ...]
+
+        Returns:
+            torch.Tensor: A logsoftmax scaled output of shape
+                [batch_size, classes].
+        """
+        # import pdb; pdb.set_trace()
+        x_flat = torch.reshape(x, [x.shape[0], -1])
+        return self.logsoftmax(self.linear(x_flat))
 
 
 class MaxFeatureMap2D(nn.Module):
@@ -347,6 +337,106 @@ class BLSTMLayer(nn.Module):
         return blstm_data.permute(1, 0, 2)
 
 
+class TestNet(torch.nn.Module):
+    """Deep CNN with dilated convolutions."""
+
+    def __init__(
+        self,
+        args,
+    ) -> None:
+        """Define network sturcture."""
+        super(TestNet, self).__init__()
+
+        self.cnn = nn.Sequential(
+            nn.Conv2d(args.input_dim[1], args.ochannels1, args.kernel1, 1, padding=2),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.SyncBatchNorm(args.ochannels1, affine=False),
+            nn.Conv2d(args.ochannels1, args.ochannels2, 1, 1, padding=0),
+            nn.PReLU(),
+            nn.SyncBatchNorm(args.ochannels2, affine=False),
+            nn.Conv2d(args.ochannels2, args.ochannels3, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.SyncBatchNorm(args.ochannels3, affine=False),
+            nn.Conv2d(args.ochannels3, args.ochannels4, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(args.ochannels4, affine=False),
+            nn.Conv2d(args.ochannels4, args.ochannels5, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(args.ochannels5, affine=False),
+            nn.Conv2d(args.ochannels5, 64, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Dropout(args.dropout_cnn),
+        )
+
+        time_dim = ((args.input_dim[-1])) // 8 + args.time_dim_add
+
+        self.dil_conv = nn.Sequential(
+            nn.SyncBatchNorm(time_dim, affine=True),
+            nn.Conv2d(time_dim, time_dim, 3, 1, padding=1, dilation=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(time_dim, affine=True),
+            nn.Conv2d(time_dim, time_dim, 5, 1, padding=2, dilation=2),
+            nn.PReLU(),
+            nn.SyncBatchNorm(time_dim, affine=True),
+            nn.Conv2d(time_dim, time_dim, 7, 1, padding=2, dilation=4),
+            nn.PReLU(),
+            nn.Dropout(args.dropout_lstm),
+        )
+
+        self.fc = nn.Sequential(
+            nn.Flatten(2),
+            nn.Linear(args.flattend_size, 2),
+        )
+        self.single_gpu = not args.ddp
+
+    def forward(self, x) -> torch.Tensor:
+        """Forward pass."""
+        import pdb; pdb.set_trace()
+        # [batch, channels, packets, time]
+        x = self.cnn(x.permute(0, 1, 3, 2))
+
+        # [batch, channels, time, packets]
+        x = x.permute(0, 2, 1, 3).contiguous()
+
+        # "[batch, time, channels, packets]"
+        x = self.dil_conv(x)
+        x = self.fc(x).mean(1)
+
+        return x
+
+
+class Regression(torch.nn.Module):
+    """A shallow linear-regression model."""
+
+    def __init__(self, args):
+        """Create the regression model.
+
+        Args:
+            classes (int): The number of classes or sources to classify.
+        """
+        super().__init__()
+        self.linear = torch.nn.Linear(args.num_of_scales * 101, 2)
+
+        self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute the regression forward pass.
+
+        Args:
+            x (torch.Tensor): An input tensor of shape
+                [batch_size, ...]
+
+        Returns:
+            torch.Tensor: A logsoftmax scaled output of shape
+                [batch_size, classes].
+        """
+        x_flat = torch.reshape(x, [x.shape[0], -1])
+        return self.logsoftmax(self.linear(x_flat))
+
+
 def get_model(
     args,
     model_name: str,
@@ -357,27 +447,15 @@ def get_model(
     channels: int = 32,
     dropout_cnn: float = 0.6,
     dropout_lstm: float = 0.3,
-) -> LearnDeepNet | OneDNet | LCNN:
+) -> LCNN:
     """Get torch module model with given parameters."""
-    if model_name == "learndeepnet":
-        model = LearnDeepNet(
-            classes=nclasses,
-            flattend_size=flattend_size,
-            in_channels=in_channels,
-        )  # type: ignore
-    elif model_name == "lcnn":
+    if model_name == "lcnn":
         model = LCNN(
             classes=nclasses,
             in_channels=in_channels,
             lstm_channels=channels,
             dropout_cnn=dropout_cnn,
             dropout_lstm=dropout_lstm,
-        )  # type: ignore
-    elif model_name == "onednet":
-        model = OneDNet(
-            classes=nclasses,
-            num_of_scales=num_of_scales,
-            flattend_size=flattend_size,
         )  # type: ignore
     elif model_name == "gridmodel":
         model_seq = []
@@ -554,7 +632,6 @@ def check_dimensions(
         if verbose:
             print(f"Error: {e}")
         return False
-
     return True
 
 
