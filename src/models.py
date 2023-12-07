@@ -81,6 +81,7 @@ class LCNN(nn.Module):
 
     def __init__(
         self,
+        args,
         classes: int = 2,
         in_channels: int = 1,
         lstm_channels: int = 256,
@@ -120,7 +121,7 @@ class LCNN(nn.Module):
             nn.Conv2d(32, 64, 3, 1, padding=1),
             MaxFeatureMap2D(),
             nn.MaxPool2d(2, 2),
-            nn.Dropout(dropout_cnn),
+            nn.Dropout(0.7),
         )
 
         self.lstm = nn.Sequential(
@@ -133,10 +134,10 @@ class LCNN(nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
+        #import pdb; pdb.set_trace()
         x = self.lcnn(x.permute(0, 1, 3, 2))
         x = x.permute(0, 2, 1, 3).contiguous()
         shape = x.shape
-        # import pdb; pdb.set_trace()
         x = self.lstm(x.view(shape[0], shape[1], -1))
         x = self.fc(x).mean(1)
 
@@ -146,87 +147,76 @@ class LCNN(nn.Module):
         """Return custom string identifier."""
         return "LCNN"
 
+class LCNN(nn.Module):
+    """Deep CNN with 2D convolutions for detecting audio deepfakes.
 
-class TestNet(torch.nn.Module):
-    """Deep CNN."""
+    Fork of ASVSpoof Challenge 2021 LA Baseline.
+    """
 
     def __init__(
         self,
         args,
+        classes: int = 2,
+        in_channels: int = 1,
+        lstm_channels: int = 256,
+        dropout_cnn: float = 0.6,
+        dropout_lstm: float = 0.3,
     ) -> None:
         """Define network sturcture."""
-        super(TestNet, self).__init__()
+        super(LCNN, self).__init__()
 
-        # self.upsample = nn.ConvTranspose2d(1, 1, (1, 3), stride=(1, 2), padding=(0, 1))
-
+        # LCNN from AVSpoofChallenge 2021
         self.lcnn = nn.Sequential(
-            nn.Conv2d(args.input_dim[1], args.ochannels1, args.kernel1, 1, padding=2),
-            nn.PReLU(),
+            nn.Conv2d(in_channels, 64, 5, 1, padding=2),
+            MaxFeatureMap2D(),
             nn.MaxPool2d(2, 2),
-            nn.SyncBatchNorm(args.ochannels1, affine=False),
-            nn.Conv2d(args.ochannels1, args.ochannels2, 1, 1, padding=0),
-            nn.PReLU(),
-            nn.SyncBatchNorm(args.ochannels2, affine=False),
-            nn.Conv2d(args.ochannels2, args.ochannels3, 3, 1, padding=1),
-            nn.PReLU(),
+            nn.Conv2d(32, 64, 1, 1, padding=0),
+            MaxFeatureMap2D(),
+            nn.SyncBatchNorm(32, affine=False),
+            nn.Conv2d(32, 96, 3, 1, padding=1),
+            MaxFeatureMap2D(),
             nn.MaxPool2d(2, 2),
-            nn.SyncBatchNorm(args.ochannels3, affine=False),
-            nn.Conv2d(args.ochannels3, args.ochannels4, 3, 1, padding=1),
-            nn.PReLU(),
-            nn.SyncBatchNorm(args.ochannels4, affine=False),
-            nn.Conv2d(args.ochannels4, args.ochannels5, 3, 1, padding=1),
-            nn.PReLU(),
-            nn.SyncBatchNorm(args.ochannels5, affine=False),
-            nn.Conv2d(args.ochannels5, 64, 3, 1, padding=1),
-            nn.PReLU(),
+            nn.SyncBatchNorm(48, affine=False),
+            nn.Conv2d(48, 96, 1, 1, padding=0),
+            MaxFeatureMap2D(),
+            nn.SyncBatchNorm(48, affine=False),
+            nn.Conv2d(48, 128, 3, 1, padding=1),
+            MaxFeatureMap2D(),
             nn.MaxPool2d(2, 2),
-            nn.Dropout(args.dropout_cnn),
+            nn.Conv2d(64, 128, 1, 1, padding=0),
+            MaxFeatureMap2D(),
+            nn.SyncBatchNorm(64, affine=False),
+            nn.Conv2d(64, 64, 3, 1, padding=1),
+            MaxFeatureMap2D(),
+            nn.SyncBatchNorm(32, affine=False),
+            nn.Conv2d(32, 64, 1, 1, padding=0),
+            MaxFeatureMap2D(),
+            nn.SyncBatchNorm(32, affine=False),
+            nn.Conv2d(32, 64, 3, 1, padding=1),
+            MaxFeatureMap2D(),
+            nn.MaxPool2d(2, 2),
+            nn.Dropout(0.7),
         )
 
-        time_dim = ((args.input_dim[-1])) // 8  #+1
-        if args.asvspoof_name is not None:  # cheap workaround
-            time_dim = 9
-
-        self.dil_conv = nn.Sequential(
-            nn.SyncBatchNorm(time_dim, affine=True),
-            nn.Conv2d(time_dim, time_dim, 3, 1, padding=1, dilation=1),
-            nn.PReLU(),
-            nn.SyncBatchNorm(time_dim, affine=True),
-            nn.Conv2d(time_dim, time_dim, 5, 1, padding=2, dilation=2),
-            nn.PReLU(),
-            nn.SyncBatchNorm(time_dim, affine=True),
-            nn.Conv2d(time_dim, time_dim, 7, 1, padding=2, dilation=4),
-            nn.PReLU(),
-            nn.Dropout(args.dropout_lstm),
+        self.lstm = nn.Sequential(
+            BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
+            BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
+            # nn.Dropout(dropout_lstm),
         )
 
-        self.fc = nn.Sequential(
-            nn.Flatten(2),
-            nn.Linear(args.flattend_size, 2),
-        )
-        self.single_gpu = not args.ddp
+        self.fc = nn.Linear((lstm_channels // 16) * 32, classes)
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        if self.single_gpu:
-            import pdb
-
-            pdb.set_trace()
-        import pdb; pdb.set_trace()
-
-        # [batch, channels, packets, time]
+        #import pdb; pdb.set_trace()
         x = self.lcnn(x.permute(0, 1, 3, 2))
-
-        # [batch, channels, time, packets]
         x = x.permute(0, 2, 1, 3).contiguous()
-
-        # "[batch, time, channels, packets]"
-        x = self.dil_conv(x)
+        shape = x.shape
+        x = self.lstm(x.view(shape[0], shape[1], -1))
         x = self.fc(x).mean(1)
 
         return x
-
-
+    
 class Regression(torch.nn.Module):
     """A shallow linear-regression model."""
 
@@ -348,16 +338,16 @@ class TestNet(torch.nn.Module):
         super(TestNet, self).__init__()
 
         self.cnn = nn.Sequential(
-            nn.Conv2d(args.input_dim[1], args.ochannels1, args.kernel1, 1, padding=2),
+            nn.Conv2d(args.input_dim[1], args.ochannels1, args.kernel1, stride=2, padding=2),
             nn.PReLU(),
-            nn.MaxPool2d(2, 2),
+            #nn.MaxPool2d(2, 2),
             nn.SyncBatchNorm(args.ochannels1, affine=False),
             nn.Conv2d(args.ochannels1, args.ochannels2, 1, 1, padding=0),
             nn.PReLU(),
             nn.SyncBatchNorm(args.ochannels2, affine=False),
-            nn.Conv2d(args.ochannels2, args.ochannels3, 3, 1, padding=1),
+            nn.Conv2d(args.ochannels2, args.ochannels3, 3, stride=2, padding=1),
             nn.PReLU(),
-            nn.MaxPool2d(2, 2),
+            #nn.MaxPool2d(2, 2),
             nn.SyncBatchNorm(args.ochannels3, affine=False),
             nn.Conv2d(args.ochannels3, args.ochannels4, 3, 1, padding=1),
             nn.PReLU(),
@@ -365,9 +355,9 @@ class TestNet(torch.nn.Module):
             nn.Conv2d(args.ochannels4, args.ochannels5, 3, 1, padding=1),
             nn.PReLU(),
             nn.SyncBatchNorm(args.ochannels5, affine=False),
-            nn.Conv2d(args.ochannels5, 64, 3, 1, padding=1),
+            nn.Conv2d(args.ochannels5, 64, 3, stride=2, padding=0),
             nn.PReLU(),
-            nn.MaxPool2d(2, 2),
+            #nn.MaxPool2d(2, 2),
             nn.Dropout(args.dropout_cnn),
         )
 
@@ -394,7 +384,78 @@ class TestNet(torch.nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        # import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
+        # [batch, channels, packets, time]
+        x = self.cnn(x.permute(0, 1, 3, 2))
+
+        # [batch, channels, time, packets]
+        x = x.permute(0, 2, 1, 3).contiguous()
+
+        # "[batch, time, channels, packets]"
+        x = self.dil_conv(x)
+        x = self.fc(x).mean(1)
+
+        return x
+    
+
+class TestNetXDropout(torch.nn.Module):
+    """Deep CNN with dilated convolutions."""
+
+    def __init__(
+        self,
+        args,
+    ) -> None:
+        """Define network sturcture."""
+        super(TestNetXDropout, self).__init__()
+
+        self.cnn = nn.Sequential(
+            nn.Conv2d(args.input_dim[1], args.ochannels1, args.kernel1, stride=1, padding=2),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.SyncBatchNorm(args.ochannels1, affine=False),
+            nn.Conv2d(args.ochannels1, args.ochannels2, 1, 1, padding=0),
+            nn.PReLU(),
+            nn.SyncBatchNorm(args.ochannels2, affine=False),
+            nn.Conv2d(args.ochannels2, args.ochannels3, 3, stride=1, padding=1),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.SyncBatchNorm(args.ochannels3, affine=False),
+            nn.Conv2d(args.ochannels3, args.ochannels4, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(args.ochannels4, affine=False),
+            nn.Conv2d(args.ochannels4, args.ochannels5, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(args.ochannels5, affine=False),
+            nn.Conv2d(args.ochannels5, 64, 3, stride=1, padding=1),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            #nn.Dropout(args.dropout_cnn),
+        )
+
+        time_dim = ((args.input_dim[-1])) // 8 + args.time_dim_add
+
+        self.dil_conv = nn.Sequential(
+            nn.SyncBatchNorm(time_dim, affine=True),
+            nn.Conv2d(time_dim, time_dim, 3, 1, padding=1, dilation=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(time_dim, affine=True),
+            nn.Conv2d(time_dim, time_dim, 5, 1, padding=2, dilation=2),
+            nn.PReLU(),
+            nn.SyncBatchNorm(time_dim, affine=True),
+            nn.Conv2d(time_dim, time_dim, 7, 1, padding=2, dilation=4),
+            nn.PReLU(),
+            #nn.Dropout(args.dropout_lstm),
+        )
+
+        self.fc = nn.Sequential(
+            nn.Flatten(2),
+            nn.Linear(args.flattend_size, 2),
+        )
+        self.single_gpu = not args.ddp
+
+    def forward(self, x) -> torch.Tensor:
+        """Forward pass."""
+        #import pdb; pdb.set_trace()
         # [batch, channels, packets, time]
         x = self.cnn(x.permute(0, 1, 3, 2))
 
@@ -417,8 +478,8 @@ class Regression(torch.nn.Module):
         Args:
             classes (int): The number of classes or sources to classify.
         """
-        super().__init__()
-        self.linear = torch.nn.Linear(args.num_of_scales * 101, 2)
+        super(Regression).__init__()
+        self.linear = torch.nn.Linear(args.num_of_scales * args.time_dimm_add, 2)
 
         self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
 
@@ -433,9 +494,60 @@ class Regression(torch.nn.Module):
             torch.Tensor: A logsoftmax scaled output of shape
                 [batch_size, classes].
         """
+        import pdb; pdb.set_trace()
         x_flat = torch.reshape(x, [x.shape[0], -1])
-        return self.logsoftmax(self.linear(x_flat))
+        x = self.linear(x_flat)
+        return self.logsoftmax()
 
+
+class CNN(torch.nn.Module):
+    """A shallow linear-regression model."""
+
+    def __init__(self, args):
+        """Create the regression model.
+
+        Args:
+            classes (int): The number of classes or sources to classify.
+        """
+        super(CNN).__init__()
+
+        self.cnn = nn.Sequential(
+            nn.Conv2d(args.input_dim[1], 32, 3, stride=2, padding=2),
+            nn.PReLU(),
+            nn.SyncBatchNorm(32),
+            nn.Conv2d(32, 64, 3, 1, padding=0),
+            nn.PReLU(),
+            nn.SyncBatchNorm(64),
+            nn.Conv2d(64, 96, 3, stride=2, padding=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(96),
+            nn.Conv2d(96, 128, 3, 2, padding=0),
+            nn.PReLU(),
+            nn.Dropout(args.dropout_cnn),
+        )
+
+        self.fc = nn.Sequential(
+            nn.Flatten(2),
+            nn.Linear(args.flattend_size, 2),
+        )
+
+        self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute the regression forward pass.
+
+        Args:
+            x (torch.Tensor): An input tensor of shape
+                [batch_size, ...]
+
+        Returns:
+            torch.Tensor: A logsoftmax scaled output of shape
+                [batch_size, classes].
+        """
+        import pdb; pdb.set_trace()
+        x_flat = torch.reshape(x, [x.shape[0], -1])
+        x = self.cnn(x_flat)
+        return self.logsoftmax(x)
 
 def get_model(
     args,
@@ -447,6 +559,7 @@ def get_model(
     channels: int = 32,
     dropout_cnn: float = 0.6,
     dropout_lstm: float = 0.3,
+    lead: bool = False,
 ) -> LCNN:
     """Get torch module model with given parameters."""
     if model_name == "lcnn":
@@ -487,7 +600,7 @@ def get_model(
             raise RuntimeError("Model not valid.")
 
     elif model_name == "modules":
-        if check_dimensions(args.module(args), args.input_dim[1:]):
+        if check_dimensions(args.module(args), args.input_dim[1:], verbose=lead):
             model = args.module(args)
         else:
             raise RuntimeError("Model not valid.")
@@ -627,7 +740,7 @@ def check_dimensions(
 ) -> bool:
     """Check if model is valid for given dimensions."""
     try:
-        summary(model, input_shape, verbose=0)
+        summary(model, input_shape, verbose=1 if verbose else 0)
     except RuntimeError as e:
         if verbose:
             print(f"Error: {e}")

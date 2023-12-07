@@ -1129,6 +1129,7 @@ def main():
                 channels=channels,
                 dropout_cnn=args.dropout_cnn,
                 dropout_lstm=args.dropout_lstm,
+                lead=is_lead(args)
             )
         except RuntimeError:
             print(f"Skipping model args.model_conf")
@@ -1196,7 +1197,18 @@ def main():
         results = np.asarray(list(exp_results.values()))
         if results.shape[0] == 0:
             exit(0)
-        np.save(args.log_dir + "/last_results.npy", results)
+        
+        if args.transform == "packets":
+            if griderator.init_config and "wavelet" in griderator.init_config:
+                wavelets = griderator.init_config['wavelet']
+            elif hasattr(args, "wavelet"):
+                wavelets = [args.wavelet]
+            else:
+                wavelets = ["default"]
+        else:
+            wavelets = ["stft"]
+
+        np.save(args.log_dir + f"/{','.join(wavelets)}_results.npy", results)
         mean = results.mean(0)
         std = results.std(0)
         print("results:", results)
@@ -1228,7 +1240,6 @@ def main():
             stringer = np.asarray(stringer, dtype=object)
             print(stringer)
             stringer_2 = np.asarray(stringer_2, dtype=object)
-            wavelets = griderator.init_config["wavelet"]
             cross_dirs = griderator.init_config["cross_sources"]
             stringer = stringer.reshape((len(wavelets), len(cross_dirs)))
             for i in range(len(cross_dirs)):

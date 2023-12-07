@@ -6,7 +6,7 @@ import torch
 import torchvision
 from torch import nn
 
-from src.models import parse_model_str, TestNet
+from src.models import parse_model_str, TestNet, LCNN, TestNetXDropout, Regression, CNN
 
 
 def get_config() -> dict:
@@ -95,27 +95,27 @@ def get_config() -> dict:
         "seconds": [1],
         "sample_rate": [22050],
         "cross_sources": [
-            # [
-            #     "ljspeech",
-            #     "melgan",
-            #     "lmelgan",
-            #     "mbmelgan",
-            #     "pwg",
-            #     "waveglow",
-            #     "avocodo",
-            #     "hifigan",
-            #     "conformer",
-            #     "jsutmbmelgan",
-            #     "jsutpwg",
-            #     "lbigvgan",
-            #     "bigvgan",
-            # ],
+            [
+                "ljspeech",
+                "melgan",
+                "lmelgan",
+                "mbmelgan",
+                "pwg",
+                "waveglow",
+                "avocodo",
+                "hifigan",
+                "conformer",
+                "jsutmbmelgan",
+                "jsutpwg",
+                "lbigvgan",
+                "bigvgan",
+            ],
             #["ljspeech", "hifigan"],
             #["ljspeech", "mbmelgan"],
-            #["ljspeech", "pwg"],
-            #["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
-            #["ljspeech", "avocodo"],
-            ["ljspeech", "lbigvgan", "bigvgan"],
+            # #["ljspeech", "pwg"],
+            # ["ljspeech", "melgan", "lmelgan", "mbmelgan", "pwg", "waveglow", "hifigan", "conformer", "jsutmbmelgan", "jsutpwg"],
+            # ["ljspeech", "avocodo"],
+            # ["ljspeech", "lbigvgan", "bigvgan"],
         ],
         "epochs": [10],
         "validation_interval": [10],
@@ -124,7 +124,7 @@ def get_config() -> dict:
         "aug_contrast": [False],
         "model": ["modules"],
         "model_data": model_data,
-        "module": [TestNet],
+        "module": [CNN],
         "kernel1": [3],
         "num_devices": [4],
         "ochannels1": [64],
@@ -134,6 +134,8 @@ def get_config() -> dict:
         "ochannels5": [32],
         "hop_length": [220],
         "only_testing": [False],
+        "max_pool": [True],
+        "dropout": [True]
         #"target": [0, 1, None],
     }
 
