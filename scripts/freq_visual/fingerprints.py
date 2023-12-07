@@ -100,9 +100,7 @@ def _compute_fingerprint_wpt(
     wavelet = pywt.Wavelet(wavelet_str)
     pywt_wp_tree = pywt.WaveletPacket(data=clip_array, wavelet=wavelet, mode="reflect")
 
-    # get the pytorch decomposition
-    level = 10 # 22
-    level = 12 # 6
+    # get the wavelet decomposition
     level = 14
     wp_nodes = pywt_wp_tree.get_level(level, order='freq')
     wp_paths = [n.path for n in wp_nodes]
@@ -158,4 +156,27 @@ if __name__ == "__main__":
     [plt.semilogy(wps[0][0], wps[0][1], label=wps[1]) for wps in wp_means]
     plt.legend()
     plt.show()
+
+    for wps in wp_means[1:]:
+        plot_name = f"{wp_means[0][1]} - {wps[1]}"
+        plt.title(plot_name)
+        plt.plot(wp_means[0][0][0], np.log(np.abs(wp_means[0][0][1])) - np.log(np.abs(wps[0][1])),
+                 label=plot_name)
+        plt.xlabel("Frequency [Hz]")
+        plt.ylabel("Difference of log-scaled absolute wpt-coefficients")
+        tikz.save(f'./plots/fingerprints/wpt_diff_{plot_name}.tex', standalone=True)
+        plt.savefig(f'./plots/fingerprints/wpt_diff_{plot_name}.png')
+        plt.clf()
+
+    for ffts in plot_tuples[1:]:
+        plot_name = f"{plot_tuples[0][2]} - {ffts[2]}"
+        plt.title(plot_name)
+        plt.plot(plot_tuples[0][0], np.log(np.abs(plot_tuples[0][1])) - np.log(np.abs(ffts[1])),
+                 label=plot_name)
+        plt.xlabel("Frequency [Hz]")
+        plt.ylabel("Difference of log-scaled absolute Fourier-coefficients")
+        tikz.save(f'./plots/fingerprints/fft_diff_{plot_name}.tex', standalone=True)
+        plt.savefig(f'./plots/fingerprints/fft_diff_{plot_name}.png')
+        plt.clf()
+
     pass
