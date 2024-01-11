@@ -225,6 +225,13 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         help="Shared source names of the unknown source data paths.",
     )
     parser.add_argument(
+        "--init-seeds",
+        type=int,
+        nargs="+",
+        default=[0, 1, 2, 3, 4],
+        help="The random seed pytorch and numpy works with (default: 0, 1, 2, 3, 4).",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=0,

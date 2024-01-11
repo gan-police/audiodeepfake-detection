@@ -25,7 +25,7 @@ RES = 150
 SAMPLE_RATE = 22_050
 F_MIN = 1
 F_MAX = 11025
-
+AMOUNT = 13100
 
 def plot_mean_std(steps, mean, std, label="", marker="."):
     """Plot means and standard deviations with shaded areas."""
@@ -42,6 +42,7 @@ def _compute_fingerprint_rfft(
     dataset = util.AudioDataset(
         directory,
         sample_rate=SAMPLE_RATE,
+        amount=AMOUNT
     )
     clips = []
     for clip, _fs in tqdm(dataset, desc="load dataset", total=len(dataset)):
@@ -96,6 +97,7 @@ def _compute_fingerprint_wpt(
     dataset = util.AudioDataset(
         directory,
         sample_rate=SAMPLE_RATE,
+        amount=AMOUNT
     )
     clips = []
     for clip, _fs in dataset:
@@ -108,10 +110,7 @@ def _compute_fingerprint_wpt(
     wavelet = pywt.Wavelet(wavelet_str)
     pywt_wp_tree = pywt.WaveletPacket(data=clip_array, wavelet=wavelet, mode="reflect")
 
-    # get the pytorch decomposition
-
-    level = 10 # 22
-    level = 12 # 6
+    # get the wavelet decomposition
     level = 14
     wp_nodes = pywt_wp_tree.get_level(level, order='freq')
     wp_paths = [n.path for n in wp_nodes]
@@ -138,25 +137,25 @@ if __name__ == "__main__":
     base_path = (
         "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/"
     )
-    plot_path = base_path + "logs/log3/plots/fingerprints"
+    plot_path = base_path + "logs/log5/plots/fingerprints"
     Path(plot_path).mkdir(parents=True, exist_ok=True)
 
     # Important: Put corresponding data directories here!
     paths = [
         "A_ljspeech/",
-        "B_melgan/",
-        "C_hifigan/",
-        "D_mbmelgan/",
-        "E_fbmelgan/",
-        "F_waveglow/",
-        "G_pwg/",
-        "H_lmelgan/",
-        # "I_avocodo/",
-        # "J_bigvgan/",
-        # "K_lbigvgan/",
-        "L_conformer/",
-        "M_jsutmbmelgan/",
-        "N_jsutpwg/",
+         "B_melgan/",
+         "C_hifigan/",
+         "D_mbmelgan/",
+         "E_fbmelgan/",
+         "F_waveglow/",
+         "G_pwg/",
+         "H_lmelgan/",
+        "I_avocodo/",
+        "J_bigvgan/",
+         "K_lbigvgan/",
+         "L_conformer/",
+         "M_jsutmbmelgan/",
+         "N_jsutpwg/",
     ]
 
     plot_tuples = []
@@ -166,20 +165,86 @@ if __name__ == "__main__":
         path = base_path + "data/fake/" + path
         print(f"Processing {path}.", flush=True)
         name = path.split('/')[-2]
-        # _compute_fingerprint_wpt(path, name)
-        wp_means.append((_compute_fingerprint_wpt(path, gen_name=name, plot_path=plot_path)))
-        plot_tuples.append(_compute_fingerprint_rfft(path, name, plot_path=plot_path))
+        wp_mean = (_compute_fingerprint_wpt(path, gen_name=name, plot_path=plot_path), name)
+        plot_tuple = _compute_fingerprint_rfft(path, name, plot_path=plot_path)
+        wp_means.append(wp_mean)
+        plot_tuples.append(plot_tuple)
     
-        #import pdb; pdb.set_trace()
-
-    for pos, plot_tuple in enumerate(plot_tuples):
-        plt.subplot(2, 4, pos+1)
-        plt.title(plot_tuple[2])
-        plt.plot(plot_tuple[0], plot_tuple[1])
-    tikz.save(f'{plot_path}/groupplot.tex', standalone=True)
+    # for pos, plot_tuple in enumerate(plot_tuples):
+    #     plt.subplot(2, 4, pos+1)
+    #     plt.title(plot_tuple[2])
+    #     plt.plot(plot_tuple[0], plot_tuple[1])
+    # tikz.save(f'{plot_path}/groupplot.tex', standalone=True)
     # [0], [-2]
-    [plt.semilogy(wps[0][0], wps[0][1], label=wps[1]) for wps in wp_means]
-    plt.legend()
-    plt.show()
-    pass
+    # [plt.semilogy(wps[0][0], wps[0][1], label=wps[1]) for wps in wp_means]
+    # plt.legend()
+    #plt.show()
+    sum = np.zeros_like(wp_means[0][0][1])
+    for wps in wp_means[1:]:
+        plot_name = f"{wp_means[0][1]} - {wps[1]}"
+        sum += wps[0][1]
+        plt.title(plot_name)
+        plt.plot(wp_means[0][0][0], np.log(np.abs(wp_means[0][0][1])) - np.log(np.abs(wps[0][1])),
+                 label=plot_name)
+        plt.xlabel("Frequency [Hz]")
+        plt.ylabel("Difference of log-scaled absolute wpt-coefficients")
+        tikz.save(f'{plot_path}/wpt_diff_{plot_name}.tex', standalone=True)
+        plt.savefig(f'{plot_path}/wpt_diff_{plot_name}.png')
+        plt.clf()
+    
+    #import pdb; pdb.set_trace()
+    sum /= len(wp_means) - 1
+    plt.title("all generators")
+    plt.semilogy(wp_means[0][0][0], sum, label="all generators")
+    plt.xlabel('frequency [Hz]')
+    plt.ylabel('mean wavelet packet magnitude')
+    tikz.save(f'{plot_path}/wpt_all_generators.tex', standalone=True)
+    plt.savefig(f'{plot_path}/wpt_all_generators.png')
+
+    plt.clf()
+    plot_name = "ljspeech - all generators"
+    plt.title(plot_name)
+    plt.plot(wp_means[0][0][0], np.log(np.abs(wp_means[0][0][1])) - np.log(np.abs(sum)),
+                 label=plot_name)
+    plt.xlabel("Frequency [Hz]")
+    plt.ylabel("Difference of log-scaled absolute wpt-coefficients")
+    tikz.save(f'{plot_path}/wpt_diff_{plot_name}.tex', standalone=True)
+    plt.savefig(f'{plot_path}/wpt_diff_{plot_name}.png')
+    plt.clf()
+
+    sum = np.zeros_like(plot_tuples[0][1])
+    for ffts in plot_tuples[1:]:
+        plot_name = f"{plot_tuples[0][2]} - {ffts[2]}"
+        sum += ffts[1]
+        plt.title(plot_name)
+        plt.plot(plot_tuples[0][0], np.log(np.abs(plot_tuples[0][1])) - np.log(np.abs(ffts[1])),
+                 label=plot_name)
+        plt.xlabel("Frequency [Hz]")
+        plt.ylabel("Difference of log-scaled absolute Fourier-coefficients")
+        tikz.save(f'{plot_path}/fft_diff_{plot_name}.tex', standalone=True)
+        plt.savefig(f'{plot_path}/fft_diff_{plot_name}.png')
+        plt.clf()
+
+    sum /= len(plot_tuples) - 1
+
+    gen_name = "all generators"
+    plt.title(f"{gen_name}")
+    plt.semilogy(plot_tuples[0][0], sum, label=gen_name)
+    plt.xlabel('frequency [Hz]')
+    plt.ylabel('mean absolute Fourier coefficient magnitude')
+    plt.grid(True)
+    tikz.save(f'{plot_path}/rfft_{gen_name}.tex', standalone=True)
+    plt.savefig(f'{plot_path}/rfft_{gen_name}.png')
+
+    plt.clf()
+
+    plot_name = f"{plot_tuples[0][2]} - all generators"
+    plt.title(plot_name)
+    plt.plot(plot_tuples[0][0], np.log(np.abs(plot_tuples[0][1])) - np.log(np.abs(ffts[1])),
+                 label=plot_name)
+    plt.xlabel("Frequency [Hz]")
+    plt.ylabel("Difference of log-scaled absolute Fourier-coefficients")
+    tikz.save(f'{plot_path}/fft_diff_{plot_name}.tex', standalone=True)
+    plt.savefig(f'{plot_path}/fft_diff_{plot_name}.png')
+    plt.clf()
 

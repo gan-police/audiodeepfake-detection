@@ -21,3 +21,13 @@ sbatch scripts/train_booster.sh packets fbmelgan 256 db7 2.0 False 320 0
 sbatch scripts/train_booster.sh packets fbmelgan 256 db8 2.0 False 320 0
 sbatch scripts/train_booster.sh packets fbmelgan 256 db9 2.0 False 320 1
 sbatch scripts/train_booster.sh packets fbmelgan 256 db10 2.0 False 320 0
+
+sbatch scripts/train_booster.sh packets fbmelgan 256 coif2 2.0 False 320 0
+sbatch scripts/train_booster.sh packets fbmelgan 256 coif3 2.0 False 320 1
+sbatch scripts/train_booster.sh packets fbmelgan 256 coif4 2.0 False 320 0
+sbatch scripts/train_booster.sh packets fbmelgan 256 coif5 2.0 False 320 0
+sbatch scripts/train_booster.sh packets fbmelgan 256 coif6 2.0 False 320 0
+sbatch scripts/train_booster.sh packets fbmelgan 256 coif7 2.0 False 320 1
+sbatch scripts/train_booster.sh packets fbmelgan 256 coif8 2.0 False 320 0
+sbatch scripts/train_booster.sh packets fbmelgan 256 coif9 2.0 False 320 0
+sbatch scripts/train_booster.sh packets fbmelgan 256 coif10 2.0 False 320 0

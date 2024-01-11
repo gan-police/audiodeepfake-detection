@@ -10,8 +10,8 @@
 #SBATCH --cpus-per-task=24
 #SBATCH --partition booster
 #SBATCH --time=06:00:00
-#SBATCH --output=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log2/slurm/train/train_%j.out
-#SBATCH --error=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log2/slurm/train/train_%j.err
+#SBATCH --output=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log3/slurm/train/train_%j.out
+#SBATCH --error=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log3/slurm/train/train_%j.err
 source ${HOME}/.bashrc
 
 echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
@@ -39,7 +39,7 @@ torchrun \
 --nnodes 1 \
 --nproc_per_node 1 \
 src/train_classifier.py \
-    --log-dir "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log4/" \
+    --log-dir "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log3/" \
     --batch-size 128 \
     --learning-rate 0.0001 \
     --weight-decay 0.001   \

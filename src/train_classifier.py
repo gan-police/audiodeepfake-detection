@@ -981,7 +981,12 @@ def main():
             print("--------------- Starting grid search -----------------")
 
         if not args.random_seeds:
-            griderator = init_grid(num_exp=1, init_seeds=[0, 1, 2, 3, 4])
+            init_seeds = [0, 1, 2, 3, 4]
+            if hasattr(args, "init_seeds"):
+                init_seeds = args.init_seeds
+                for i in range(len(init_seeds)):
+                    init_seeds[i] = int(init_seeds[i])
+            griderator = init_grid(num_exp=1, init_seeds=init_seeds)
         else:
             griderator = init_grid(num_exp=3)
         num_exp = griderator.get_len()

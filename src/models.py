@@ -338,16 +338,16 @@ class TestNet(torch.nn.Module):
         super(TestNet, self).__init__()
 
         self.cnn = nn.Sequential(
-            nn.Conv2d(args.input_dim[1], args.ochannels1, args.kernel1, stride=2, padding=2),
+            nn.Conv2d(args.input_dim[1], args.ochannels1, args.kernel1, stride=1, padding=2),
             nn.PReLU(),
-            #nn.MaxPool2d(2, 2),
+            nn.MaxPool2d(2, 2),
             nn.SyncBatchNorm(args.ochannels1, affine=False),
             nn.Conv2d(args.ochannels1, args.ochannels2, 1, 1, padding=0),
             nn.PReLU(),
             nn.SyncBatchNorm(args.ochannels2, affine=False),
-            nn.Conv2d(args.ochannels2, args.ochannels3, 3, stride=2, padding=1),
+            nn.Conv2d(args.ochannels2, args.ochannels3, 3, stride=1, padding=1),
             nn.PReLU(),
-            #nn.MaxPool2d(2, 2),
+            nn.MaxPool2d(2, 2),
             nn.SyncBatchNorm(args.ochannels3, affine=False),
             nn.Conv2d(args.ochannels3, args.ochannels4, 3, 1, padding=1),
             nn.PReLU(),
@@ -355,9 +355,9 @@ class TestNet(torch.nn.Module):
             nn.Conv2d(args.ochannels4, args.ochannels5, 3, 1, padding=1),
             nn.PReLU(),
             nn.SyncBatchNorm(args.ochannels5, affine=False),
-            nn.Conv2d(args.ochannels5, 64, 3, stride=2, padding=0),
+            nn.Conv2d(args.ochannels5, 64, 3, stride=1, padding=1),
             nn.PReLU(),
-            #nn.MaxPool2d(2, 2),
+            nn.MaxPool2d(2, 2),
             nn.Dropout(args.dropout_cnn),
         )
 
@@ -478,8 +478,8 @@ class Regression(torch.nn.Module):
         Args:
             classes (int): The number of classes or sources to classify.
         """
-        super(Regression).__init__()
-        self.linear = torch.nn.Linear(args.num_of_scales * args.time_dimm_add, 2)
+        super(Regression, self).__init__()
+        self.linear = torch.nn.Linear(args.num_of_scales * args.time_dim_add, 2)
 
         self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
 
@@ -497,7 +497,7 @@ class Regression(torch.nn.Module):
         import pdb; pdb.set_trace()
         x_flat = torch.reshape(x, [x.shape[0], -1])
         x = self.linear(x_flat)
-        return self.logsoftmax()
+        return self.logsoftmax(x)
 
 
 class CNN(torch.nn.Module):
@@ -509,25 +509,33 @@ class CNN(torch.nn.Module):
         Args:
             classes (int): The number of classes or sources to classify.
         """
-        super(CNN).__init__()
+        super(CNN, self).__init__()
 
         self.cnn = nn.Sequential(
-            nn.Conv2d(args.input_dim[1], 32, 3, stride=2, padding=2),
+            nn.Conv2d(args.input_dim[1], 32, 3, stride=2, padding=2, dilation=4),
             nn.PReLU(),
             nn.SyncBatchNorm(32),
-            nn.Conv2d(32, 64, 3, 1, padding=0),
+            nn.Conv2d(32, 64, 3, 2, padding=1),
             nn.PReLU(),
             nn.SyncBatchNorm(64),
-            nn.Conv2d(64, 96, 3, stride=2, padding=1),
+            nn.Conv2d(64, 64, 5, 1, padding=1, dilation=4),
+            nn.PReLU(),
+            nn.SyncBatchNorm(64),
+            nn.Conv2d(64, 96, 7, stride=1, padding=1, dilation=4),
             nn.PReLU(),
             nn.SyncBatchNorm(96),
-            nn.Conv2d(96, 128, 3, 2, padding=0),
+            nn.Conv2d(96, 96, 3, stride=2, padding=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(96),
+            nn.Conv2d(96, 64, 3, 2, padding=0),
             nn.PReLU(),
             nn.Dropout(args.dropout_cnn),
         )
 
+        time_dim = 128
+
         self.fc = nn.Sequential(
-            nn.Flatten(2),
+            nn.Flatten(),
             nn.Linear(args.flattend_size, 2),
         )
 
@@ -545,9 +553,9 @@ class CNN(torch.nn.Module):
                 [batch_size, classes].
         """
         import pdb; pdb.set_trace()
-        x_flat = torch.reshape(x, [x.shape[0], -1])
-        x = self.cnn(x_flat)
-        return self.logsoftmax(x)
+        x = self.cnn(x)
+        x = self.fc(x)
+        return x
 
 def get_model(
     args,
