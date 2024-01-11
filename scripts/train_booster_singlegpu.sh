@@ -32,7 +32,7 @@ echo $SLURM_JOB_NUM_NODES
 
 echo -e "Training..."
 
-python -m src.train_classifier \
+python -m src.audiofakedetect.train_classifier \
     --log-dir "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log2/" \
     --batch-size 128 \
     --learning-rate 0.0001 \

@@ -9,7 +9,7 @@ import torch
 import torchaudio
 
 from scripts.gridsearch_config import get_config
-from src.data_loader import get_costum_dataset
+from src.audiofakedetect.data_loader import get_costum_dataset
 
 
 def set_seed(seed: int):
@@ -517,9 +517,3 @@ def get_input_dims(args, transforms) -> list:
         shape[0] = args.batch_size
 
     return shape
-
-
-def debug():
-    import pdb
-
-    pdb.set_trace()

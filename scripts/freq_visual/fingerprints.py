@@ -1,14 +1,13 @@
+"""Plot individual GAN fingerprints in audio deepfakes."""
 import os
 import sys
 from pathlib import Path
 
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pywt
 import tikzplotlib as tikz
 import torch
-
 from scipy.io.wavfile import write
 from tqdm import tqdm
 
@@ -19,7 +18,7 @@ if DEBUG:
     # Set python path automatically to base directory
     sys.path.append(BASE_PATH)
 
-import src.plot_util as util
+import src.audiofakedetect.plot_util as util
 
 RES = 150
 SAMPLE_RATE = 22_050

@@ -5,9 +5,8 @@ and cuts it to frames and transforms it with CWT. Dataloader methods
 can be found here to.
 """
 import os
-import pickle
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -71,270 +70,6 @@ class WelfordEstimator:
         return self.mean, torch.sqrt(self.m2 / self.count)
 
 
-class LearnWavefakeDataset(Dataset):
-    """Create a data loader to load pre-processed numpy arrays into memory."""
-
-    def __init__(
-        self,
-        data_dir: str,
-        source_name: str = "fake",
-        key: Optional[str] = "audio",
-        limit: int = -1,
-        verbose: Optional[bool] = False,
-    ):
-        """Create a Wavefake-dataset object.
-
-        Dataset with additional transforming in cwt space.
-
-        Args:
-            data_dir: A path to a pre-processed folder with numpy files.
-            key: The key for the input or 'x' component of the dataset.
-                Defaults to "audio".
-
-        Raises:
-            ValueError: If an unexpected file name is given or directory is empty.
-
-        # noqa: DAR401
-        """
-        self.data_dir = data_dir
-        self.file_lst = sorted(Path(data_dir).glob("./*.npy"))
-        if verbose:
-            print("Loading ", data_dir, flush=True)
-        if len(self.file_lst) == 0:
-            raise ValueError("empty directory")
-        if self.file_lst[-1].name != "labels.npy":
-            raise ValueError("unexpected file name for label file.")
-
-        self.labels = np.load(self.file_lst[-1])
-        self.audios = np.array(self.file_lst[:-1])
-
-        if limit == -1:
-            limit = len(self.audios)
-        limit -= (limit // 128) % 8  # same batches if trained with 1, 2, 4, 8 GPUs
-
-        # keep equally distributed structure
-        del_num = len(self.audios) - limit
-        pos_count = del_num // 2
-        neg_count = del_num // 2
-
-        for i in range(len(self.audios)):
-            if self.labels[i] == 0 and pos_count > 0:
-                pos_count -= 1
-                self.labels = np.delete(self.labels, i)
-                self.audios = np.delete(self.audios, i)
-            elif self.labels[i] != 0 and neg_count > 0:
-                neg_count -= 1
-                self.labels = np.delete(self.labels, i)
-                self.audios = np.delete(self.audios, i)
-            elif pos_count == 0 and neg_count == 0:
-                break
-
-        self.labels = self.labels[:limit]
-        self.audios = self.audios[:limit]
-
-        sizes = [self.labels[self.labels == 0].size, self.labels[self.labels != 0].size]
-        diff = abs(sizes[0] - sizes[1])
-        label = np.argmax(sizes)
-        for i in range(len(self.audios)):
-            if self.labels[i] == 0 and diff > 0 and label == 0:
-                diff -= 1
-                self.labels = np.delete(self.labels, i)
-                self.audios = np.delete(self.audios, i)
-            elif self.labels[i] != 0 and diff > 0 and label != 0:
-                diff -= 1
-                self.labels = np.delete(self.labels, i)
-                self.audios = np.delete(self.audios, i)
-            elif diff == 0:
-                break
-
-        self.key = key
-        self.label_names = {0: "original", get_ds_label(self.labels): source_name}
-
-    def _load_mean_std(self):
-        with open(self.data_dir + "/mean_std.pkl", "rb") as f:
-            return pickle.load(f)
-
-    def get_label_name(self, key):
-        if key in self.label_names.keys():
-            return self.label_names[key]
-        else:
-            return f"John Doe Generator {key}"
-
-    def __len__(self) -> int:
-        """Return the data set length."""
-        return len(self.labels)
-
-    def __getitem__(self, idx: int) -> dict:
-        """Get a dataset element.
-
-        Args:
-            idx (int): The element index of the data pair to return.
-
-        Returns:
-            sample (dict): Returns a dictionary with the self.key
-                    default ("audio") and "label" keys.
-        """
-        audio_path = self.audios[idx]
-        audio = np.load(audio_path)
-        audio = torch.from_numpy(audio.astype(np.float32))
-
-        label = self.labels[idx]
-        label = torch.tensor(int(label))
-        sample = {self.key: audio, "label": label}
-        return sample
-
-
-class CrossWavefakeDataset(Dataset):
-    """Create a data loader to load pre-processed numpy arrays into memory."""
-
-    def __init__(
-        self,
-        sources: list,
-        base_path: str = "/home/s6kogase/data/run6",
-        postfix: str = "_test",
-        prefix: str = "fake_22050_22050_0.7_",
-        limit: int = -1,
-        key: Optional[str] = "audio",
-        verbose: Optional[bool] = False,
-    ):
-        """Create a Wavefake-dataset object.
-
-        Dataset with additional transforming in cwt space.
-
-        Args:
-            key: The key for the input or 'x' component of the dataset.
-                Defaults to "audio".
-
-        Raises:
-            RuntimeError: If there are problems with the given data paths.
-
-        # noqa: DAR401
-        """
-        if verbose:
-            print("Loading cross dataset...", flush=True)
-        legit_folders = [f"{prefix}{source}{postfix}" for source in sources]
-        init_size = None
-        required_num = 0
-        real_done = False
-        unique_labels = None
-        real_count = 0
-
-        labels = []
-        paths = []
-
-        for folder in os.listdir(base_path):
-            if folder not in legit_folders:
-                continue
-            required_num += 1
-
-        label_source_names = {}
-        label_source_names[0] = "original"
-
-        def get_free_label(unique_labels):
-            if len(unique_labels) == 0:
-                raise RuntimeError(
-                    "Function call only possible on arrays with positive length."
-                )
-
-            if 0 in unique_labels:
-                unique_labels = np.delete(unique_labels, 0)
-
-            unique_labels.sort()
-
-            for i in range(len(unique_labels)):
-                if i + 1 == unique_labels[i]:
-                    continue
-                else:
-                    return np.int64(i + 1)
-            return np.int64(i + 2)
-
-        def get_source_name(folder, sources):
-            for source in sources:
-                if f"_{source}_" in folder:
-                    return source
-
-        for folder in os.listdir(base_path):
-            if folder not in legit_folders:
-                continue
-            dataset = LearnWavefakeDataset(f"{base_path}/{folder}", verbose=False)
-            if init_size is None:
-                init_size = len(dataset)
-                if limit > 0 and limit <= init_size:
-                    required_samples = limit
-                else:
-                    required_samples = init_size
-                real_count = 0
-            elif init_size != len(dataset):
-                raise RuntimeError(f"{folder} contains to little samples.")
-            else:
-                unique_labels = np.unique(np.asarray(labels))
-
-            file_count = 0
-
-            # make sure that there will only be unique values in dataset
-            target_label = get_ds_label(dataset.labels)
-            if unique_labels is not None:
-                this_label = target_label
-                if this_label in unique_labels:
-                    target_label = get_free_label(unique_labels)
-                    if verbose:
-                        print(
-                            f"Setting target label from {this_label} to {target_label}."
-                        )
-
-            label_source_names[target_label] = get_source_name(folder, sources)
-
-            for path, label in zip(dataset.audios, dataset.labels):
-                if real_done and file_count >= required_samples:
-                    break
-                if label == 0 and not real_done:
-                    real_count += 1
-                    paths.append(path)
-                    labels.append(label)
-                    if real_count == required_samples:
-                        real_done = True
-                elif label != 0 and file_count < required_samples:
-                    paths.append(path)
-                    labels.append(target_label)
-                    file_count += 1
-
-        self.labels = np.asarray(labels)
-        self.audios = np.asarray(paths)
-
-        self.label_names = label_source_names
-
-        self.key = key
-
-    def get_label_name(self, key):
-        if key in self.label_names.keys():
-            return self.label_names[key]
-        else:
-            return f"John Doe Generator {key}"
-
-    def __len__(self) -> int:
-        """Return the data set length."""
-        return len(self.labels)
-
-    def __getitem__(self, idx: int) -> dict:
-        """Get a dataset element.
-
-        Args:
-            idx (int): The element index of the data pair to return.
-
-        Returns:
-            sample (dict): Returns a dictionary with the self.key
-                    default ("audio") and "label" keys.
-        """
-        audio_path = self.audios[idx]
-        audio = np.load(audio_path)
-        audio = torch.from_numpy(audio.astype(np.float32))
-
-        label = self.labels[idx]
-        label = torch.tensor(int(label))
-        sample = {self.key: audio, "label": label}
-        return sample
-
-
 class CustomDataset(Dataset):
     """Create a data loader for custom paths."""
 
@@ -343,7 +78,7 @@ class CustomDataset(Dataset):
         paths: list,
         labels: list,
         save_path: str,
-        only_test_folders: Optional[list] = [],
+        only_test_folders: Optional[list] = None,
         abort_on_save: bool = False,
         ds_type: str = "train",
         seconds: int = 1,
@@ -361,7 +96,6 @@ class CustomDataset(Dataset):
         Dataset with additional transforming in cwt space.
 
         Args:
-            data_dir: A path to a pre-processed folder with numpy files.
             key: The key for the input or 'x' component of the dataset.
                 Defaults to "audio".
 
@@ -370,6 +104,7 @@ class CustomDataset(Dataset):
 
         # noqa: DAR401
         """
+        # TODO: Docu update
         if verbose:
             print("Loading ", ds_type, paths, flush=True)
 
@@ -388,7 +123,9 @@ class CustomDataset(Dataset):
             result_set = np.load(f"{destination}_test.npy", allow_pickle=True)
         else:
             print(
-                "Reading dataset. This may take up to 45 min, so maybe grab a coffee. The result will be saved to your hard drive to speed up the dataloading in further experiments."
+                "Reading dataset. This may take more than 45 minutes, so maybe grab a coffee."
+                "The result will be saved to your hard drive to speed up the dataloading"
+                "in further experiments."
             )
             train_data = []
             val_data = []
@@ -490,7 +227,6 @@ class CustomDataset(Dataset):
                 quit()
 
         # proceed with preparation for loading
-
         # apply limit per label
         result_set = result_set[:, :limit]
 
@@ -523,8 +259,19 @@ class CustomDataset(Dataset):
         self.key = key
         self.resample_rate = resample_rate
 
-    def get_result_set(self, frames, min_len):
-        result = None  # will be of shape (len(paths), frame_number, individual_window_size, label)
+    def get_result_set(self, frames: List[np.ndarray], min_len: int):
+        """Build up frame array from frames list using only `min_len` frames.
+
+        Args:
+            frames (List[np.ndarray]): List containing arrays with file names, window sizes
+                                       and labels.
+            min_len (int): Used frames per result set. This is used to limit the output size
+                           per label.
+
+        Returns:
+            np.ndarray: Array of shape (len(paths), frame_number, individual_window_size, label).
+        """
+        result = None
         for frame_array in frames:
             if result is None:
                 result = np.expand_dims(frame_array[:min_len], 0)
@@ -534,7 +281,15 @@ class CustomDataset(Dataset):
                 )
         return result
 
-    def get_label_name(self, key):
+    def get_label_name(self, key: Union[int, str]) -> str:
+        """Get name to corresponding label.
+
+        Args:
+            key (Union[int, str]): Key of the label.
+
+        Returns:
+            str: Name of the label.
+        """
         if key in self.label_names.keys():
             return self.label_names[key]
         else:
@@ -552,7 +307,10 @@ class CustomDataset(Dataset):
 
         Returns:
             sample (dict): Returns a dictionary with the self.key
-                    default ("audio") and "label" keys.
+                           default ("audio") and "label" keys.
+
+        Raises:
+            RuntimeError: If sample rate is smaller than desired resample rate.
         """
         audio, sample_rate = torchaudio.load(
             self.audio_data[idx, 0],
@@ -589,7 +347,40 @@ def get_costum_dataset(
     val_ratio: float = 0.1,
     file_type: str = "wav",
 ) -> CustomDataset:
-    paths = list(Path(data_path).glob(f"./*_*"))
+    """Wrap custom dataset creation.
+
+    Args:
+        data_path (str): Path to the actual data folders.
+        save_path (str): Path to the desired destination folder where the metadata will be saved.
+        ds_type (str): Description of dataset purpose. Should be one of: "train", "val", "test".
+        only_test_folders (Optional[list]): Names of folders which should only be used
+                                                      for the test set. Defaults to None.
+        only_use (Optional[list]): Names of folders which will be used, all else will
+                                             be ignored. Defaults to None.
+        seconds (float): Length of one frame of one data sample. Defaults to 1.
+        resample_rate (int): Desired sample rate of audio to be fed into training procedure.
+                                       This is stored alongside the filename and length and will be
+                                       used when loading the audio in the torch dataloader.
+                                       Defaults to 22050.
+        limit (tuple): Limit for train, validation and test set for each label.
+                                 Defaults to (55504, 7504, 15504).
+        abort_on_save (bool): Only save metadata to drive, don't return torch dataset.
+                                        Defaults to False.
+        asvspoof_name (str): Name of asvspoof data split, e.g. DF_E. Defaults to None.
+        train_ratio (float): Percentage of train files in dataset as decimal.
+                                       Defaults to 0.7.
+        val_ratio (float): Percentage of validation files in dataset as decimal.
+                                     Defaults to 0.1.
+        file_type (str): File type of all audio files in the folders. Defaults to "wav".
+
+    Raises:
+        RuntimeError: If the given `data_path` does not contain subfolders.
+        RuntimeError: If 0 is not in the labels when `ds_type` is "train".
+
+    Returns:
+        CustomDataset: Torch custom dataset which can be passed into a torch dataloader instance.
+    """
+    paths = list(Path(data_path).glob("./*_*"))
     if len(paths) == 0:
         raise RuntimeError("Given data_path is empty.")
 

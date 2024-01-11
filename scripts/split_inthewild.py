@@ -1,10 +1,11 @@
+"""Split official in the wild dataset into real and fake audio files."""
 import csv
 import os
 import shutil
 
 spoof_files = []
 real_files = []
-path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/inthewild/release_in_the_wild"
+path = "./data/inthewild/release_in_the_wild"
 
 if not os.path.exists(f"{path}/real/"):
     os.mkdir(f"{path}/real/")

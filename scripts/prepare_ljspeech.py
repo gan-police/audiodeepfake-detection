@@ -1,22 +1,18 @@
-from src.data_loader import get_costum_dataset
-from src.utils import set_seed
+"""Prepare custom dataset for extended LJSpeech dataset (including bigvgan(l) and avocodo)."""
+from src.audiofakedetect.data_loader import get_costum_dataset
+from src.audiofakedetect.utils import set_seed
 
 if __name__ == "__main__":
     set_seed(0)
-    save_path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run6"
-    data_path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/fake"
+    save_path = "./data/run6"
+    data_path = "./data/fake"
     limit_train = (55504, 7504, 15504)
     seconds = 1
 
-    loop = [
-        # "melgan",
-        # "lmelgan",
-        # "mbmelgan",
-        # "pwg",
-        # "waveglow",
+    gans = [
         "fbmelgan",
     ]
-    for gan in loop:
+    for gan in gans:
         only_use = ["ljspeech", gan]
         train_data_set = get_costum_dataset(
             data_path=data_path,

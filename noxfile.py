@@ -5,9 +5,9 @@ See also: https://nox.thea.codes/en/stable/
 """
 import nox
 
-nox.options.envdir = (
-    "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/software/nox"
-)
+# nox.options.envdir = (
+#     "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/software/nox"
+# )
 
 
 @nox.session(name="format", python=["3.10"])
@@ -15,8 +15,8 @@ def format(session) -> None:
     """Fix common convention problems automatically."""
     session.install("black")
     session.install("isort")
-    session.run("isort", "src", "scripts", "noxfile.py")
-    session.run("black", "src", "scripts", "noxfile.py")
+    session.run("isort", "src/audiofakedetect", "scripts", "noxfile.py")
+    session.run("black", "src/audiofakedetect", "scripts", "noxfile.py")
 
 
 @nox.session(name="test", python=["3.10"])

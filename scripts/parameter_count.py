@@ -1,7 +1,7 @@
 """Count trainable parameters of models."""
-from src.models import compute_parameter_total
-from src.ptwt_continuous_transform import get_diff_wavelet
-from src.train_classifier import get_model
+from src.audiofakedetect.models import compute_parameter_total
+from src.audiofakedetect.ptwt_continuous_transform import get_diff_wavelet
+from src.audiofakedetect.train_classifier import get_model
 
 
 def main() -> None:
@@ -21,11 +21,10 @@ def main() -> None:
             f_min=1,
             f_max=11025,
             sample_rate=sample_rate,
-            num_of_scales=num_of_scales,
             features="none",
             hop_length=100,
             in_channels=1,
-            channels=num_of_scales,
+            lstm_channels=num_of_scales,
         )
 
         totals.append(compute_parameter_total(model))

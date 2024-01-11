@@ -2,13 +2,9 @@
 import argparse
 import os
 import sys
-from typing import Tuple
 
-import matplotlib.colors as colors
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from captum.attr import IntegratedGradients, Saliency
 from scipy.interpolate import interp1d
 from scipy.optimize import brentq
 from sklearn.metrics import roc_curve
@@ -23,17 +19,16 @@ from tqdm import tqdm
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
-from src.data_loader import (
-    get_costum_dataset,
-)
-from src.integrated_gradients import (
+from src.audiofakedetect.data_loader import get_costum_dataset
+from src.audiofakedetect.integrated_gradients import (
     Mean,
     integral_approximation,
     interpolate_images,
 )
-from src.models import get_model, save_model
-from src.utils import (
+from src.audiofakedetect.models import get_model, save_model
+from src.audiofakedetect.utils import (
     DotDict,
+    _Griderator,
     add_default_parser_args,
     add_noise,
     contrast,
@@ -41,7 +36,7 @@ from src.utils import (
     init_grid,
     set_seed,
 )
-from src.wavelet_math import get_transforms
+from src.audiofakedetect.wavelet_math import get_transforms
 
 
 def ddp_setup() -> None:
@@ -51,20 +46,21 @@ def ddp_setup() -> None:
 
 
 def create_data_loaders(
-    args,
-    limit: int = -1,
+    args: dict,
     num_workers: int = 8,
-) -> Tuple:
+) -> tuple:
     """Create the data loaders needed for training.
 
-    The test set is created outside a loader.
-
     Args:
-        data_prefix (str): Where to look for the data.
-        batch_size (int): preferred training batch size.
+        args (dict): Experiment configuration.
+        num_workers (int): Number of dataloader workers to use. Defaults to 8.
+
+    Raises:
+        NotImplementedError: If args.unknown_prefix is set. This is deprecated.
 
     Returns:
-        dataloaders (Tuple): train_data_loader, val_data_loader, test_data_set
+        tuple: Loaders as a tuple(train loader, validation loader, test loader,
+               cross validation loader, cross test loader).
     """
     save_path = args.save_path
     data_path = args.data_path
@@ -177,6 +173,7 @@ def create_data_loaders(
             )
         else:
             raise NotImplementedError()
+            # TODO: remove this.
 
         if args.ddp:
             cross_val_sampler = DistributedSampler(
@@ -273,7 +270,7 @@ class Trainer:
         self.loss_list: list = []
         self.accuracy_list: list = []
         self.step_total: int = 0
-        self.test_results: Tuple = ()
+        self.test_results: tuple = ()
 
     def init_model(self, model) -> None:
         """Initialize model.
@@ -326,7 +323,7 @@ class Trainer:
         data_loader,
         name: str = "",
         pbar: bool = False,
-    ) -> Tuple[float, float]:
+    ) -> tuple[float, float]:
         """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
 
         Args:
@@ -336,7 +333,7 @@ class Trainer:
             pbar (bool): Disable/Enable tqdm bar (default: False).
 
         Returns:
-            Tuple[float, Any]: The measured accuracy and eer of the model on the data set.
+            tuple[float, Any]: The measured accuracy and eer of the model on the data set.
         """
         ok_sum = 0
         total = 0
@@ -445,8 +442,26 @@ class Trainer:
         return val_acc, eer  # type: ignore
 
     def integrated_grad(
-        self, baseline, image, target_class_idx, m_steps=50, batch_size=32
-    ):
+        self,
+        baseline: torch.Tensor,
+        image: torch.Tensor,
+        target_class_idx: torch.long,
+        m_steps: int = 50,
+        batch_size: int = 32,
+    ) -> torch.Tensor:
+        """Calculate integrated gradients.
+
+        Args:
+            baseline (torch.Tensor): Baseline black image.
+            image (torch.Tensor): Actual image.
+            target_class_idx (torch.long): Image label (target).
+            m_steps (int): Number of steps to go. The more, the better
+                           the integral approximation. Defaults to 50.
+            batch_size (int): Integration batch size. Defaults to 32.
+
+        Returns:
+            torch.Tensor: Integrated gradients.
+        """
         # Generate alphas.
         alphas = torch.linspace(start=0.0, end=1.0, steps=m_steps + 1).to(
             self.local_rank, non_blocking=True
@@ -476,7 +491,24 @@ class Trainer:
 
         return integrated_gradients
 
-    def one_batch(self, baseline, image, alpha_batch, target_class_idx):
+    def one_batch(
+        self,
+        baseline: torch.Tensor,
+        image: torch.Tensor,
+        alpha_batch: torch.Tensor,
+        target_class_idx: torch.long,
+    ) -> torch.Tensor:
+        """Interpolate and calculate gradients for one batch of images.
+
+        Args:
+            baseline (torch.Tensor): Baseline image.
+            image (torch.Tensor): Acutal images.
+            alpha_batch (torch.Tensor): Alphas to use.
+            target_class_idx (torch.long): Image labels.
+
+        Returns:
+            torch.Tensor: Batch of gradients.
+        """
         # Generate interpolated inputs between baseline and input.
         interpolated_path_input_batch = interpolate_images(
             baseline=baseline, image=image, alphas=alpha_batch
@@ -488,7 +520,20 @@ class Trainer:
         )
         return gradient_batch
 
-    def compute_gradients(self, images, target_class_idx):
+    def compute_gradients(
+        self,
+        images: torch.Tensor,
+        target_class_idx: torch.long,
+    ) -> torch.Tensor:
+        """Compute gradients for the images using the model classification.
+
+        Args:
+            images (torch.Tensor): Images to compute the gradients for.
+            target_class_idx (torch.long): The labels corresponding to the images.
+
+        Returns:
+            torch.Tensor: Image gradients.
+        """
         images.requires_grad = True
         logits = self.model(images)
         probs = torch.nn.functional.softmax(logits, dim=-1)[:, target_class_idx]
@@ -499,24 +544,17 @@ class Trainer:
         self,
         model_file: str = "ig",
         pbar: bool = True,
-    ) -> Tuple[float, float]:
-        """Test the performance of a model on a data set by calculating the prediction accuracy and loss of the model.
+    ) -> None:
+        """Calculate and save integrated gradients.
 
         Args:
-            data_loader (DataLoader): A DataLoader loading the data set on which the performance should be measured,
-                e.g. a test or validation set in a data split.
-            name (str): Name for tqdm bar (default: "").
-            pbar (bool): Disable/Enable tqdm bar (default: False).
-
-        Returns:
-            Tuple[float, Any]: The measured accuracy and eer of the model on the data set.
+            model_file (str): Prefix for the save path. Defaults to "ig".
+            pbar (bool): Disable/Enable tqdm bar. Defaults to True.
         """
-
         plot_path = self.args.log_dir + "/plots/"
 
         welford_ig = Mean()
         welford_sal = Mean()
-        # welford_saliency = Mean()
 
         data_loader = self.cross_loader_test
         bar = tqdm(
@@ -674,106 +712,10 @@ class Trainer:
                 np.save(path + "_ig_max.npy", ig_max)
                 np.save(path + "_ig_min.npy", ig_min)
                 np.save(path + "_ig_abs.npy", ig_abs)
-                """_ = plot_img_attributions(
-                    image=image.squeeze().detach().cpu().numpy(),
-                    baseline=baseline.squeeze().detach().cpu().numpy(),
-                    cmap=plt.cm.inferno,
-                    overlay_alpha=0.4,
-                    attribution_mask=torch.log(mean_ig).detach().cpu().numpy()
-                )
-                plt.savefig(path + "_integrated_gradients.png")
-                """
-
-            """
-            if self.local_rank == 0:
-                output_list = [torch.zeros_like(mean_ig) for _ in range(self.world_size)]
-                torch.distributed.gather(mean_ig, gather_list=output_list)
-                combined_attr_ig = torch.cat(output_list)
-                output_list = [torch.zeros_like(mean_sal) for _ in range(self.world_size)]
-                torch.distributed.gather(mean_sal, gather_list=output_list)
-                combined_attr_sal = torch.cat(output_list)
-                # Rank 0 prints the combined attribution tensor after gathering
-                #print(combined_attr)
-            else:
-                torch.distributed.gather(mean_ig)
-                torch.distributed.gather(mean_sal)
-            
-            if self.local_rank == 0:
-                mean_ig_max = torch.max(mean_ig, dim=1)[0]
-                mean_ig_min = torch.min(mean_ig, dim=1)[0]
-                audio_packets = torch.mean(freq_time_dt, dim=0)
-
-                inital = audio_packets.cpu().detach().numpy()
-                attr_ig = mean_ig.cpu().detach().numpy()
-                attr_sal = mean_sal.cpu().detach().numpy()
-                ig_max = mean_ig_max.cpu().detach().numpy()
-                ig_min = mean_ig_min.cpu().detach().numpy()
-                ig_abs = np.abs(ig_max + np.abs(ig_min))
-        """
-        """
-        if self.local_rank == 0:
-            seconds = self.args.seconds
-            sample_rate = self.args.sample_rate
-            num_of_scales = self.args.num_of_scales
-            postfix = "fbmelgan"
-            postfix += f"_target{target}_x{times*128}"
-            postfix = postfix.split("/")[-1]
-
-            t = np.linspace(0, seconds, int(seconds // (1 / sample_rate)))
-            bins = np.int64(num_of_scales)
-            n = list(range(int(bins)))
-            freqs = (sample_rate / 2) * (n / bins)  # type: ignore
-            
-            x_ticks = list(range(image.shape[-1]))[:: image.shape[-1] // 10]
-            x_labels = np.around(np.linspace(min(t), max(t), image.shape[-1]), 2)[
-                :: image.shape[-1] // 10
-            ]
-
-            y_ticks = n[:: freqs.shape[0] // 10]
-            y_labels = np.around(freqs[:: freqs.shape[0] // 10] / 1000, 1)
-            im_plot(
-                freq_time_dt[0].squeeze(0).cpu().detach().numpy(),
-                f"{plot_path}/raw_{postfix}",
-                cmap="turbo",
-                x_ticks=x_ticks,
-                x_labels=x_labels,
-                y_ticks=y_ticks,
-                y_labels=y_labels,
-                vmax=np.max(attr_ig).item(),
-                vmin=np.min(attr_ig).item(),
-            )
-            im_plot(
-                attr_ig,
-                f"{plot_path}/attr_ig_{postfix}",
-                cmap="viridis_r",
-                x_ticks=x_ticks,
-                x_labels=x_labels,
-                y_ticks=y_ticks,
-                y_labels=y_labels,
-                vmax=np.max(attr_ig).item(),
-                vmin=np.min(attr_ig).item(),
-            )
-            im_plot(
-                attr_sal,
-                f"{plot_path}/attr_sal_{postfix}",
-                cmap="plasma",
-                vmax=np.max(attr_sal).item(),
-                vmin=np.min(attr_sal).item(),
-                x_ticks=x_ticks,
-                x_labels=x_labels,
-                y_ticks=y_ticks,
-                y_labels=y_labels,
-                norm=colors.SymLogNorm(linthresh=0.01),
-            )
-
-            # bar_plot(ig_max, x_ticks, x_ticklabels, f"{plot_path}/attr_max_{postfix}")
-            # bar_plot(ig_min, x_ticks, x_ticklabels, f"{plot_path}/attr_min_{postfix}")
-            bar_plot(ig_abs, y_ticks, y_labels, f'{plot_path}/attr_abs_{model_file.replace("/", "_")}_{"-".join(self.args.cross_sources)}.png')
-            plt.close()"""
 
     def _run_test(
         self, only_unknown: bool = False
-    ) -> Tuple[float, float, float, float]:
+    ) -> tuple[float, float, float, float]:
         self.model.eval()
         with torch.no_grad():
             if not only_unknown:
@@ -940,7 +882,7 @@ class Trainer:
                         unknown eer {test_results[3]:.3f}"
                     )
 
-    def testing(self, only_unknown: bool = False) -> Tuple[float, float, float, float]:
+    def testing(self, only_unknown: bool = False) -> tuple[float, float, float, float]:
         """Iterate over test set."""
         self._check_model_init()
         return self._run_test(only_unknown=only_unknown)
@@ -998,15 +940,7 @@ def main():
         if is_lead(args):
             print("--------------- Starting grid search -----------------")
 
-        if not args.random_seeds:
-            init_seeds = [0, 1, 2, 3, 4]
-            if hasattr(args, "init_seeds"):
-                init_seeds = args.init_seeds
-                for i in range(len(init_seeds)):
-                    init_seeds[i] = int(init_seeds[i])
-            griderator = init_grid(num_exp=1, init_seeds=init_seeds)
-        else:
-            griderator = init_grid(num_exp=3)
+        griderator = build_new_grid(random_seeds=args.random_seeds, seeds=args.seeds)
         num_exp = griderator.get_len()
 
     for _exp_number in range(num_exp):
@@ -1018,9 +952,6 @@ def main():
                 )
                 print("---------------------------------------------------------")
             args, _ = griderator.update_step(args)
-
-        # if args.f_max > args.sample_rate / 2:
-        #    print("Warning: maximum analyzed frequency is above nyquist rate.")
 
         if args.features != "none" and args.model != "lcnn":
             raise NotImplementedError(
@@ -1121,18 +1052,8 @@ def main():
         # fix the seed in the interest of reproducible results.
         set_seed(args.seed)
 
-        if "doubledelta" in features:
-            channels = 60
-        elif "delta" in features:
-            channels = 40
-        elif "lfcc" in features:
-            channels = 20
-        else:
-            channels = int(args.num_of_scales)
-
         transforms, normalize = get_transforms(
             args,
-            args.data_prefix,
             features,
             device,
             args.calc_normalization,
@@ -1146,16 +1067,11 @@ def main():
                 args=args,
                 model_name=args.model,
                 nclasses=args.nclasses,
-                num_of_scales=args.num_of_scales,
-                flattend_size=args.flattend_size,
                 in_channels=2 if loss_less else 1,
-                channels=channels,
-                dropout_cnn=args.dropout_cnn,
-                dropout_lstm=args.dropout_lstm,
                 lead=is_lead(args),
             )
         except RuntimeError:
-            print(f"Skipping model args.model_conf")
+            print("Skipping model args.model_conf")
             continue
 
         (
@@ -1172,7 +1088,7 @@ def main():
 
         loss_fun = torch.nn.CrossEntropyLoss()
 
-        lr = args.learning_rate * int(args.num_devices)  # num of gpus
+        lr = args.learning_rate
         optimizer = Adam(
             model.parameters(),
             lr=lr,
@@ -1202,7 +1118,8 @@ def main():
             trainer._check_model_init()
             print("loading " + trainer.snapshot_path)
             trainer.load_snapshot(trainer.snapshot_path)
-            path = f"{args.transform}_{args.sample_rate}_{args.seconds}_{args.seed}_{args.only_use[-1]}_{args.wavelet}_{args.power}_{str(loss_less)}"
+            path = f"{args.transform}_{args.sample_rate}_{args.seconds}"
+            path += f"_{args.seed}_{args.only_use[-1]}_{args.wavelet}_{args.power}_{str(loss_less)}"
             trainer.integrated_gradients(path)
         else:
             trainer.train(args.epochs)
@@ -1217,79 +1134,104 @@ def main():
             writer.close()
 
     if is_lead(args):
-        results = np.asarray(list(exp_results.values()))
-        if results.shape[0] == 0:
-            exit(0)
-
-        if args.transform == "packets":
-            if griderator.init_config and "wavelet" in griderator.init_config:
-                wavelets = griderator.init_config["wavelet"]
-            elif hasattr(args, "wavelet"):
-                wavelets = [args.wavelet]
-            else:
-                wavelets = ["default"]
-        else:
-            wavelets = ["stft"]
-
-        np.save(args.log_dir + f"/{','.join(wavelets)}_results.npy", results)
-        mean = results.mean(0)
-        std = results.std(0)
-        print("results:", results)
-        print(mean)
-        print(std)
-
-        if True:
-            print("evaluating results:")
-            min = results.min(0)
-            max = results.max(0)
-            stringer = []
-            stringer_2 = []
-            for i in range(len(mean)):
-                print(
-                    "------------------------------------------------------------------"
-                )
-                stringer_2.append(
-                    {
-                        k: v
-                        for k, v in zip(
-                            griderator.get_keys(), griderator.grid_values[i]
-                        )
-                    }
-                )
-                stringer.append(
-                    rf"& ${max[i, 2]*100:.2f}$ & ${mean[i, 2]*100:.2f} \pm {std[i, 2]*100:.2f}$ & ${min[i, 3]:.3f}$ & ${mean[i, 3]:.3f} \pm {std[i, 3]:.3f}$ \\"
-                )
-
-            stringer = np.asarray(stringer, dtype=object)
-            print(stringer)
-            stringer_2 = np.asarray(stringer_2, dtype=object)
-            cross_dirs = griderator.init_config["cross_sources"]
-            stringer = stringer.reshape((len(wavelets), len(cross_dirs)))
-            for i in range(len(cross_dirs)):
-                print("+---------------------+")
-                print(cross_dirs[i])  # which configs
-                for k in range(len(wavelets)):
-                    print(rf"{wavelets[k]} & {stringer[k][i]}")  # which values
-            print("+---------------------+")
-        print("------------------------------------------------------------------")
-        print(
-            f"Best unknown eer: {mean[np.argmin(mean[:,3]), 3]:.4f} +- {std[np.argmin(mean[:,3]), 3]:.4f}"
-        )
-
-        if args.enable_gs:
-            best_config = {
-                k: v
-                for k, v in zip(
-                    griderator.get_keys(), griderator.grid_values[np.argmin(mean[:, 3])]
-                )
-            }
-            print(f"Best config: {best_config}")
+        print_results(args, exp_results, griderator)
 
     if args.ddp:
         destroy_process_group()
 
 
-def save_model_epoch(model_file, model) -> str:
+def build_new_grid(random_seeds: bool, seeds: list = None) -> _Griderator:
+    """Build a new iterable grid object using given seeds.
+
+    Args:
+        random_seeds (bool): True if random seeds should be used.
+        seeds (list): List of predefined seeds to use. Defaults to None.
+
+    Returns:
+        _Griderator: Iterable grid search object.
+    """
+    if random_seeds:
+        return init_grid(num_exp=3)
+
+    init_seeds = [0, 1, 2, 3, 4]
+    if isinstance(seeds, list):
+        init_seeds = seeds
+        for i in range(len(init_seeds)):
+            init_seeds[i] = int(init_seeds[i])
+    return init_grid(num_exp=1, init_seeds=init_seeds)
+
+
+def print_results(args: dict, exp_results: dict, griderator: _Griderator) -> None:
+    """Print results of all experiments.
+
+    Args:
+        args (dict): Experiment configuration.
+        exp_results (dict): Experiment results.
+        griderator (_Griderator): Experiment list wrapper class.
+    """
+    results = np.asarray(list(exp_results.values()))
+    if results.shape[0] == 0:
+        exit(0)
+
+    if args.transform == "packets":
+        if griderator.init_config and "wavelet" in griderator.init_config:
+            wavelets = griderator.init_config["wavelet"]
+        elif hasattr(args, "wavelet"):
+            wavelets = [args.wavelet]
+        else:
+            wavelets = ["default"]
+    else:
+        wavelets = ["stft"]
+
+    np.save(args.log_dir + f"/{','.join(wavelets)}_results.npy", results)
+    mean = results.mean(0)
+    std = results.std(0)
+    print("results:", results)
+    print(mean)
+    print(std)
+
+    if True:
+        print("evaluating results:")
+        min = results.min(0)
+        max = results.max(0)
+        stringer = []
+        stringer_2 = []
+        for i in range(len(mean)):
+            print("------------------------------------------------------------------")
+            stringer_2.append(
+                {k: v for k, v in zip(griderator.get_keys(), griderator.grid_values[i])}
+            )
+            output = rf"& ${max[i, 2]*100:.2f}$ & ${mean[i, 2]*100:.2f} \pm {std[i, 2]*100:.2f}$ &"
+            output += rf" ${min[i, 3]:.3f}$ & ${mean[i, 3]:.3f} \pm {std[i, 3]:.3f}$ \\"
+            stringer.append(output)
+
+        stringer = np.asarray(stringer, dtype=object)
+        print(stringer)
+        stringer_2 = np.asarray(stringer_2, dtype=object)
+        cross_dirs = griderator.init_config["cross_sources"]
+        stringer = stringer.reshape((len(wavelets), len(cross_dirs)))
+        for i in range(len(cross_dirs)):
+            print("+---------------------+")
+            print(cross_dirs[i])  # which configs
+            for k in range(len(wavelets)):
+                print(rf"{wavelets[k]} & {stringer[k][i]}")  # which values
+        print("+---------------------+")
+    print("------------------------------------------------------------------")
+    print(
+        f"Best unknown eer: {mean[np.argmin(mean[:,3]), 3]:.4f} +- {std[np.argmin(mean[:,3]), 3]:.4f}"
+    )
+
+    if args.enable_gs:
+        best_config = {
+            k: v
+            for k, v in zip(
+                griderator.get_keys(), griderator.grid_values[np.argmin(mean[:, 3])]
+            )
+        }
+        print(f"Best config: {best_config}")
+
+
+def save_model_epoch(model_file: str, model: torch.nn.Module) -> str:
     """Save model each epoch, in case the script aborts for some reason."""
     save_model(model, model_file + ".pt")
     print(model_file, " saved.")

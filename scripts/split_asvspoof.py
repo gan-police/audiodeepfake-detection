@@ -1,4 +1,4 @@
-"""Split ASVSpoof 2021 DeepFake Eval-Data into fake and real audios."""
+"""Split ASVSpoof 2021 DeepFake Eval-Data and 2019 LA set into fake and real audios."""
 import glob
 import os
 import shutil
@@ -15,7 +15,7 @@ import pandas
 # for ASVSpoof 2019
 # train
 year = 2019
-base_path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/asvspoof/LA"
+base_path = "./data/asvspoof/LA"
 path = ["ASVspoof2019_LA_train", "ASVspoof2019_LA_eval", "ASVspoof2019_LA_dev"]
 audio_path = "flac"
 label_path = [
@@ -26,7 +26,7 @@ label_path = [
 
 # for ASVSpoof 2021
 year = 2021
-base_path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/asvspoof/ASVspoof2021_DF_eval/"
+base_path = "./data/asvspoof/ASVspoof2021_DF_eval/"
 path = [""]
 audio_path = "flac"
 label_path = ["keys/DF/CM/trial_metadata.txt"]

@@ -1,8 +1,9 @@
-from src.data_loader import get_costum_dataset
+"""Prepare custom dataset for In The Wild dataset."""
+from src.audiofakedetect.data_loader import get_costum_dataset
 
 if __name__ == "__main__":
-    save_path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/run2"
-    data_path = "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/data/inthewild/set"
+    save_path = "./data/run2"
+    data_path = "./data/inthewild/set"
     limit_train = (38968, 5568, 11136)
     seconds = 4
 

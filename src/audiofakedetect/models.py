@@ -2,6 +2,7 @@
 import ast
 import sys
 from copy import copy
+from typing import Any, Union
 
 import numpy as np
 import torch
@@ -81,12 +82,9 @@ class LCNN(nn.Module):
 
     def __init__(
         self,
-        args,
         classes: int = 2,
         in_channels: int = 1,
         lstm_channels: int = 256,
-        dropout_cnn: float = 0.6,
-        dropout_lstm: float = 0.3,
     ) -> None:
         """Define network sturcture."""
         super(LCNN, self).__init__()
@@ -127,89 +125,12 @@ class LCNN(nn.Module):
         self.lstm = nn.Sequential(
             BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
             BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
-            # nn.Dropout(dropout_lstm),
         )
 
         self.fc = nn.Linear((lstm_channels // 16) * 32, classes)
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        # import pdb; pdb.set_trace()
-        x = self.lcnn(x.permute(0, 1, 3, 2))
-        x = x.permute(0, 2, 1, 3).contiguous()
-        shape = x.shape
-        x = self.lstm(x.view(shape[0], shape[1], -1))
-        x = self.fc(x).mean(1)
-
-        return x
-
-    def get_name(self) -> str:
-        """Return custom string identifier."""
-        return "LCNN"
-
-
-class LCNN(nn.Module):
-    """Deep CNN with 2D convolutions for detecting audio deepfakes.
-
-    Fork of ASVSpoof Challenge 2021 LA Baseline.
-    """
-
-    def __init__(
-        self,
-        args,
-        classes: int = 2,
-        in_channels: int = 1,
-        lstm_channels: int = 256,
-        dropout_cnn: float = 0.6,
-        dropout_lstm: float = 0.3,
-    ) -> None:
-        """Define network sturcture."""
-        super(LCNN, self).__init__()
-
-        # LCNN from AVSpoofChallenge 2021
-        self.lcnn = nn.Sequential(
-            nn.Conv2d(in_channels, 64, 5, 1, padding=2),
-            MaxFeatureMap2D(),
-            nn.MaxPool2d(2, 2),
-            nn.Conv2d(32, 64, 1, 1, padding=0),
-            MaxFeatureMap2D(),
-            nn.SyncBatchNorm(32, affine=False),
-            nn.Conv2d(32, 96, 3, 1, padding=1),
-            MaxFeatureMap2D(),
-            nn.MaxPool2d(2, 2),
-            nn.SyncBatchNorm(48, affine=False),
-            nn.Conv2d(48, 96, 1, 1, padding=0),
-            MaxFeatureMap2D(),
-            nn.SyncBatchNorm(48, affine=False),
-            nn.Conv2d(48, 128, 3, 1, padding=1),
-            MaxFeatureMap2D(),
-            nn.MaxPool2d(2, 2),
-            nn.Conv2d(64, 128, 1, 1, padding=0),
-            MaxFeatureMap2D(),
-            nn.SyncBatchNorm(64, affine=False),
-            nn.Conv2d(64, 64, 3, 1, padding=1),
-            MaxFeatureMap2D(),
-            nn.SyncBatchNorm(32, affine=False),
-            nn.Conv2d(32, 64, 1, 1, padding=0),
-            MaxFeatureMap2D(),
-            nn.SyncBatchNorm(32, affine=False),
-            nn.Conv2d(32, 64, 3, 1, padding=1),
-            MaxFeatureMap2D(),
-            nn.MaxPool2d(2, 2),
-            nn.Dropout(0.7),
-        )
-
-        self.lstm = nn.Sequential(
-            BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
-            BLSTMLayer((lstm_channels // 16) * 32, (lstm_channels // 16) * 32),
-            # nn.Dropout(dropout_lstm),
-        )
-
-        self.fc = nn.Linear((lstm_channels // 16) * 32, classes)
-
-    def forward(self, x) -> torch.Tensor:
-        """Forward pass."""
-        # import pdb; pdb.set_trace()
         x = self.lcnn(x.permute(0, 1, 3, 2))
         x = x.permute(0, 2, 1, 3).contiguous()
         shape = x.shape
@@ -222,30 +143,26 @@ class LCNN(nn.Module):
 class Regression(torch.nn.Module):
     """A shallow linear-regression model."""
 
-    def __init__(self, args):
+    def __init__(self, args: dict) -> None:
         """Create the regression model.
 
         Args:
-            classes (int): The number of classes or sources to classify.
+            args (dict): The configuration dictionary.
         """
         super().__init__()
         self.linear = torch.nn.Linear(args.num_of_scales * 101, 2)
-
-        # self.activation = torch.nn.Sigmoid()
         self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Compute the regression forward pass.
 
         Args:
-            x (torch.Tensor): An input tensor of shape
-                [batch_size, ...]
+            x (torch.Tensor): An input tensor of shape [batch_size, ...].
 
         Returns:
             torch.Tensor: A logsoftmax scaled output of shape
                 [batch_size, classes].
         """
-        # import pdb; pdb.set_trace()
         x_flat = torch.reshape(x, [x.shape[0], -1])
         return self.logsoftmax(self.linear(x_flat))
 
@@ -273,12 +190,12 @@ class MaxFeatureMap2D(nn.Module):
     and maxout is used on (channel ...)
     """
 
-    def __init__(self, max_dim=1) -> None:
+    def __init__(self, max_dim: int = 1) -> None:
         """Initialize with max feature dimension."""
         super().__init__()
         self.max_dim = max_dim
 
-    def forward(self, inputs) -> torch.Tensor:
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         """Forward max feature map."""
         # suppose inputs (batchsize, channel, length, dim)
 
@@ -329,15 +246,19 @@ class BLSTMLayer(nn.Module):
         return blstm_data.permute(1, 0, 2)
 
 
-class TestNet(torch.nn.Module):
+class DCNN(torch.nn.Module):
     """Deep CNN with dilated convolutions."""
 
     def __init__(
         self,
-        args,
+        args: dict,
     ) -> None:
-        """Define network sturcture."""
-        super(TestNet, self).__init__()
+        """Define network sturcture.
+
+        Args:
+            args (dict): The configuration dictionary.
+        """
+        super(DCNN, self).__init__()
 
         self.cnn = nn.Sequential(
             nn.Conv2d(
@@ -388,7 +309,6 @@ class TestNet(torch.nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        # import pdb; pdb.set_trace()
         # [batch, channels, packets, time]
         x = self.cnn(x.permute(0, 1, 3, 2))
 
@@ -402,15 +322,19 @@ class TestNet(torch.nn.Module):
         return x
 
 
-class TestNetXDropout(torch.nn.Module):
+class DCNNxDropout(torch.nn.Module):
     """Deep CNN with dilated convolutions."""
 
     def __init__(
         self,
-        args,
+        args: dict,
     ) -> None:
-        """Define network sturcture."""
-        super(TestNetXDropout, self).__init__()
+        """Define network sturcture.
+
+        Args:
+            args (dict): The configuration dictionary.
+        """
+        super(DCNNxDropout, self).__init__()
 
         self.cnn = nn.Sequential(
             nn.Conv2d(
@@ -435,7 +359,6 @@ class TestNetXDropout(torch.nn.Module):
             nn.Conv2d(args.ochannels5, 64, 3, stride=1, padding=1),
             nn.PReLU(),
             nn.MaxPool2d(2, 2),
-            # nn.Dropout(args.dropout_cnn),
         )
 
         time_dim = ((args.input_dim[-1])) // 8 + args.time_dim_add
@@ -450,7 +373,6 @@ class TestNetXDropout(torch.nn.Module):
             nn.SyncBatchNorm(time_dim, affine=True),
             nn.Conv2d(time_dim, time_dim, 7, 1, padding=2, dilation=4),
             nn.PReLU(),
-            # nn.Dropout(args.dropout_lstm),
         )
 
         self.fc = nn.Sequential(
@@ -461,7 +383,6 @@ class TestNetXDropout(torch.nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        # import pdb; pdb.set_trace()
         # [batch, channels, packets, time]
         x = self.cnn(x.permute(0, 1, 3, 2))
 
@@ -475,149 +396,53 @@ class TestNetXDropout(torch.nn.Module):
         return x
 
 
-class Regression(torch.nn.Module):
-    """A shallow linear-regression model."""
-
-    def __init__(self, args):
-        """Create the regression model.
-
-        Args:
-            classes (int): The number of classes or sources to classify.
-        """
-        super(Regression, self).__init__()
-        self.linear = torch.nn.Linear(args.num_of_scales * args.time_dim_add, 2)
-
-        self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Compute the regression forward pass.
-
-        Args:
-            x (torch.Tensor): An input tensor of shape
-                [batch_size, ...]
-
-        Returns:
-            torch.Tensor: A logsoftmax scaled output of shape
-                [batch_size, classes].
-        """
-        import pdb
-
-        pdb.set_trace()
-        x_flat = torch.reshape(x, [x.shape[0], -1])
-        x = self.linear(x_flat)
-        return self.logsoftmax(x)
-
-
-class CNN(torch.nn.Module):
-    """A shallow linear-regression model."""
-
-    def __init__(self, args):
-        """Create the regression model.
-
-        Args:
-            classes (int): The number of classes or sources to classify.
-        """
-        super(CNN, self).__init__()
-
-        self.cnn = nn.Sequential(
-            nn.Conv2d(args.input_dim[1], 32, 3, stride=2, padding=2, dilation=4),
-            nn.PReLU(),
-            nn.SyncBatchNorm(32),
-            nn.Conv2d(32, 64, 3, 2, padding=1),
-            nn.PReLU(),
-            nn.SyncBatchNorm(64),
-            nn.Conv2d(64, 64, 5, 1, padding=1, dilation=4),
-            nn.PReLU(),
-            nn.SyncBatchNorm(64),
-            nn.Conv2d(64, 96, 7, stride=1, padding=1, dilation=4),
-            nn.PReLU(),
-            nn.SyncBatchNorm(96),
-            nn.Conv2d(96, 96, 3, stride=2, padding=1),
-            nn.PReLU(),
-            nn.SyncBatchNorm(96),
-            nn.Conv2d(96, 64, 3, 2, padding=0),
-            nn.PReLU(),
-            nn.Dropout(args.dropout_cnn),
-        )
-
-        time_dim = 128
-
-        self.fc = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(args.flattend_size, 2),
-        )
-
-        self.logsoftmax = torch.nn.LogSoftmax(dim=-1)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Compute the regression forward pass.
-
-        Args:
-            x (torch.Tensor): An input tensor of shape
-                [batch_size, ...]
-
-        Returns:
-            torch.Tensor: A logsoftmax scaled output of shape
-                [batch_size, classes].
-        """
-        import pdb
-
-        pdb.set_trace()
-        x = self.cnn(x)
-        x = self.fc(x)
-        return x
-
-
 def get_model(
     args,
     model_name: str,
     nclasses: int = 2,
-    num_of_scales: int = 256,
-    flattend_size: int = 21888,
     in_channels: int = 1,
-    channels: int = 32,
-    dropout_cnn: float = 0.6,
-    dropout_lstm: float = 0.3,
     lead: bool = False,
-) -> LCNN:
-    """Get torch module model with given parameters."""
+) -> Union[LCNN, GridModelWrapper, Any]:
+    """Get torch module model with given parameters.
+
+    Args:
+        args (dict): Configuration dictionary.
+        model_name (str): Model name as str, one of: "lcnn", "gridmodel", "modules".
+        nclasses (int): Number of output classes of the network. Defaults to 2.
+        in_channels (int): Number of input channels. Defaults to 1.
+        lead (bool): True if gpu rank is 0. Defaults to False.
+
+    Raises:
+        RuntimeError: If parsed model from model string has faults.
+        RuntimeError: If modular model fails in executing torchsummary, e.g. if the input
+                      dimensions do not fit into the model layers.
+        RuntimeError: If model name is not valid.
+        RuntimeError: If model name is gridmodel but model_data is not inside the config.
+
+    Returns:
+        Union[LCNN, GridModelWrapper, Any]: The model or model wrapper.
+    """
     if model_name == "lcnn":
+        if "doubledelta" in args.features:
+            lstm_channels = 60
+        elif "delta" in args.features:
+            lstm_channels = 40
+        elif "lfcc" in args.features:
+            lstm_channels = 20
+        else:
+            lstm_channels = int(args.num_of_scales)
         model = LCNN(
             classes=nclasses,
             in_channels=in_channels,
-            lstm_channels=channels,
-            dropout_cnn=dropout_cnn,
-            dropout_lstm=dropout_lstm,
-        )  # type: ignore
+            lstm_channels=lstm_channels,
+        )
     elif model_name == "gridmodel":
-        model_seq = []
-        transforms = []
-        for model_layer in args.model_data:
-            if "input_shape" in model_layer.keys():
-                input_shape = model_layer["input_shape"]
-            else:
-                input_shape = None
-
-            if "transforms" in model_layer.keys():
-                transform = model_layer["transforms"]
-            else:
-                transform = []
-
-            model_seq.append(
-                parse_sequential(
-                    model_list=model_layer["layers"], input_shape=input_shape
-                )
+        if not hasattr(args, "model_data"):
+            raise RuntimeError(
+                "Config dict does not contain the key model_data,"
+                "which should hold the list like model structure."
             )
-            transforms.append(transform)
-
-        if False not in model_seq:
-            model = GridModelWrapper(
-                sequentials=model_seq,
-                transforms=transforms,
-            )
-        else:
-            raise RuntimeError("Model not valid.")
-
+        model = get_gridsearch_model(args.model_data)
     elif model_name == "modules":
         if check_dimensions(args.module(args), args.input_dim[1:], verbose=lead):
             model = args.module(args)
@@ -628,7 +453,141 @@ def get_model(
     return model
 
 
-def parse_model_str(model_str):
+def get_gridsearch_model(model_data: list) -> GridModelWrapper:
+    """Generate sequential torch model from list like structure.
+
+    Args:
+        model_data (list): A model given in a list like structure.
+
+    Raises:
+        RuntimeError: If model_data has incorrect format.
+
+    Returns:
+        GridModelWrapper: The wrapper class for the sequential grid model.
+    """
+    # parse model data if exists
+    model_data = parse_model(model_data)
+
+    model_seq = []
+    transforms = []
+    for model_layer in model_data:
+        if "input_shape" in model_layer.keys():
+            input_shape = model_layer["input_shape"]
+        else:
+            input_shape = None
+
+        if "transforms" in model_layer.keys():
+            transform = model_layer["transforms"]
+        else:
+            transform = []
+
+        model_seq.append(
+            parse_sequential(model_list=model_layer["layers"], input_shape=input_shape)
+        )
+        transforms.append(transform)
+
+    if False not in model_seq:
+        return GridModelWrapper(
+            sequentials=model_seq,
+            transforms=transforms,
+        )
+    else:
+        raise RuntimeError("Model not valid.")
+
+
+def parse_model(model_data: list) -> list:
+    """Parse the model data list into a structured list.
+
+    Examples:
+        Example model string structure:
+
+        >>> model_data = [[
+        ...                 {
+        ...                     "layers": [
+        ...                         [torchvision.ops, "Permute 0,1,3,2"],
+        ...                         "Conv2d 1 [64,32,128] 2 1 2",
+        ...                         "MaxFeatureMap2D",
+        ...                         "MaxPool2d 2 2",
+        ...                         ...
+        ...                         "Dropout 0.7",
+        ...                     ],
+        ...                     "input_shape": (1, 256, 101),
+        ...                     "transforms": [partial(transf)],
+        ...                 },
+        ...                 {
+        ...                     "layers": [
+        ...                         "BLSTMLayer 512 512",
+        ...                         "BLSTMLayer 512 512",
+        ...                         "Dropout 0.1",
+        ...                         "Linear 512 2",
+        ...                     ],
+        ...                     "input_shape": (1, 512),
+        ...                     "transforms": [partial(torch.Tensor.mean, dim=1)],
+        ...                 },
+        ...             ]]
+
+    Args:
+        model_data (list): The whole model data.
+
+    Raises:
+        RuntimeError: If a parsing error occurs.
+
+    Returns:
+        list: The parsed list.
+    """
+    for i in range(len(model_data)):
+        new_els = []
+        for j in range(len(model_data[i])):
+            trials = parse_model_str(model_data[i][j]["layers"])
+            model_data[i][j]["layers"] = trials[0]
+            if len(trials) > 1:
+                for k in range(1, len(trials)):
+                    if len(new_els) < len(trials) - 1:
+                        config_copy = [
+                            copy(config_part) for config_part in model_data[i]
+                        ]
+                        config_copy[j]["layers"] = trials[k]
+                        new_els.append(config_copy)
+                    elif len(new_els) == len(trials) - 1:
+                        new_els[k - 1][j]["layers"] = trials[k]
+                    else:
+                        raise RuntimeError("Parsing error")
+            elif len(new_els) > 0:
+                for k in range(0, len(new_els)):
+                    new_els[k][j]["layers"] = trials[0]
+        model_data.extend(new_els)
+
+    return model_data
+
+
+def parse_model_str(model_str: list) -> list:
+    """Parse a given model string into a separated list for each layer.
+
+    Examples:
+        Example model string structure:
+
+        >>> model_str = [
+        ...                 [torchvision.ops, "Permute 0,1,3,2"],
+        ...                 "Conv2d 1 [64,32,128] 2 1 2",
+        ...                 "MaxPool2d 2 2",
+        ...                 "Conv2d [32,16,64] 64 1 1 0",
+        ...                 ...
+        ...                 "MaxPool2d 2 2",
+        ...                 "Dropout 0.7",
+        ...             ]
+
+    Args:
+        model_str (list): A list matching the above example structure.
+
+    Raises:
+        RuntimeError: If an element is not of type string or list.
+        RuntimeError: If the model layers do not contain the same amount of elements
+                      when using nested lists.
+
+    Returns:
+        list: The parsed result.
+    """
+    # TODO: write a test for this
     parsed_output = []
     for element in model_str:
         new_elements = []
@@ -660,7 +619,8 @@ def parse_model_str(model_str):
                 if isinstance(part, list):
                     if output_els != len(part):
                         raise RuntimeError(
-                            f"Model layers must contain the same amount of elements. Expected {output_els}, but got {len(part)}."
+                            "Model layers must contain the same amount of elements."
+                            + f"Expected {output_els}, but got {len(part)}."
                         )
                     part = part[i]
                 output_list.append(str(part).replace(" ", ""))
@@ -734,8 +694,6 @@ def parse_sequential(model_list, input_shape=None) -> nn.Sequential | bool:
             else:
                 print(f"Warning: given layer type {layer_parts[0]} not found.")
                 return False
-
-        import ast
 
         layer_args = [ast.literal_eval(part) for part in layer_parts[1:]]
         layer = layer_type(*layer_args)

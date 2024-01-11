@@ -1,0 +1,77 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "audiofakedetect"
+version = "0.0.1"
+
+authors = [
+  { name="Konstantin Gasenzer" },
+  { name="Moritz Wolter" },
+]
+maintainers = [
+  { name="Konstantin Gasenzer" },
+  { name="Moritz Wolter" },
+]
+
+description = "The package provides a training and evaluation environment for audio deepfake detection models using STFT and Wavelet-Packet transformed audio files."
+
+readme = {file = "README.md", content-type = "text/markdown"}
+license = {file = "LICENSE"}
+
+requires-python = ">=3.10"
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+    "Environment :: GPU :: NVIDIA CUDA :: 11.7",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+keywords = [
+    "deepfakes",
+    "GANs",
+    "wavelets",
+    "fft",
+    "fwt",
+    "stft",
+    "CNNs",
+    "classification",
+    "deep learning",
+]
+
+dependencies = [
+    "ssqueezepy",
+    "librosa",
+    "numpy",
+    "ptwt",
+    "pywavelets",
+    "matplotlib",
+    "torch==2.0.0",
+    "torchaudio==2.0.0",
+    "torchvision==0.15.1",
+    "tikzplotlib",
+    "torch-summary",
+    "tensorboard",
+    "torchmetrics",
+    "captum",
+    "tqdm",
+    "optuna",
+    "pandas",
+    "tox",
+]
+
+[project.urls]
+Homepage = "https://github.com/gan-police/wavelet-audiodeepfake-detection"
+Issues = "https://github.com/gan-police/wavelet-audiodeepfake-detection/issues"
+
+[tool.hatch]
+build.targets.sdist.include = ["/src", "/tests", "/tox.ini"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/audiofakedetect"]
