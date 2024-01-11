@@ -198,10 +198,6 @@ def compute_pytorch_packet_representation(
                 block_norm_dict[node] = welfi
 
         if block_norm:
-            # mean = block_norm_dict[node]["mean"]
-            # std = block_norm_dict[node]["std"]
-            # node_wp = (node_wp - mean)/(std + 1e-12)
-
             node_wp = node_wp / torch.max(torch.abs(node_wp))
         packet_list.append(node_wp)
 

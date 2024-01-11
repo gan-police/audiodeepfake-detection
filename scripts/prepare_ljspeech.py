@@ -9,11 +9,11 @@ if __name__ == "__main__":
     seconds = 1
 
     loop = [
-        #"melgan",
-        #"lmelgan",
-        #"mbmelgan",
-        #"pwg",
-        #"waveglow",
+        # "melgan",
+        # "lmelgan",
+        # "mbmelgan",
+        # "pwg",
+        # "waveglow",
         "fbmelgan",
     ]
     for gan in loop:

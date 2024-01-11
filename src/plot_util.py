@@ -480,6 +480,7 @@ def get_np_signal(path: str, start_frame: int, to_frame: int) -> np.ndarray:
     # t: np.ndarray = np.linspace(0, sig.shape[0] / SAMPLE_RATE, 20, False)
     return sig_np
 
+
 """Caculate integrated gradients of trained models."""
 from typing import Optional
 
@@ -489,6 +490,7 @@ import torch
 import os
 import tikzplotlib as tikz
 from matplotlib import colors
+
 
 class Mean:
     """Compute running mean."""
@@ -525,6 +527,7 @@ class Mean:
             torch.Tensor: Estimated mean.
         """
         return torch.mean(self.mean, dim=0).squeeze() / self.count
+
 
 def bar_plot(data, x_ticks, x_labels, path):
     """Plot histogram of model attribution."""
@@ -572,7 +575,7 @@ def im_plot(
 
 def save_plot(path):
     """Save plt as standalone latex document."""
-    #plt.savefig(path)
+    # plt.savefig(path)
     tikz.save(
         f"{path}.tex",
         encoding="utf-8",
@@ -581,13 +584,15 @@ def save_plot(path):
         override_externals=True,
     )
 
+
 def interpolate_images(baseline, image, alphas):
     alphas_x = alphas.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
     baseline_x = torch.unsqueeze(baseline, 0)
     input_x = torch.unsqueeze(image, 0)
     delta = input_x - baseline_x
-    images = baseline_x +  alphas_x * delta
+    images = baseline_x + alphas_x * delta
     return images
+
 
 def integral_approximation(gradients):
     # riemann_trapezoidal
@@ -605,46 +610,48 @@ def plot_img_attributions(
     y_labels,
     cmap=None,
     overlay_alpha=0.4,
-    norm=None
+    norm=None,
 ):
     fig, axs = plt.subplots(nrows=1, ncols=3, squeeze=False, figsize=(8, 8))
 
-    axs[0, 0].set_title('Original image')
+    axs[0, 0].set_title("Original image")
     axs[0, 0].imshow(np.flipud(image), aspect="auto")
     # axs[0, 0].axis('off')
 
-    axs[0, 1].set_title('Integrated Gradients')
-    axs[0, 1].imshow(np.flipud(attribution_mask), aspect="auto",  cmap=cmap)
-    axs[0, 2].set_title('Overlay')
-    axs[0, 2].imshow(np.flipud(attribution_mask), aspect="auto",  cmap=cmap)
+    axs[0, 1].set_title("Integrated Gradients")
+    axs[0, 1].imshow(np.flipud(attribution_mask), aspect="auto", cmap=cmap)
+    axs[0, 2].set_title("Overlay")
+    axs[0, 2].imshow(np.flipud(attribution_mask), aspect="auto", cmap=cmap)
     axs[0, 2].imshow(np.flipud(image), aspect="auto", alpha=overlay_alpha)
 
-    axs[0,0].set_xlabel("time [sec]")
-    axs[0,1].set_xlabel("time [sec]")
-    axs[0,2].set_xlabel("time [sec]")
-    axs[0,0].set_ylabel("frequency [kHz]")
+    axs[0, 0].set_xlabel("time [sec]")
+    axs[0, 1].set_xlabel("time [sec]")
+    axs[0, 2].set_xlabel("time [sec]")
+    axs[0, 0].set_ylabel("frequency [kHz]")
 
-    axs[0,0].set_xticks(x_ticks)
-    axs[0,1].set_xticks(x_ticks)
-    axs[0,2].set_xticks(x_ticks)
-    axs[0,0].set_xticklabels(x_labels)
-    axs[0,1].set_xticklabels(x_labels)
-    axs[0,2].set_xticklabels(x_labels)
-    axs[0,0].set_yticks(y_ticks)
-    axs[0,1].set_yticks(y_ticks)
-    axs[0,2].set_yticks(y_ticks)
-    axs[0,0].set_yticklabels(y_labels)
-    axs[0,1].set_yticklabels(y_labels)
-    axs[0,2].set_yticklabels(y_labels)
-    axs[0,0].invert_yaxis()
-    axs[0,1].invert_yaxis()
-    axs[0,2].invert_yaxis()
+    axs[0, 0].set_xticks(x_ticks)
+    axs[0, 1].set_xticks(x_ticks)
+    axs[0, 2].set_xticks(x_ticks)
+    axs[0, 0].set_xticklabels(x_labels)
+    axs[0, 1].set_xticklabels(x_labels)
+    axs[0, 2].set_xticklabels(x_labels)
+    axs[0, 0].set_yticks(y_ticks)
+    axs[0, 1].set_yticks(y_ticks)
+    axs[0, 2].set_yticks(y_ticks)
+    axs[0, 0].set_yticklabels(y_labels)
+    axs[0, 1].set_yticklabels(y_labels)
+    axs[0, 2].set_yticklabels(y_labels)
+    axs[0, 0].invert_yaxis()
+    axs[0, 1].invert_yaxis()
+    axs[0, 2].invert_yaxis()
 
     plt.tight_layout()
     return fig
 
 
-def plot_attribution_targets(seconds, sample_rate, num_of_scales, path, ig_0, ig_1, ig_01, norm=None):
+def plot_attribution_targets(
+    seconds, sample_rate, num_of_scales, path, ig_0, ig_1, ig_01, norm=None
+):
     t = np.linspace(0, seconds, int(seconds // (1 / sample_rate)))
     bins = np.int64(num_of_scales)
     n = list(range(int(bins)))
@@ -652,61 +659,71 @@ def plot_attribution_targets(seconds, sample_rate, num_of_scales, path, ig_0, ig
 
     x_ticks = list(range(ig_0.shape[-1]))[:: ig_0.shape[-1] // 4]
     x_labels = np.around(np.linspace(min(t), max(t), ig_0.shape[-1]), 2)[
-                                :: ig_0.shape[-1] // 4
-                            ]
+        :: ig_0.shape[-1] // 4
+    ]
 
     y_ticks = n[:: freqs.shape[0] // 6]
     y_labels = np.around(freqs[:: freqs.shape[0] // 6] / 1000, 1)
-                    
 
-    cmap=plt.cm.inferno   
+    cmap = plt.cm.inferno
     fig, axs = plt.subplots(nrows=1, ncols=3, squeeze=False, figsize=(8, 8))
 
-    axs[0, 0].set_title('Attribution on Real Neuron')
+    axs[0, 0].set_title("Attribution on Real Neuron")
+
     def sign_log_norm(data):
         # Shift the data to make it positive and then apply a logarithmic scale
         data_shifted = data - np.min(data) + 1e-10  # Add a small value to avoid log(0)
-        mean = data_shifted.mean() 
+        mean = data_shifted.mean()
         orig_data = np.log(data_shifted / abs(mean))
         return data * 3
-    
+
     v_min = -ig_1.max()
     v_max = ig_1.max()
-    im = axs[0, 0].imshow(np.flipud(sign_log_norm(ig_0)), aspect="auto", cmap=cmap, vmin=v_min, vmax=v_max)
-    
+    im = axs[0, 0].imshow(
+        np.flipud(sign_log_norm(ig_0)), aspect="auto", cmap=cmap, vmin=v_min, vmax=v_max
+    )
 
-    axs[0, 1].set_title('Attribution on Fake Neuron')
-    im = axs[0, 1].imshow(np.flipud(sign_log_norm(ig_1)), aspect="auto", cmap=cmap, vmin=v_min, vmax=v_max)
+    axs[0, 1].set_title("Attribution on Fake Neuron")
+    im = axs[0, 1].imshow(
+        np.flipud(sign_log_norm(ig_1)), aspect="auto", cmap=cmap, vmin=v_min, vmax=v_max
+    )
 
-    axs[0, 2].set_title('Attribution Real and Fake')
+    axs[0, 2].set_title("Attribution Real and Fake")
     v_min = -ig_1.max()
     v_max = ig_1.max()
-    im = axs[0, 2].imshow(np.flipud(sign_log_norm(ig_01)), aspect="auto", cmap=cmap, vmin=v_min, vmax=v_max)
+    im = axs[0, 2].imshow(
+        np.flipud(sign_log_norm(ig_01)),
+        aspect="auto",
+        cmap=cmap,
+        vmin=v_min,
+        vmax=v_max,
+    )
 
     fig.colorbar(im, ax=axs)
-    axs[0,0].set_xlabel("time [sec]")
-    axs[0,1].set_xlabel("time [sec]")
-    axs[0,2].set_xlabel("time [sec]")
-    axs[0,0].set_ylabel("frequency [kHz]")
+    axs[0, 0].set_xlabel("time [sec]")
+    axs[0, 1].set_xlabel("time [sec]")
+    axs[0, 2].set_xlabel("time [sec]")
+    axs[0, 0].set_ylabel("frequency [kHz]")
 
-    axs[0,0].set_xticks(x_ticks)
-    axs[0,1].set_xticks(x_ticks)
-    axs[0,2].set_xticks(x_ticks)
-    axs[0,0].set_xticklabels(x_labels)
-    axs[0,1].set_xticklabels(x_labels)
-    axs[0,2].set_xticklabels(x_labels)
-    axs[0,0].set_yticks(y_ticks)
-    axs[0,1].set_yticks(y_ticks)
-    axs[0,2].set_yticks(y_ticks)
-    axs[0,0].set_yticklabels(y_labels)
-    axs[0,1].set_yticklabels(y_labels)
-    axs[0,2].set_yticklabels(y_labels)
-    axs[0,0].invert_yaxis()
-    axs[0,1].invert_yaxis()
-    axs[0,2].invert_yaxis()
+    axs[0, 0].set_xticks(x_ticks)
+    axs[0, 1].set_xticks(x_ticks)
+    axs[0, 2].set_xticks(x_ticks)
+    axs[0, 0].set_xticklabels(x_labels)
+    axs[0, 1].set_xticklabels(x_labels)
+    axs[0, 2].set_xticklabels(x_labels)
+    axs[0, 0].set_yticks(y_ticks)
+    axs[0, 1].set_yticks(y_ticks)
+    axs[0, 2].set_yticks(y_ticks)
+    axs[0, 0].set_yticklabels(y_labels)
+    axs[0, 1].set_yticklabels(y_labels)
+    axs[0, 2].set_yticklabels(y_labels)
+    axs[0, 0].invert_yaxis()
+    axs[0, 1].invert_yaxis()
+    axs[0, 2].invert_yaxis()
 
     save_plot(path + "_integrated_gradients")
     plt.show()
+
 
 if __name__ == "__main__":
     transformations = ["packets", "stft"]
@@ -717,8 +734,8 @@ if __name__ == "__main__":
     targets = ["0", "1", "01"]
 
     norm = [
-    colors.Normalize(0.84-0.02*2, 0.84+2*0.02),
-    colors.Normalize(0.82-0.016*2, 0.82+2*0.016)
+        colors.Normalize(0.84 - 0.02 * 2, 0.84 + 2 * 0.02),
+        colors.Normalize(0.82 - 0.016 * 2, 0.82 + 2 * 0.016),
     ]
     i = 0
 
@@ -729,7 +746,11 @@ if __name__ == "__main__":
         for wavelet in wavelets:
             for cross_source in cross_sources:
                 path = f"/home/kons/work/Plots/files/plots/{transformation}_{sample_rate}_{seconds}_0_fbmelgan_{wavelet}_2.0_False_ljspeech-{cross_source}x2500_target"
-                if os.path.exists(path + "-0_integrated_gradients.npy") and os.path.exists(path + "-1_integrated_gradients.npy") and os.path.exists(path + "-01_integrated_gradients.npy"):
+                if (
+                    os.path.exists(path + "-0_integrated_gradients.npy")
+                    and os.path.exists(path + "-1_integrated_gradients.npy")
+                    and os.path.exists(path + "-01_integrated_gradients.npy")
+                ):
                     ig_0 = np.load(path + "-0_integrated_gradients.npy")
                     ig_1 = np.load(path + "-1_integrated_gradients.npy")
                     ig_01 = np.load(path + "-01_integrated_gradients.npy")
@@ -747,9 +768,18 @@ if __name__ == "__main__":
                     ig_abs = np.load(path + "-0_ig_abs.npy")
                 else:
                     continue
-                
+
                 print(np.min(ig_0), np.max(ig_0))
-                plot_attribution_targets(seconds, sample_rate, num_of_scales, path, ig_0, ig_1, ig_01, norm[i])
+                plot_attribution_targets(
+                    seconds,
+                    sample_rate,
+                    num_of_scales,
+                    path,
+                    ig_0,
+                    ig_1,
+                    ig_01,
+                    norm[i],
+                )
 
                 plt.close()
                 i += 1

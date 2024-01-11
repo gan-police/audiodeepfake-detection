@@ -20,5 +20,7 @@ class TestModels(unittest.TestCase):
         f_sizes = [9600, 2304, 0]
         # Todo: make this test a bit more universal...
         for i in range(len(models)):
-            model = get_model(models[i], flattend_size=f_sizes[i], num_of_scales=256, channels=256)
+            model = get_model(
+                models[i], flattend_size=f_sizes[i], num_of_scales=256, channels=256
+            )
             summary(model, (1, 256, 101), verbose=0)

@@ -565,9 +565,19 @@ class Trainer:
             label[label > 0] = 1
             if not both and target not in label:
                 continue
-            elif both and index_0 == times_0 and index_1 != times_1 and target_1 not in label:
+            elif (
+                both
+                and index_0 == times_0
+                and index_1 != times_1
+                and target_1 not in label
+            ):
                 continue
-            elif both and index_1 == times_1 and index_0 != times_0 and target_0 not in label:
+            elif (
+                both
+                and index_1 == times_1
+                and index_0 != times_0
+                and target_0 not in label
+            ):
                 continue
 
             freq_time_dt, _ = self.transforms(
@@ -583,9 +593,19 @@ class Trainer:
                 c_label = label[i]
                 if not both and c_label != target:
                     continue
-                elif both and c_label == target_0 and index_0 == times_0 and index_1 != times_1:
+                elif (
+                    both
+                    and c_label == target_0
+                    and index_0 == times_0
+                    and index_1 != times_1
+                ):
                     continue
-                elif both and c_label == target_1 and index_1 == times_1 and index_0 != times_0:
+                elif (
+                    both
+                    and c_label == target_1
+                    and index_1 == times_1
+                    and index_0 != times_0
+                ):
                     continue
                 elif both and index_0 == times_0 and index_1 == times_1:
                     break
@@ -599,9 +619,7 @@ class Trainer:
                     m_steps=m_steps,
                 )
 
-                attribution_mask = torch.sum(attributions, dim=0).unsqueeze(
-                    0
-                )
+                attribution_mask = torch.sum(attributions, dim=0).unsqueeze(0)
                 welford_ig.update(attribution_mask)
                 welford_sal.update(image)
 
@@ -1134,7 +1152,7 @@ def main():
                 channels=channels,
                 dropout_cnn=args.dropout_cnn,
                 dropout_lstm=args.dropout_lstm,
-                lead=is_lead(args)
+                lead=is_lead(args),
             )
         except RuntimeError:
             print(f"Skipping model args.model_conf")
@@ -1202,10 +1220,10 @@ def main():
         results = np.asarray(list(exp_results.values()))
         if results.shape[0] == 0:
             exit(0)
-        
+
         if args.transform == "packets":
             if griderator.init_config and "wavelet" in griderator.init_config:
-                wavelets = griderator.init_config['wavelet']
+                wavelets = griderator.init_config["wavelet"]
             elif hasattr(args, "wavelet"):
                 wavelets = [args.wavelet]
             else:

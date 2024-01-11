@@ -134,7 +134,7 @@ class LCNN(nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        #import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         x = self.lcnn(x.permute(0, 1, 3, 2))
         x = x.permute(0, 2, 1, 3).contiguous()
         shape = x.shape
@@ -146,6 +146,7 @@ class LCNN(nn.Module):
     def get_name(self) -> str:
         """Return custom string identifier."""
         return "LCNN"
+
 
 class LCNN(nn.Module):
     """Deep CNN with 2D convolutions for detecting audio deepfakes.
@@ -208,7 +209,7 @@ class LCNN(nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        #import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         x = self.lcnn(x.permute(0, 1, 3, 2))
         x = x.permute(0, 2, 1, 3).contiguous()
         shape = x.shape
@@ -216,7 +217,8 @@ class LCNN(nn.Module):
         x = self.fc(x).mean(1)
 
         return x
-    
+
+
 class Regression(torch.nn.Module):
     """A shallow linear-regression model."""
 
@@ -338,7 +340,9 @@ class TestNet(torch.nn.Module):
         super(TestNet, self).__init__()
 
         self.cnn = nn.Sequential(
-            nn.Conv2d(args.input_dim[1], args.ochannels1, args.kernel1, stride=1, padding=2),
+            nn.Conv2d(
+                args.input_dim[1], args.ochannels1, args.kernel1, stride=1, padding=2
+            ),
             nn.PReLU(),
             nn.MaxPool2d(2, 2),
             nn.SyncBatchNorm(args.ochannels1, affine=False),
@@ -384,7 +388,7 @@ class TestNet(torch.nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        #import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         # [batch, channels, packets, time]
         x = self.cnn(x.permute(0, 1, 3, 2))
 
@@ -396,7 +400,7 @@ class TestNet(torch.nn.Module):
         x = self.fc(x).mean(1)
 
         return x
-    
+
 
 class TestNetXDropout(torch.nn.Module):
     """Deep CNN with dilated convolutions."""
@@ -409,7 +413,9 @@ class TestNetXDropout(torch.nn.Module):
         super(TestNetXDropout, self).__init__()
 
         self.cnn = nn.Sequential(
-            nn.Conv2d(args.input_dim[1], args.ochannels1, args.kernel1, stride=1, padding=2),
+            nn.Conv2d(
+                args.input_dim[1], args.ochannels1, args.kernel1, stride=1, padding=2
+            ),
             nn.PReLU(),
             nn.MaxPool2d(2, 2),
             nn.SyncBatchNorm(args.ochannels1, affine=False),
@@ -429,7 +435,7 @@ class TestNetXDropout(torch.nn.Module):
             nn.Conv2d(args.ochannels5, 64, 3, stride=1, padding=1),
             nn.PReLU(),
             nn.MaxPool2d(2, 2),
-            #nn.Dropout(args.dropout_cnn),
+            # nn.Dropout(args.dropout_cnn),
         )
 
         time_dim = ((args.input_dim[-1])) // 8 + args.time_dim_add
@@ -444,7 +450,7 @@ class TestNetXDropout(torch.nn.Module):
             nn.SyncBatchNorm(time_dim, affine=True),
             nn.Conv2d(time_dim, time_dim, 7, 1, padding=2, dilation=4),
             nn.PReLU(),
-            #nn.Dropout(args.dropout_lstm),
+            # nn.Dropout(args.dropout_lstm),
         )
 
         self.fc = nn.Sequential(
@@ -455,7 +461,7 @@ class TestNetXDropout(torch.nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         """Forward pass."""
-        #import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         # [batch, channels, packets, time]
         x = self.cnn(x.permute(0, 1, 3, 2))
 
@@ -494,7 +500,9 @@ class Regression(torch.nn.Module):
             torch.Tensor: A logsoftmax scaled output of shape
                 [batch_size, classes].
         """
-        import pdb; pdb.set_trace()
+        import pdb
+
+        pdb.set_trace()
         x_flat = torch.reshape(x, [x.shape[0], -1])
         x = self.linear(x_flat)
         return self.logsoftmax(x)
@@ -552,10 +560,13 @@ class CNN(torch.nn.Module):
             torch.Tensor: A logsoftmax scaled output of shape
                 [batch_size, classes].
         """
-        import pdb; pdb.set_trace()
+        import pdb
+
+        pdb.set_trace()
         x = self.cnn(x)
         x = self.fc(x)
         return x
+
 
 def get_model(
     args,
