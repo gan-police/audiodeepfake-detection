@@ -5,10 +5,6 @@ See also: https://nox.thea.codes/en/stable/
 """
 import nox
 
-# nox.options.envdir = (
-#     "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/software/nox"
-# )
-
 
 @nox.session(name="format", python=["3.10"])
 def format(session) -> None:

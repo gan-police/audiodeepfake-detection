@@ -1,6 +1,5 @@
 #!/bin/bash
 #
-#SBATCH -A holistic-vid-westai
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=4
@@ -10,8 +9,8 @@
 #SBATCH --cpus-per-task=24
 #SBATCH --partition booster
 #SBATCH --time=8:00:00
-#SBATCH --output=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log3/slurm/train/train_%j.out
-#SBATCH --error=/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log3/slurm/train/train_%j.err
+#SBATCH --output=./logs/log3/slurm/train/train_%j.out
+#SBATCH --error=./logs/log3/slurm/train/train_%j.err
 source ${HOME}/.bashrc
 
 echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
@@ -38,15 +37,15 @@ srun --cpu-bind=none torchrun \
 --nnodes 1 \
 --nproc_per_node 4 \
 src/train_classifier.py \
-    --log-dir "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log3/" \
+    --log-dir "./logs/log3/" \
     --batch-size 128 \
     --learning-rate 0.0001 \
     --weight-decay 0.001   \
     --epochs 10 \
     --validation-interval 1 \
     --ckpt-every 1 \
-    --data-prefix "${HOME}/project_drive/kgasenzer/audiodeepfakes/data/run1/fake_22050_22050_0.7_$2" \
-    --cross-dir "${HOME}/project_drive/kgasenzer/audiodeepfakes/data/run1/" \
+    --data-prefix "./data/run1/fake_22050_22050_0.7_$2" \
+    --cross-dir "./data/run1/" \
     --cross-prefix "fake_22050_22050_0.7_" \
     --nclasses 2 \
     --init-seeds 0 1 2 3 4 \

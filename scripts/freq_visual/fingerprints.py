@@ -130,7 +130,7 @@ def _compute_fingerprint_wpt(
 
 if __name__ == "__main__":
     base_path = (
-        "/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/"
+        "./"
     )
     plot_path = base_path + "logs/log5/plots/fingerprints"
     Path(plot_path).mkdir(parents=True, exist_ok=True)
