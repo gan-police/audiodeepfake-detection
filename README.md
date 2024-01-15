@@ -35,7 +35,7 @@ We utilize two datasets that appeared in previous work:
 
 - [LJSpeech 1.1](https://keithito.com/LJ-Speech-Dataset/)
 - [WaveFake](https://zenodo.org/record/5642694)
-- [Our Extension](zenodo)
+- [Our Extension](https://zenodo.org/records/10512541)
 
 ### GAN Architectures
 We utilize pre-trained models from the following repositories:
