@@ -329,7 +329,6 @@ def plot_spectrogram(
 
     spec_np = spec.numpy()
 
-    # TODO: Rather use: torchaudio.transforms.AmplitudeToDB
     # if preferred: approx. same colormap as [FS21]
     # cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", ["#066b7f", "white", "#aa3a03"])
     # cmap = "RdYlBu_r"     # another nice colormap
@@ -460,7 +459,6 @@ def plot_scalogram(
         bbox_inches="tight",
         pad_inches=0,
     )
-    # TODO: introduce parameter vmin, vmax, cmap, yscale, plot_show
 
 
 def get_np_signal(path: str, start_frame: int, to_frame: int) -> np.ndarray:

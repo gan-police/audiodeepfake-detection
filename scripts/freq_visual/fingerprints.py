@@ -129,9 +129,7 @@ def _compute_fingerprint_wpt(
 
 
 if __name__ == "__main__":
-    base_path = (
-        "./"
-    )
+    base_path = "./"
     plot_path = base_path + "logs/log5/plots/fingerprints"
     Path(plot_path).mkdir(parents=True, exist_ok=True)
 

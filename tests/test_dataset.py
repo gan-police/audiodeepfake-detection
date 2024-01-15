@@ -8,7 +8,7 @@ from unittest.mock import patch
 import torch
 
 from audiofakedetect.data_loader import get_costum_dataset
-from audiofakedetect.utils import DotDict, get_input_dims
+from audiofakedetect.utils import DotDict, get_input_dims, set_seed
 
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_PATH)
@@ -23,6 +23,8 @@ class TestCustomDataset(unittest.TestCase):
         # Mock the CustomDataset class
         mock_custom_dataset_instance = mock_custom_dataset.return_value
         mock_custom_dataset_instance.__len__.return_value = 42
+
+        set_seed(0)
 
         # Call the get_costum_dataset function
         result = get_costum_dataset(
