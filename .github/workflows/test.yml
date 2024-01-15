@@ -45,6 +45,7 @@ jobs:
       matrix:
         tox_env:
           - lint
+          - type
         os:
           - ubuntu-latest
     steps:
