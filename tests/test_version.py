@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """Trivial version test."""
 
 import os
@@ -9,7 +7,7 @@ import unittest
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_PATH)
 
-from src.audiofakedetect.version import VERSION, get_version
+from audiofakedetect.version import VERSION, get_version
 
 
 class TestVersion(unittest.TestCase):

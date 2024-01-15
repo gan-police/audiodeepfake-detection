@@ -9,11 +9,9 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
-
 import torch
-from torch.utils.data import Dataset
-
 import torchaudio
+from torch.utils.data import Dataset
 from tqdm import tqdm
 
 
@@ -83,15 +81,15 @@ class CustomDataset(Dataset):
         only_test_folders: Optional[list] = None,
         abort_on_save: bool = False,
         ds_type: str = "train",
-        seconds: int = 1,
+        seconds: float = 1,
         resample_rate: int = 16000,
         train_ratio: float = 0.7,
         val_ratio: float = 0.1,
         key: Optional[str] = "audio",
-        limit: tuple = (555000, 7500, 15500),  # (train, val, test) per label
+        limit: int = 555000,
         verbose: Optional[bool] = False,
         filetype: str = "wav",
-        asvspoof_name: str = None,
+        asvspoof_name: str | None = None,
     ):
         """Create a Wavefake-dataset object.
 
@@ -99,7 +97,7 @@ class CustomDataset(Dataset):
 
         Args:
             key: The key for the input or 'x' component of the dataset.
-                Defaults to "audio".
+                 Defaults to "audio".
 
         Raises:
             ValueError: If an unexpected file name is given or directory is empty.
@@ -135,7 +133,7 @@ class CustomDataset(Dataset):
             min_sample_rate = (
                 192000  # assuming this will be the highest sample rate ever
             )
-            sample_count = []
+            sample_count: list = []
             path_num = 0
             for path in tqdm(paths, desc="Process paths"):
                 name = path.split("/")[-1].split("_")[-1]
@@ -204,13 +202,12 @@ class CustomDataset(Dataset):
                         if limit == -1:
                             num_train = 55500
                         else:
-                            num_train = limit
+                            num_train = limit  # TODO: Test!
 
                 sample_count.append([num_train, num_val, num_test])
                 path_num += 1
 
-            sample_count = np.asarray(sample_count)
-            min_len = sample_count.transpose().min(axis=1)
+            min_len = np.asarray(sample_count).transpose().min(axis=1)
 
             if ds_type == "train":
                 if only_test_folders is not None and len(only_test_folders) != 0:
@@ -240,7 +237,7 @@ class CustomDataset(Dataset):
                 "Sample rate is smaller than desired sample rate. No upsampling possible here."
             )
 
-        audio_data = None
+        audio_data = np.zeros(0)
         if ds_type == "train":
             if only_test_folders is not None and len(only_test_folders) != 0:
                 raise ValueError(
@@ -251,10 +248,10 @@ class CustomDataset(Dataset):
 
         result = result_set
         for i in range(result.shape[0]):
-            if audio_data is None:
-                audio_data = result[i]
-            else:
+            if len(audio_data) != 0:
                 audio_data = np.vstack([audio_data, result[i]])
+            else:
+                audio_data = result[i]
 
         self.audio_data = audio_data  # shape (number of samples, 4)
         self.ds_type = ds_type
@@ -299,7 +296,7 @@ class CustomDataset(Dataset):
 
     def __len__(self) -> int:
         """Return the data set length."""
-        return int(self.audio_data.shape[0])
+        return int(len(self.audio_data))
 
     def __getitem__(self, idx: int) -> dict:
         """Get a dataset element.
@@ -342,9 +339,9 @@ def get_costum_dataset(
     only_use: Optional[list] = None,
     seconds: float = 1,
     resample_rate: int = 22050,
-    limit: tuple = (55504, 7504, 15504),
+    limit: int = 55504,
     abort_on_save: bool = False,
-    asvspoof_name: str = None,
+    asvspoof_name: str | None = None,
     train_ratio: float = 0.7,
     val_ratio: float = 0.1,
     file_type: str = "wav",
@@ -364,8 +361,7 @@ def get_costum_dataset(
                                        This is stored alongside the filename and length and will be
                                        used when loading the audio in the torch dataloader.
                                        Defaults to 22050.
-        limit (tuple): Limit for train, validation and test set for each label.
-                                 Defaults to (55504, 7504, 15504).
+        limit (int): Limit for dataset.
         abort_on_save (bool): Only save metadata to drive, don't return torch dataset.
                                         Defaults to False.
         asvspoof_name (str): Name of asvspoof data split, e.g. DF_E. Defaults to None.
@@ -386,7 +382,7 @@ def get_costum_dataset(
     if len(paths) == 0:
         raise RuntimeError("Given data_path is empty.")
 
-    labels = []
+    labels: list = []
     str_paths = []
 
     for path in paths:

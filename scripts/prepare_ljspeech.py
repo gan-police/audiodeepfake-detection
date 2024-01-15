@@ -1,6 +1,6 @@
 """Prepare custom dataset for extended LJSpeech dataset (including bigvgan(l) and avocodo)."""
-from src.audiofakedetect.data_loader import get_costum_dataset
-from src.audiofakedetect.utils import set_seed
+from audiofakedetect.data_loader import get_costum_dataset
+from audiofakedetect.utils import set_seed
 
 if __name__ == "__main__":
     set_seed(0)

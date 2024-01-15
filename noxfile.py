@@ -55,5 +55,5 @@ def mypy(session) -> None:
         "--ignore-missing-imports",
         "--implicit-reexport",
         "--allow-untyped-calls",
-        "src",
+        "src/audiofakedetect",
     )

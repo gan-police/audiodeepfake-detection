@@ -1,5 +1,5 @@
 """Prepare custom dataset for In The Wild dataset."""
-from src.audiofakedetect.data_loader import get_costum_dataset
+from audiofakedetect.data_loader import get_costum_dataset
 
 if __name__ == "__main__":
     save_path = "./data/run2"

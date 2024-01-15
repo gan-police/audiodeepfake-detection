@@ -2,6 +2,7 @@
 import argparse
 import os
 import sys
+from typing import Any
 
 import numpy as np
 import torch
@@ -19,14 +20,14 @@ from tqdm import tqdm
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
-from src.audiofakedetect.data_loader import get_costum_dataset
-from src.audiofakedetect.integrated_gradients import (
+from audiofakedetect.data_loader import get_costum_dataset
+from audiofakedetect.integrated_gradients import (
     Mean,
     integral_approximation,
     interpolate_images,
 )
-from src.audiofakedetect.models import get_model, save_model
-from src.audiofakedetect.utils import (
+from audiofakedetect.models import get_model, save_model
+from audiofakedetect.utils import (
     DotDict,
     _Griderator,
     add_default_parser_args,
@@ -36,7 +37,8 @@ from src.audiofakedetect.utils import (
     init_grid,
     set_seed,
 )
-from src.audiofakedetect.wavelet_math import get_transforms
+from audiofakedetect.wavelet_math import get_transforms
+from scripts.gridsearch_config import get_config
 
 
 def ddp_setup() -> None:
@@ -46,13 +48,13 @@ def ddp_setup() -> None:
 
 
 def create_data_loaders(
-    args: dict,
+    args: DotDict,
     num_workers: int = 8,
 ) -> tuple:
     """Create the data loaders needed for training.
 
     Args:
-        args (dict): Experiment configuration.
+        args (DotDict): Experiment configuration.
         num_workers (int): Number of dataloader workers to use. Defaults to 8.
 
     Raises:
@@ -107,11 +109,15 @@ def create_data_loaders(
         seconds=args.seconds,
     )
     if args.ddp:
-        train_sampler = DistributedSampler(
+        train_sampler: DistributedSampler | None = DistributedSampler(
             train_data_set, shuffle=True, seed=args.seed, drop_last=True
         )
-        val_sampler = DistributedSampler(val_data_set, shuffle=False, seed=args.seed)
-        test_sampler = DistributedSampler(test_data_set, shuffle=False, seed=args.seed)
+        val_sampler: DistributedSampler | None = DistributedSampler(
+            val_data_set, shuffle=False, seed=args.seed
+        )
+        test_sampler: DistributedSampler | None = DistributedSampler(
+            test_data_set, shuffle=False, seed=args.seed
+        )
     else:
         train_sampler = val_sampler = test_sampler = None
 
@@ -176,16 +182,16 @@ def create_data_loaders(
             # TODO: remove this.
 
         if args.ddp:
-            cross_val_sampler = DistributedSampler(
+            cross_val_sampler: DistributedSampler | None = DistributedSampler(
                 cross_set_val, shuffle=False, seed=args.seed
             )
-            cross_test_sampler = DistributedSampler(
+            cross_test_sampler: DistributedSampler | None = DistributedSampler(
                 cross_set_test, shuffle=False, seed=args.seed
             )
         else:
             cross_val_sampler = cross_test_sampler = None
 
-        cross_loader_val = DataLoader(
+        cross_loader_val: DataLoader | None = DataLoader(
             cross_set_val,
             batch_size=args.batch_size,
             shuffle=False,
@@ -194,7 +200,7 @@ def create_data_loaders(
             num_workers=num_workers,
             persistent_workers=True,
         )
-        cross_loader_test = DataLoader(
+        cross_loader_test: DataLoader | None = DataLoader(
             cross_set_test,
             batch_size=args.batch_size,
             shuffle=False,
@@ -221,7 +227,7 @@ class Trainer:
     def __init__(
         self,
         snapshot_path: str,
-        args,
+        args: DotDict,
         normalize,
         transforms,
         test_data_loader: DataLoader,
@@ -385,12 +391,12 @@ class Trainer:
                 self.world_size * len(ys), dtype=torch.bool, device=self.local_rank
             )  # type: ignore
             outs_gathered = torch.zeros(
-                self.world_size * len(outs), dtype=torch.int64, device=self.local_rank
+                self.world_size * len(outs), dtype=torch.Tensor, device=self.local_rank
             )  # type: ignore
-            ok_sum_gathered = [None for _ in range(self.world_size)]  # type: ignore
-            total_gathered = [None for _ in range(self.world_size)]  # type: ignore
-            ok_dict_gathered = [None for _ in range(self.world_size)]  # type: ignore
-            count_dict_gathered = [None for _ in range(self.world_size)]  # type: ignore
+            ok_sum_gathered: list[Any] = [None for _ in range(self.world_size)]
+            total_gathered: list[Any] = [None for _ in range(self.world_size)]
+            ok_dict_gathered: list[Any] = [None for _ in range(self.world_size)]
+            count_dict_gathered: list[Any] = [None for _ in range(self.world_size)]
 
             torch.distributed.all_gather_into_tensor(ys_gathered, ys)
             torch.distributed.all_gather_into_tensor(outs_gathered, outs)
@@ -445,7 +451,7 @@ class Trainer:
         self,
         baseline: torch.Tensor,
         image: torch.Tensor,
-        target_class_idx: torch.long,
+        target_class_idx: torch.Tensor,
         m_steps: int = 50,
         batch_size: int = 32,
     ) -> torch.Tensor:
@@ -454,7 +460,7 @@ class Trainer:
         Args:
             baseline (torch.Tensor): Baseline black image.
             image (torch.Tensor): Actual image.
-            target_class_idx (torch.long): Image label (target).
+            target_class_idx (torch.Tensor): Image label (target).
             m_steps (int): Number of steps to go. The more, the better
                            the integral approximation. Defaults to 50.
             batch_size (int): Integration batch size. Defaults to 32.
@@ -465,7 +471,7 @@ class Trainer:
         # Generate alphas.
         alphas = torch.linspace(start=0.0, end=1.0, steps=m_steps + 1).to(
             self.local_rank, non_blocking=True
-        )
+        )  # type: ignore
 
         # Collect gradients.
         gradient_batches = []
@@ -496,15 +502,15 @@ class Trainer:
         baseline: torch.Tensor,
         image: torch.Tensor,
         alpha_batch: torch.Tensor,
-        target_class_idx: torch.long,
-    ) -> torch.Tensor:
+        target_class_idx: torch.Tensor,
+    ) -> torch.Tensor | Any:
         """Interpolate and calculate gradients for one batch of images.
 
         Args:
             baseline (torch.Tensor): Baseline image.
             image (torch.Tensor): Acutal images.
             alpha_batch (torch.Tensor): Alphas to use.
-            target_class_idx (torch.long): Image labels.
+            target_class_idx (torch.Tensor): Image labels.
 
         Returns:
             torch.Tensor: Batch of gradients.
@@ -523,13 +529,13 @@ class Trainer:
     def compute_gradients(
         self,
         images: torch.Tensor,
-        target_class_idx: torch.long,
-    ) -> torch.Tensor:
+        target_class_idx: torch.Tensor,
+    ) -> torch.Tensor | None:
         """Compute gradients for the images using the model classification.
 
         Args:
             images (torch.Tensor): Images to compute the gradients for.
-            target_class_idx (torch.long): The labels corresponding to the images.
+            target_class_idx (torch.Tensor): The labels corresponding to the images.
 
         Returns:
             torch.Tensor: Image gradients.
@@ -558,9 +564,9 @@ class Trainer:
 
         data_loader = self.cross_loader_test
         bar = tqdm(
-            iter(data_loader),
+            iter(data_loader),  # type: ignore
             desc="integrate grads",
-            total=len(data_loader),
+            total=len(data_loader),  # type: ignore
             disable=not pbar,
         )
 
@@ -577,15 +583,15 @@ class Trainer:
             except ValueError:
                 target_value = 1
 
-        target = torch.tensor(target_value).to(self.local_rank, non_blocking=True)
+        target = torch.tensor(target_value).to(str(self.local_rank), non_blocking=True)
 
         if self.args.ig_times_per_target is not None:
             times = times_0 = times_1 = self.args.ig_times_per_target
         else:
             times = times_0 = times_1 = 2500
 
-        target_0 = torch.tensor(0).to(self.local_rank, non_blocking=True)
-        target_1 = torch.tensor(1).to(self.local_rank, non_blocking=True)
+        target_0 = torch.tensor(0).to(str(self.local_rank), non_blocking=True)
+        target_1 = torch.tensor(1).to(str(self.local_rank), non_blocking=True)
         batch_size = 128
         m_steps = 200
 
@@ -593,7 +599,7 @@ class Trainer:
 
         for val_batch in bar:
             label = (
-                val_batch["label"].to(self.local_rank, non_blocking=True) != 0
+                val_batch["label"].to(str(self.local_rank), non_blocking=True) != 0
             ).type(torch.long)
             if label.shape[0] != batch_size:
                 continue
@@ -622,7 +628,7 @@ class Trainer:
             freq_time_dt_norm = self.normalize(freq_time_dt)
 
             baseline = torch.zeros_like(freq_time_dt_norm[0]).to(
-                self.local_rank, non_blocking=True
+                str(self.local_rank), non_blocking=True
             )
             for i in tqdm(range(freq_time_dt_norm.shape[0])):
                 image = freq_time_dt_norm[i]
@@ -1138,7 +1144,7 @@ def main():
         destroy_process_group()
 
 
-def build_new_grid(random_seeds: bool, seeds: list = None) -> _Griderator:
+def build_new_grid(random_seeds: bool, seeds: list | None = None) -> _Griderator:
     """Build a new iterable grid object using given seeds.
 
     This method uses the config in `scripts/gridsearch_config.py`.
@@ -1151,21 +1157,21 @@ def build_new_grid(random_seeds: bool, seeds: list = None) -> _Griderator:
         _Griderator: Iterable grid search object.
     """
     if random_seeds:
-        return init_grid(num_exp=3)
+        return init_grid(get_config(), num_exp=3)
 
     init_seeds = [0, 1, 2, 3, 4]
     if isinstance(seeds, list):
         init_seeds = seeds
         for i in range(len(init_seeds)):
             init_seeds[i] = int(init_seeds[i])
-    return init_grid(num_exp=1, init_seeds=init_seeds)
+    return init_grid(get_config(), num_exp=1, init_seeds=init_seeds)
 
 
-def print_results(args: dict, exp_results: dict, griderator: _Griderator) -> None:
+def print_results(args: DotDict, exp_results: dict, griderator: _Griderator) -> None:
     """Print results of all experiments.
 
     Args:
-        args (dict): Experiment configuration.
+        args (DotDict): Experiment configuration.
         exp_results (dict): Experiment results.
         griderator (_Griderator): Experiment list wrapper class.
     """
@@ -1205,16 +1211,15 @@ def print_results(args: dict, exp_results: dict, griderator: _Griderator) -> Non
             output += rf" ${min[i, 3]:.3f}$ & ${mean[i, 3]:.3f} \pm {std[i, 3]:.3f}$ \\"
             stringer.append(output)
 
-        stringer = np.asarray(stringer, dtype=object)
-        print(stringer)
-        stringer_2 = np.asarray(stringer_2, dtype=object)
+        stringer_array = np.asarray(stringer, dtype=object)
+        print(stringer_array)
         cross_dirs = griderator.init_config["cross_sources"]
-        stringer = stringer.reshape((len(wavelets), len(cross_dirs)))
+        stringer_array = stringer_array.reshape((len(wavelets), len(cross_dirs)))
         for i in range(len(cross_dirs)):
             print("+---------------------+")
             print(cross_dirs[i])  # which configs
             for k in range(len(wavelets)):
-                print(rf"{wavelets[k]} & {stringer[k][i]}")  # which values
+                print(rf"{wavelets[k]} & {stringer_array[k][i]}")  # which values
         print("+---------------------+")
     print("------------------------------------------------------------------")
     print(

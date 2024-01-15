@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """Version information."""
 
 __all__ = [

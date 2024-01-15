@@ -206,7 +206,7 @@ def plot_attribution_targets(
     y_ticks = n[:: freqs.shape[0] // 6]
     y_labels = np.around(freqs[:: freqs.shape[0] // 6] / 1000, 1)
 
-    cmap = plt.cm.inferno
+    cmap = plt.get_cmap("inferno")
     fig, axs = plt.subplots(nrows=1, ncols=3, squeeze=False, figsize=(8, 8))
 
     axs[0, 0].set_title("Attribution on Real Neuron")

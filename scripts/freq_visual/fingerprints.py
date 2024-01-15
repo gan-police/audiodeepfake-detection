@@ -18,7 +18,7 @@ if DEBUG:
     # Set python path automatically to base directory
     sys.path.append(BASE_PATH)
 
-import src.audiofakedetect.plot_util as util
+import audiofakedetect.plot_util as util
 
 RES = 150
 SAMPLE_RATE = 22_050

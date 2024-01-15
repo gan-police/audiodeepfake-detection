@@ -1,7 +1,7 @@
 """Count trainable parameters of models."""
-from src.audiofakedetect.models import compute_parameter_total
-from src.audiofakedetect.ptwt_continuous_transform import get_diff_wavelet
-from src.audiofakedetect.train_classifier import get_model
+from audiofakedetect.models import compute_parameter_total
+from audiofakedetect.ptwt_continuous_transform import get_diff_wavelet
+from audiofakedetect.train_classifier import get_model
 
 
 def main() -> None:

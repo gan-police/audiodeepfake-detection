@@ -7,22 +7,9 @@ from typing import Any, Union
 import numpy as np
 import torch
 import torch.nn as nn
-import torchaudio
 from torchsummary import summary
 
-
-def contrast(waveform: torch.Tensor) -> torch.Tensor:
-    """Apply contrast effect."""
-    enhancement_amount = np.random.uniform(0, 100.0)
-    return torchaudio.functional.contrast(waveform, enhancement_amount)
-
-
-def add_noise(waveform: torch.Tensor) -> torch.Tensor:
-    """Add noise to waveform."""
-    noise = torch.randn(waveform.shape).to(waveform.device)
-    noise_snr = np.random.uniform(30, 40)
-    snr = noise_snr * torch.ones(waveform.shape[:-1]).to(waveform.device)
-    return torchaudio.functional.add_noise(waveform, noise, snr)
+from audiofakedetect.utils import DotDict
 
 
 def compute_parameter_total(net: torch.nn.Module) -> int:
@@ -143,11 +130,11 @@ class LCNN(nn.Module):
 class Regression(torch.nn.Module):
     """A shallow linear-regression model."""
 
-    def __init__(self, args: dict) -> None:
+    def __init__(self, args: DotDict) -> None:
         """Create the regression model.
 
         Args:
-            args (dict): The configuration dictionary.
+            args (DotDict): The configuration dictionary.
         """
         super().__init__()
         self.linear = torch.nn.Linear(args.num_of_scales * 101, 2)
@@ -251,12 +238,12 @@ class DCNN(torch.nn.Module):
 
     def __init__(
         self,
-        args: dict,
+        args: DotDict,
     ) -> None:
         """Define network sturcture.
 
         Args:
-            args (dict): The configuration dictionary.
+            args (DotDict): The configuration dictionary.
         """
         super(DCNN, self).__init__()
 
@@ -327,12 +314,12 @@ class DCNNxDropout(torch.nn.Module):
 
     def __init__(
         self,
-        args: dict,
+        args: DotDict,
     ) -> None:
         """Define network sturcture.
 
         Args:
-            args (dict): The configuration dictionary.
+            args (DotDict): The configuration dictionary.
         """
         super(DCNNxDropout, self).__init__()
 
@@ -397,7 +384,7 @@ class DCNNxDropout(torch.nn.Module):
 
 
 def get_model(
-    args,
+    args: DotDict,
     model_name: str,
     nclasses: int = 2,
     in_channels: int = 1,
@@ -406,7 +393,7 @@ def get_model(
     """Get torch module model with given parameters.
 
     Args:
-        args (dict): Configuration dictionary.
+        args (DotDict): Configuration dictionary.
         model_name (str): Model name as str, one of: "lcnn", "gridmodel", "modules".
         nclasses (int): Number of output classes of the network. Defaults to 2.
         in_channels (int): Number of input channels. Defaults to 1.
@@ -422,6 +409,7 @@ def get_model(
     Returns:
         Union[LCNN, GridModelWrapper, Any]: The model or model wrapper.
     """
+    model: LCNN | GridModelWrapper | Any = None
     if model_name == "lcnn":
         if "doubledelta" in args.features:
             lstm_channels = 60
@@ -536,7 +524,7 @@ def parse_model(model_data: list) -> list:
         list: The parsed list.
     """
     for i in range(len(model_data)):
-        new_els = []
+        new_els: list[Any] = []
         for j in range(len(model_data[i])):
             trials = parse_model_str(model_data[i][j]["layers"])
             model_data[i][j]["layers"] = trials[0]
@@ -588,7 +576,8 @@ def parse_model_str(model_str: list) -> list:
         list: The parsed result.
     """
     # TODO: write a test for this
-    parsed_output = []
+    parsed_output: list = []
+    postfix: Any = None
     for element in model_str:
         new_elements = []
         output_els = 1
@@ -613,7 +602,7 @@ def parse_model_str(model_str: list) -> list:
                     break
 
         for i in range(output_els):
-            output_list = []
+            output_list: list[Any] = []
 
             for part in element_parts:
                 if isinstance(part, list):

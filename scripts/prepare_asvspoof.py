@@ -1,5 +1,5 @@
 """Prepare custom dataset for asvspoof dataset 2019 and 2021."""
-from src.audiofakedetect.data_loader import get_costum_dataset
+from audiofakedetect.data_loader import get_costum_dataset
 
 if __name__ == "__main__":
     save_path = "./data/run2"

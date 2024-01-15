@@ -17,7 +17,8 @@ from torchaudio import functional
 from torchaudio.transforms import AmplitudeToDB, ComputeDeltas, Spectrogram
 from tqdm import tqdm
 
-from .data_loader import WelfordEstimator, get_costum_dataset
+from audiofakedetect.data_loader import WelfordEstimator, get_costum_dataset
+from audiofakedetect.utils import DotDict
 
 
 class STFTLayer(torch.nn.Module):
@@ -48,7 +49,7 @@ class STFTLayer(torch.nn.Module):
         self.log_offset = log_offset
         self.block_norm_dict = None
 
-    def forward(self, input) -> torch.Tensor:
+    def forward(self, input) -> tuple[torch.Tensor, None]:
         """Transform input into frequency-time-representation.
 
         Returns:
@@ -262,7 +263,7 @@ class Packets(torch.nn.Module):
 
 
 def get_transforms(
-    args,
+    args: DotDict,
     features,
     device,
     normalization,

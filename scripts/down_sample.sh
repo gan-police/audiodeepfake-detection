@@ -17,6 +17,6 @@ conda activate py310
 
 echo -e "Downsampling..."
 
-python -m src.audiofakedetect.downsample
+python -m audiofakedetect.downsample
 
 echo "Goodbye at $(date)."

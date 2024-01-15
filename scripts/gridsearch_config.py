@@ -4,7 +4,7 @@ from functools import partial
 import torch
 import torchvision
 
-from src.audiofakedetect.models import DCNN
+from audiofakedetect.models import DCNN
 
 
 def get_config() -> dict:
@@ -67,7 +67,7 @@ def get_config() -> dict:
             ]
         ]
     else:
-        model_data = [None]
+        model_data = []
 
     wf_config = {
         "transform": ["packets"],

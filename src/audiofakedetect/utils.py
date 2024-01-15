@@ -1,15 +1,17 @@
 """Set utility functions."""
+from __future__ import annotations  # Required for forward references
+
 import itertools
 import os
 import random
 from argparse import ArgumentParser
+from typing import Any
 
 import numpy as np
 import torch
 import torchaudio
 
-from scripts.gridsearch_config import get_config
-from src.audiofakedetect.data_loader import get_costum_dataset
+from audiofakedetect.data_loader import get_costum_dataset
 
 
 def set_seed(seed: int):
@@ -314,6 +316,69 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
     return parser
 
 
+# type: ignore[attr-defined]
+class DotDict(dict):
+    """Dot.notation access to dictionary attributes."""
+
+    __getattr__ = dict.get  # type: ignore
+    __delattr__ = dict.__delitem__  # type: ignore
+    __setattr__ = dict.__setitem__  # type: ignore
+
+    only_use: Any
+    save_path: Any
+    limit_train: Any
+    asvspoof_name: Any
+    file_type: Any
+    sample_rate: Any
+    seconds: Any
+    batch_size: Any
+    transform: Any
+    num_of_scales: Any
+    hop_length: Any
+    features: Any
+    log_scale: Any
+    power: Any
+    wavelet: Any
+    loss_less: Any
+    f_min: Any
+    f_max: Any
+    num_workers: Any
+    block_norm: Any
+    mean: Any
+    std: Any
+    input_dim: Any
+    ochannels1: Any
+    kernel1: Any
+    ochannels2: Any
+    ochannels3: Any
+    ochannels4: Any
+    ochannels5: Any
+    dropout_cnn: Any
+    time_dim_add: Any
+    dropout_lstm: Any
+    flattend_size: Any
+    ddp: Any
+    unknown_prefix: Any
+    cross_dir: Any
+    cross_data_path: Any
+    only_test_folders: Any
+    cross_sources: Any
+    cross_limit: Any
+    asvspoof_name_cross: Any
+    ckpt_every: Any
+    validation_interval: Any
+    enable_gs: Any
+    test: Any
+    seed: Any
+    data_path: Any
+    module: Any
+    log_dir: Any
+    target: Any
+    ig_times_per_target: Any
+    pbar: Any
+    tensorboard: Any
+
+
 def contrast(waveform: torch.Tensor) -> torch.Tensor:
     """Add contrast to waveform."""
     enhancement_amount = np.random.uniform(5.0, 20.0)
@@ -394,7 +459,6 @@ def print_results(res_eer, res_acc):
     print(str_all)
     print("wavefake")
     print(str_wf)
-
     print("avbigvgan")
     print(str_avbig)
 
@@ -403,16 +467,26 @@ class _Griderator:
     """Create an iterator for grid search."""
 
     def __init__(
-        self, config: dict[str, list], init_seeds: list = None, num_exp: int = 5
+        self,
+        config: dict[str, list[int]],
+        init_seeds: list | None = None,
+        num_exp: int = 5,
     ) -> None:
         """Initialize grid search instance.
 
+        Args:
+            config (dict[str, list[int]]): The config from gridsearch_config.py.
+            init_seeds (list | None): List of seeds if fixed seeds should be used. Defaults to None.
+            num_exp (int): Number of random seeds (and therefore experiments) if init_seeds is None,
+                             this is used. Defaults to 5.
+
         Raises:
-            TypeError: If given config file is not of type dict.
+            TypeError: If config is not a dictionary.
         """
         if type(config) is not dict:
             raise TypeError(f"Config file must be of type dict but is {type(config)}.")
 
+        self.init_config: dict[str, Any] = {}
         if init_seeds is None:
             rand = random.SystemRandom()
             self.init_config = {"seed": [rand.randrange(10000) for _ in range(num_exp)]}
@@ -454,7 +528,7 @@ class _Griderator:
         """Set iterator to initial value."""
         self.current = 0
 
-    def update_args(self, args):
+    def update_args(self, args: DotDict) -> DotDict:
         """Update args with current step values."""
         for value, key in zip(self.grid_values[self.current], self.get_keys()):
             # if args.get(key) is None:
@@ -472,26 +546,21 @@ class _Griderator:
         return new_args, new_step
 
 
-def init_grid(num_exp: int = 5, init_seeds: list = None) -> _Griderator:
+def init_grid(
+    config: dict, num_exp: int = 5, init_seeds: list | None = None
+) -> _Griderator:
     """Return a grid iterator using the given config.
 
     This method uses the config in `scripts/gridsearch_config.py`.
 
+    TODO: Docu
     Args:
         num_exp (int): Number of random seeds to use for grid search.
     """
-    return _Griderator(get_config(), num_exp=num_exp, init_seeds=init_seeds)
+    return _Griderator(config, num_exp=num_exp, init_seeds=init_seeds)
 
 
-class DotDict(dict):
-    """Dot.notation access to dictionary attributes."""
-
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__  # type: ignore
-    __delattr__ = dict.__delitem__  # type: ignore
-
-
-def get_input_dims(args, transforms) -> list:
+def get_input_dims(args: DotDict, transforms) -> list:
     """Return dimensions of transformed audio."""
     dataset = get_costum_dataset(
         data_path=args.data_path,
@@ -507,9 +576,12 @@ def get_input_dims(args, transforms) -> list:
         seconds=args.seconds,
     )
     with torch.no_grad():
-        freq_time_dt, _ = transforms(
-            dataset.__getitem__(0)["audio"].cuda(non_blocking=True)
-        )
+        if torch.cuda.is_available():
+            freq_time_dt, _ = transforms(
+                dataset.__getitem__(0)["audio"].cuda(non_blocking=True)
+            )
+        else:
+            freq_time_dt, _ = transforms(dataset.__getitem__(0)["audio"])
 
     shape = list(freq_time_dt.shape)
 
