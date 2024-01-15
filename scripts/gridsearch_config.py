@@ -134,8 +134,7 @@ def get_config() -> dict:
         "ochannels5": [32],
         "hop_length": [220],
         "only_testing": [True],
-        "max_pool": [False],
-        "dropout": [False],
+        "only_ig": [False]
         # "target": [0, 1, None],
     }
 

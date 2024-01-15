@@ -475,6 +475,8 @@ class _Griderator:
 def init_grid(num_exp: int = 5, init_seeds: list = None) -> _Griderator:
     """Return a grid iterator using the given config.
 
+    This method uses the config in `scripts/gridsearch_config.py`.
+
     Args:
         num_exp (int): Number of random seeds to use for grid search.
     """

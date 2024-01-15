@@ -7,9 +7,10 @@ import torch
 # TODO: Fix Dataset or is this even still needed ? (JSUT maybe)
 from torch.utils.data import DataLoader
 from torchaudio.transforms import Resample
-from tqdm import tqdm
 
 from src.audiofakedetect.data_loader import LearnWavefakeDataset
+
+from tqdm import tqdm
 
 if __name__ == "__main__":
     sample_rate = 22050

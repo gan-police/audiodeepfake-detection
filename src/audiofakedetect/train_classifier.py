@@ -564,8 +564,6 @@ class Trainer:
             disable=not pbar,
         )
 
-        # integrated_gradients = IntegratedGradients(self.model)
-        # saliency = Saliency(self.model)
         index = 0
         index_0 = 0
         index_1 = 0
@@ -911,14 +909,14 @@ def main():
         ValueError: If stft is started with signed log scaling.
         TypeError: If there went something wrong with the results.
     """
-    torch.set_num_threads(24)
+    torch.set_num_threads(24)  # adjust this according to the number of cores available
     device = "cuda" if torch.cuda.is_available() else "cpu"
     torch.multiprocessing.set_start_method("spawn")
 
     parsed_args = _parse_args()
     args = DotDict(vars(parsed_args))
 
-    args.num_workers = 10
+    args.num_workers = 10  # adjust this if you have data loading problems
 
     if args.ddp:
         ddp_setup()
@@ -1142,6 +1140,8 @@ def main():
 
 def build_new_grid(random_seeds: bool, seeds: list = None) -> _Griderator:
     """Build a new iterable grid object using given seeds.
+
+    This method uses the config in `scripts/gridsearch_config.py`.
 
     Args:
         random_seeds (bool): True if random seeds should be used.

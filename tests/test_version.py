@@ -8,7 +8,8 @@ import unittest
 
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_PATH)
-from src.audiofakedetect.version import get_version, VERSION
+
+from src.audiofakedetect.version import VERSION, get_version
 
 
 class TestVersion(unittest.TestCase):
