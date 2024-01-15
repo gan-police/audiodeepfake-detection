@@ -11,8 +11,8 @@ def format(session) -> None:
     """Fix common convention problems automatically."""
     session.install("black")
     session.install("isort")
-    session.run("isort", "src", "scripts", "noxfile.py")
-    session.run("black", "src", "scripts", "noxfile.py")
+    session.run("isort", "src/audiofakedetect", "scripts", "noxfile.py")
+    session.run("black", "src/audiofakedetect", "scripts", "noxfile.py")
 
 
 @nox.session(name="test", python=["3.10"])
@@ -51,5 +51,5 @@ def mypy(session) -> None:
         "--ignore-missing-imports",
         "--implicit-reexport",
         "--allow-untyped-calls",
-        "src",
+        "src/audiofakedetect",
     )

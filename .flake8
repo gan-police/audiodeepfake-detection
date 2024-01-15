@@ -24,6 +24,9 @@ ignore =
     S101,
     # pseudo random gens
     S311,
+    I201,
+    I202,
+    I100
 exclude =
     .tox,
     .git,

@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """Trivial version test."""
 
 import os
@@ -8,15 +6,14 @@ import unittest
 
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_PATH)
-from src.version import get_version
+
+from audiofakedetect.version import VERSION, get_version
 
 
 class TestVersion(unittest.TestCase):
-    """Trivially test a version."""
+    """Trivially test the version."""
 
-    def test_version_type(self) -> None:
-        """Test the version is a string.
-        This is only meant to be an example test.
-        """
+    def test_version(self) -> None:
+        """Test the version is a string."""
         version = get_version()
-        self.assertIsInstance(version, str)
+        self.assertEqual(version, VERSION)

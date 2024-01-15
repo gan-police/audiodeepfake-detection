@@ -19,7 +19,7 @@ BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if DEBUG:
     # Set python path automatically to base directory
     sys.path.append(BASE_PATH)
-import src.plot_util as plot_util
+import audiofakedetect.plot_util as plot_util
 
 if __name__ == "__main__":
     wav_label = "LJ008-0217"

@@ -1,25 +1,19 @@
 #!/bin/bash
 #
 #SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --ntasks-per-node=1
 #SBATCH --job-name=prep
-#SBATCH --output=exp/log5/slurm/prep/prep_%j.out
-#SBATCH --error=exp/log5/slurm/prep/prep_%j.err
-#SBATCH --cpus-per-task=32
-#SBATCH --partition=A100short
+#SBATCH --gres=gpu:4
+#SBATCH --mem=300GB
+#SBATCH --cpus-per-task=96
+#SBATCH --partition booster
+#SBATCH --time=12:00:00
+#SBATCH --output=./logs/log3/slurm/prepare/prep_%j.out
+#SBATCH --error=./logs/log3/slurm/prepare/prep_%j.err
 
 source ${HOME}/.bashrc
 
-targetpath="${HOME}/data/run7"
+echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
 
-echo "Starting preparation..."
-./scripts/prepare_single_dataset.sh ${targetpath} &
-pidsingle=$!
-./scripts/prepare_test_dataset.sh ${targetpath} &
-pidall=$!
-./scripts/prepare_all_dataset.sh ${targetpath}
-
-wait $pidsingle
-wait $pidall
-
-echo "Cleaning up..."
-python scripts/clean_up.py --data-path $targetpath
+python -m scripts.prepare_ljspeech

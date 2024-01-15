@@ -2,16 +2,15 @@
 #
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
+#SBATCH --ntasks-per-node=4
 #SBATCH --job-name=train
 #SBATCH --gres=gpu:4
-#SBATCH --ntasks-per-node=4
+#SBATCH --mem=300GB
 #SBATCH --cpus-per-task=24
-#SBATCH --partition develbooster
-#SBATCH --time=02:00:00
-#SBATCH --output=./logs/log1/slurm/train/train_%A_%a.out
-#SBATCH --error=./logs/log1/slurm/train/train_%A_%a.err
-#SBATCH --array=0
-
+#SBATCH --partition booster
+#SBATCH --time=8:00:00
+#SBATCH --output=./logs/log3/slurm/train/train_%j.out
+#SBATCH --error=./logs/log3/slurm/train/train_%j.err
 source ${HOME}/.bashrc
 
 echo "Hello from job $SLURM_JOB_ID on $(hostname) at $(date)."
@@ -31,26 +30,33 @@ echo $SLURM_JOB_NUM_NODES
 
 echo -e "Training..."
 
-python -m audiofakedetect.train_classifier \
-    --log-dir "./logs/log2/" \
+srun --cpu-bind=none torchrun \
+--rdzv_id $RANDOM \
+--rdzv_backend c10d \
+--rdzv_endpoint $head_node_ip:29400 \
+--nnodes 1 \
+--nproc_per_node 4 \
+src/train_classifier.py \
+    --log-dir "./logs/log3/" \
     --batch-size 128 \
     --learning-rate 0.0001 \
     --weight-decay 0.001   \
     --epochs 10 \
     --validation-interval 1 \
-    --ckpt-every 9 \
+    --ckpt-every 1 \
     --data-prefix "./data/run1/fake_22050_22050_0.7_$2" \
     --cross-dir "./data/run1/" \
     --cross-prefix "fake_22050_22050_0.7_" \
     --nclasses 2 \
-    --seed 0 \
-    --model lcnn  \
+    --init-seeds 0 1 2 3 4 \
+    --model modules  \
     --transform $1 \
     --num-of-scales $3 \
     --wavelet $4 \
     --power $5 \
     --loss-less $6 \
     --flattend-size $7 \
+    --time-dim-add $8 \
     --hop-length 100 \
     --log-scale \
     --f-min 1 \
@@ -60,6 +66,7 @@ python -m audiofakedetect.train_classifier \
     --features none \
     --enable-gs \
     --calc-normalization \
+    --ddp \
     --pbar
 
 echo -e "Training process finished."
