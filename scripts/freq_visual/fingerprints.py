@@ -166,15 +166,6 @@ if __name__ == "__main__":
         wp_means.append(wp_mean)
         plot_tuples.append(plot_tuple)
 
-    # for pos, plot_tuple in enumerate(plot_tuples):
-    #     plt.subplot(2, 4, pos+1)
-    #     plt.title(plot_tuple[2])
-    #     plt.plot(plot_tuple[0], plot_tuple[1])
-    # tikz.save(f'{plot_path}/groupplot.tex', standalone=True)
-    # [0], [-2]
-    # [plt.semilogy(wps[0][0], wps[0][1], label=wps[1]) for wps in wp_means]
-    # plt.legend()
-    # plt.show()
     sum = np.zeros_like(wp_means[0][0][1])
     for wps in wp_means[1:]:
         plot_name = f"{wp_means[0][1]} - {wps[1]}"
@@ -254,3 +245,7 @@ if __name__ == "__main__":
     tikz.save(f"{plot_path}/fft_diff_{plot_name}.tex", standalone=True)
     plt.savefig(f"{plot_path}/fft_diff_{plot_name}.png")
     plt.clf()
+
+    [plt.semilogy(wps[0][0], wps[0][1], label=wps[1]) for wps in wp_means]
+    plt.legend()
+    plt.show()
