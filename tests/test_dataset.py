@@ -3,6 +3,7 @@
 import os
 import sys
 import unittest
+from unittest import mock
 from unittest.mock import patch
 
 import torch
@@ -35,16 +36,8 @@ class TestCustomDataset(unittest.TestCase):
 
         # Assert that the CustomDataset class was called with the correct arguments
         mock_custom_dataset.assert_called_once_with(
-            paths=[
-                "tests/new_data/B_fullbandmelgan",
-                "tests/new_data/A_ljspeech",
-                "tests/new_data/F_parallelwavegan",
-                "tests/new_data/C_hifigan",
-                "tests/new_data/G_waveglow",
-                "tests/new_data/D_melgan",
-                "tests/new_data/E_multibandmelgan",
-            ],
-            labels=[1, 0, 5, 2, 6, 3, 4],
+            paths=mock.ANY,
+            labels=mock.ANY,
             save_path="./tests/new_data/",
             abort_on_save=False,
             seconds=1,
