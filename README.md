@@ -10,11 +10,11 @@ we train excellent lightweight detectors that generalize and examine the results
 The latest code can be installed in development mode in a running installation of python 3.10 or 3.11 with:
 
 ```shell
-git clone git@github.com:gan-police/wavelet-audiodeepfake-detection.git
+git clone git@github.com:gan-police/audiodeepfake-detection.git
 ```
 Move to the repository with
 ```shell
-cd wavelet-audiodeepfake-detection
+cd audiodeepfake-detection
 ```
 and install all requirements with
 ```shell
@@ -35,7 +35,7 @@ We utilize two datasets that appeared in previous work:
 
 - [LJSpeech 1.1](https://keithito.com/LJ-Speech-Dataset/)
 - [WaveFake](https://zenodo.org/record/5642694)
-- [Our Extension](https://zenodo.org/records/10512541)
+- [Our Extension](https://zenodo.org/records/10512541){:target="_blank"}
 
 ### GAN Architectures
 We utilize pre-trained models from the following repositories:
@@ -138,16 +138,16 @@ When training and testing on different GPU hardware than our settings we cannot 
 
 ## ⚖️ Licensing
 
-This project is licensed under the [GNU GPLv3 license](LICENSE).
+This project is licensed under the [EUPL license](LICENSE).
 
 ## Acknowledgments
 
 The research leading to the development of this dataset was supported by the Bundesministerium für Bildung und Forschung (BMBF) through the WestAI and BnTrAInee projects. The authors express their gratitude to the Gauss Centre for Supercomputing e.V. for funding the project and providing computing resources through the John von Neumann Institute for Computing (NIC) on the GCS Supercomputer JUWELS at Jülich Supercomputing Centre (JSC).
 
 ### Citation
-This work is in the public domain. Feel free to use my material, but please cite it properly.
+If you use this work in a scientific context, please cite the following:
 ```
-@misc{gasenzerwolter2023generalizingadf,
+@article{gasenzerwolter2023generalizingadf,
       title={Towards generalizing deep-audio fake detection networks}, 
       author={Konstantin Gasenzer and Moritz Wolter},
       year={2023},

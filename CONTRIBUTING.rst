@@ -7,7 +7,7 @@ Having a Problem? Submit an Issue.
 ----------------------------------
 1. Check that you have the latest version of :code:`audiofakedetect`
 2. Check that StackOverflow hasn't already solved your problem
-3. Go here: https://github.com/gan-police/wavelet-audiodeepfake-detection/issues
+3. Go here: https://github.com/gan-police/audiodeepfake-detection/issues
 4. Check that this issue hasn't been solved
 5. Click "new issue"
 6. Add a short, but descriptive title
@@ -22,33 +22,33 @@ Same drill! Submit an issue and we'll have a nice conversation in the thread.
 Want to Contribute?
 -------------------
 1. Get the code. Fork the repository from GitHub using the big green button in the top-right corner of
-   https://github.com/gan-police/wavelet-audiodeepfake-detection
+   https://github.com/gan-police/audiodeepfake-detection
 2. Clone your directory with
 
 .. code-block:: sh
 
-    $ git clone https://github.com/<YourUsername>/wavelet-audiodeepfake-detection
+    git clone https://github.com/<YourUsername>/audiodeepfake-detection
 
 3. Install with :code:`pip`. The flag, :code:`-e`, makes your installation editable, so your changes will be reflected
    automatically in your installation.
 
 .. code-block:: sh
 
-    $ cd frequency-detection
-    $ python3 -m pip install -r requirements.txt
+    cd audiodeepfake-detection
+    python -m pip install -r requirements.txt
 
 4. Make a branch off of develop, then make contributions! This line makes a new branch and checks it out
 
 .. code-block:: sh
 
-    $ git checkout -b feature/<YourFeatureName>
+    git checkout -b feature/<YourFeatureName>
 
 5. This project should be well tested, so write unit tests in the :code:`tests/` directory
-6. Check that all tests are passing and code coverage is good with :code:`tox` before committing.
+6. Check that all tests are passing, linting and typing runs through executing :code:`tox` before committing.
 
 .. code-block:: sh
 
-    $ tox
+    tox
 
 Pull Requests
 ~~~~~~~~~~~~~
@@ -70,20 +70,20 @@ To pull in upstream changes:
 
 .. code-block:: sh
 
-    $ git remote add upstream https://github.com/gan-police/wavelet-audiodeepfake-detection
-    $ git fetch upstream develop
+    git remote add upstream https://github.com/gan-police/audiodeepfake-detection
+    git fetch upstream develop
 
 Check the log to make sure the upstream changes don't affect your work too much:
 
 .. code-block:: sh
 
-    $ git log upstream/develop
+    git log upstream/develop
 
 Then merge in the new changes:
 
 .. code-block:: sh
 
-    $ git merge upstream/develop
+    git merge upstream/develop
 
 More information about this whole fork-pull-merge process can be found
-`here on Github's website <https://help.github.com/articles/fork-a-repo/>`_.
+`here on Github's website <https://docs.github.com/de/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo>`_.
