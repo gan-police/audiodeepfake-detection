@@ -965,7 +965,7 @@ def main():
             config = get_config()
 
         griderator = build_new_grid(
-            config, random_seeds=args.random_seeds, seeds=args.seeds
+            config, random_seeds=args.random_seeds, seeds=args.init_seeds
         )
         num_exp = griderator.get_len()
 
