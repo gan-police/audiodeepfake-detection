@@ -17,8 +17,8 @@ from torchaudio import functional
 from torchaudio.transforms import AmplitudeToDB, ComputeDeltas, Spectrogram
 from tqdm import tqdm
 
-from audiofakedetect.data_loader import WelfordEstimator, get_costum_dataset
-from audiofakedetect.utils import DotDict
+from .data_loader import WelfordEstimator, get_costum_dataset
+from .utils import DotDict
 
 
 class STFTLayer(torch.nn.Module):
@@ -26,8 +26,8 @@ class STFTLayer(torch.nn.Module):
 
     def __init__(
         self,
-        n_fft: int = 512,
-        hop_length: int = 1,
+        n_fft: int = 511,
+        hop_length: int = 220,
         log_offset: float = 1e-12,
         log_scale: bool = False,
         power: float = 2.0,
@@ -42,9 +42,12 @@ class STFTLayer(torch.nn.Module):
             log_offset (float): Offset for log scaling. (Default: 1e-12)
         """
         super().__init__()
-        self.transform = Spectrogram(
-            n_fft=n_fft, hop_length=hop_length, power=power
-        ).cuda()
+
+        self.transform = Spectrogram(n_fft=n_fft, hop_length=hop_length, power=power)
+
+        if torch.cuda.is_available():
+            self.transform.cuda()
+
         self.log_scale = log_scale
         self.log_offset = log_offset
         self.block_norm_dict = None
@@ -173,8 +176,7 @@ def compute_pytorch_packet_representation(
 ) -> tuple[torch.Tensor, dict]:
     """Create a packet image.
 
-    Raises:
-        ValueError: If block norm is used but not initialized.
+    Adaption of ptwt (https://github.com/v0lta/PyTorch-Wavelet-Toolbox/tree/main/src/ptwt).
     """
     ptwt_wp_tree = ptwt.WaveletPacket(data=pt_data, wavelet=wavelet, mode="reflect")
 
@@ -184,8 +186,6 @@ def compute_pytorch_packet_representation(
 
     if block_norm_dict is None:
         block_norm_dict = {}
-    if block_norm_dict is None and block_norm:
-        raise ValueError()
 
     for node in wp_keys:
         node_wp = ptwt_wp_tree[node]
@@ -264,13 +264,26 @@ class Packets(torch.nn.Module):
 
 def get_transforms(
     args: DotDict,
-    features,
-    device,
-    normalization,
+    features: str,
+    device: str,
+    normalization: bool,
     pbar: bool = False,
     verbose: bool = True,
 ) -> tuple[torch.nn.Sequential, torch.nn.Sequential]:
-    """Initialize transformations and normalize."""
+    """Initialize transformations and normalize.
+
+    Args:
+        args (DotDict): Current configuration.
+        features (str): If lfcc or delta or double delta features should be applied.
+        device (str): Which device the model uses.
+        normalization (bool): If the data should be normalized (only if norm does not exist).
+        pbar (bool): If tqdm bars should be used. Defaults to False.
+        verbose (bool): If more verbose logging should be enabled. Defaults to True.
+
+    Returns:
+        tuple[torch.nn.Sequential, torch.nn.Sequential]: The frequency-space transform module and
+                                                         normalization module.
+    """
     if args.transform == "stft":
         transform = STFTLayer(  # type: ignore
             n_fft=args.num_of_scales * 2 - 1,
@@ -347,50 +360,7 @@ def get_transforms(
     elif normalization:
         if verbose:
             print("computing mean and std values.", flush=True)
-        dataset = get_costum_dataset(
-            data_path=args.data_path,
-            ds_type="train",
-            only_use=args.only_use,
-            save_path=args.save_path,
-            limit=args.limit_train[0],
-            asvspoof_name=f"{args.asvspoof_name}_T"
-            if args.asvspoof_name is not None and "LA" in args.asvspoof_name
-            else args.asvspoof_name,
-            file_type=args.file_type,
-            resample_rate=args.sample_rate,
-            seconds=args.seconds,
-        )
-        norm_dataset_loader = torch.utils.data.DataLoader(
-            dataset,
-            batch_size=4000,
-            shuffle=False,
-            pin_memory=True,
-            num_workers=args.num_workers,
-            persistent_workers=True,
-        )
-        welford = WelfordEstimator()
-        with torch.no_grad():
-            for batch in tqdm(
-                iter(norm_dataset_loader),
-                desc="comp normalization",
-                total=len(norm_dataset_loader),
-                disable=not pbar,
-            ):
-                freq_time_dt, welford_dict = transforms(
-                    batch["audio"].cuda(non_blocking=True)
-                )
-                transforms[0].block_norm_dict = welford_dict
-                welford.update(freq_time_dt.permute(0, 3, 2, 1))
-            mean, std = welford.finalize()
-            if args.block_norm:
-                for key in welford_dict.keys():
-                    mean, std = welford_dict[key].finalize()
-                    welford_dict[key] = {"mean": mean, "std": std}
-
-                torch.save(welford_dict, f"{norm_dir}_mean_std_bn.pkl")
-            else:
-                with open(f"{norm_dir}_mean_std.pkl", "wb") as f:
-                    pickle.dump([mean.cpu().numpy(), std.cpu().numpy()], f)
+        welford_dict = calc_normalization(args, pbar, transforms, norm_dir)
     else:
         if verbose:
             print("Using default mean and std.")
@@ -409,3 +379,69 @@ def get_transforms(
     )
 
     return transforms, normalize
+
+
+def calc_normalization(
+    args: DotDict,
+    pbar: bool,
+    transforms: torch.nn.Sequential,
+    norm_dir: str,
+):
+    """Calculate normalization of training dataset.
+
+    Args:
+        args (DotDict): Current configuration.
+        pbar (bool): True if tqdm bars should be enabled.
+        transforms (torch.nn.Sequential): The transforms to be applied to a dataset sample.
+        norm_dir (str): Path to directory where to save the mean and std.
+
+    Returns:
+        dict: The block norm dictionary. Is None if block norm is disabled.
+    """
+    dataset = get_costum_dataset(
+        data_path=args.data_path,
+        ds_type="train",
+        only_use=args.only_use,
+        save_path=args.save_path,
+        limit=args.limit_train[0],
+        asvspoof_name=f"{args.asvspoof_name}_T"
+        if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+        else args.asvspoof_name,
+        file_type=args.file_type,
+        resample_rate=args.sample_rate,
+        seconds=args.seconds,
+    )
+    norm_dataset_loader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=4000,
+        shuffle=False,
+        pin_memory=True,
+        num_workers=args.num_workers,
+        persistent_workers=True,
+    )
+    welford = WelfordEstimator()
+
+    with torch.no_grad():
+        for batch in tqdm(
+            iter(norm_dataset_loader),
+            desc="comp normalization",
+            total=len(norm_dataset_loader),
+            disable=not pbar,
+        ):
+            freq_time_dt, welford_dict = transforms(
+                batch["audio"].cuda(non_blocking=True)
+            )
+            transforms[0].block_norm_dict = welford_dict
+            welford.update(freq_time_dt.permute(0, 3, 2, 1))
+        mean, std = welford.finalize()
+        if args.block_norm:
+            for key in welford_dict.keys():
+                mean, std = welford_dict[key].finalize()
+                welford_dict[key] = {"mean": mean, "std": std}
+
+            torch.save(welford_dict, f"{norm_dir}_mean_std_bn.pkl")
+        else:
+            with open(f"{norm_dir}_mean_std.pkl", "wb") as f:
+                pickle.dump([mean.cpu().numpy(), std.cpu().numpy()], f)
+
+    return welford_dict

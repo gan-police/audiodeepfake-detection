@@ -123,7 +123,6 @@ def get_config() -> dict:
         "batch_size": [128],
         "aug_contrast": [False],
         "model": ["modules"],
-        "model_data": model_data,
         "module": [DCNN],
         "kernel1": [3],
         "num_devices": [4],
@@ -133,7 +132,7 @@ def get_config() -> dict:
         "ochannels4": [128],
         "ochannels5": [32],
         "hop_length": [220],
-        "only_testing": [True],
+        "only_testing": [False],
         "only_ig": [False]
         # "target": [0, 1, None],
     }

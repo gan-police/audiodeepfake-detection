@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torchaudio
 
-from audiofakedetect.data_loader import get_costum_dataset
+from .data_loader import get_costum_dataset
 
 
 def set_seed(seed: int):
@@ -53,7 +53,10 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         help="weight decay for optimizer (default: 0.01)",
     )
     parser.add_argument(
-        "--epochs", type=int, default=10, help="number of epochs (default: 10)"
+        "--epochs",
+        type=int,
+        default=10,
+        help="number of epochs (default: 10)",
     )
     parser.add_argument(
         "--transform",
@@ -197,16 +200,6 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         help="Shared prefix of the unknown source data paths (default: none).",
     )
     parser.add_argument(
-        "--cross-dir",
-        type=str,
-        help="Shared directory of the unknown source data paths (default: none).",
-    )
-    parser.add_argument(
-        "--cross-prefix",
-        type=str,
-        help="Shared prefix of the unknown source data paths (default: none).",
-    )
-    parser.add_argument(
         "--cross-sources",
         type=str,
         nargs="+",
@@ -312,6 +305,13 @@ def add_default_parser_args(parser: ArgumentParser) -> ArgumentParser:
         action="store_true",
         help="Use distributed data parallel from pytorch.",
     )
+    parser.add_argument(
+        "--config",
+        type=str,
+        help="Path to the grid search config file. IMPORTANT: This will execute code "
+        "inside the given file. Make sure to only use config files, you trust entirely. "
+        "This poses a security threat and will be removed in future releases.",
+    )
 
     return parser
 
@@ -359,7 +359,6 @@ class DotDict(dict):
     flattend_size: Any
     ddp: Any
     unknown_prefix: Any
-    cross_dir: Any
     cross_data_path: Any
     only_test_folders: Any
     cross_sources: Any
@@ -377,6 +376,7 @@ class DotDict(dict):
     ig_times_per_target: Any
     pbar: Any
     tensorboard: Any
+    config: Any
 
 
 def contrast(waveform: torch.Tensor) -> torch.Tensor:
@@ -468,14 +468,14 @@ class _Griderator:
 
     def __init__(
         self,
-        config: dict[str, list[int]],
+        config: dict[str, list[Any]],
         init_seeds: list | None = None,
         num_exp: int = 5,
     ) -> None:
         """Initialize grid search instance.
 
         Args:
-            config (dict[str, list[int]]): The config from gridsearch_config.py.
+            config (dict[str, list[Any]]): The config for grid search.
             init_seeds (list | None): List of seeds if fixed seeds should be used. Defaults to None.
             num_exp (int): Number of random seeds (and therefore experiments) if init_seeds is None,
                              this is used. Defaults to 5.
@@ -546,18 +546,28 @@ class _Griderator:
         return new_args, new_step
 
 
-def init_grid(
-    config: dict, num_exp: int = 5, init_seeds: list | None = None
+def build_new_grid(
+    config: dict, random_seeds: bool = False, seeds: list | None = None
 ) -> _Griderator:
-    """Return a grid iterator using the given config.
+    """Build a new iterable grid object using given seeds.
 
-    This method uses the config in `scripts/gridsearch_config.py`.
-
-    TODO: Docu
     Args:
-        num_exp (int): Number of random seeds to use for grid search.
+        config (dict): The gridsearch config dictionary.
+        random_seeds (bool): True if random seeds should be used.
+        seeds (list): List of predefined seeds to use. Defaults to None.
+
+    Returns:
+        _Griderator: Iterable grid search object.
     """
-    return _Griderator(config, num_exp=num_exp, init_seeds=init_seeds)
+    if random_seeds:
+        return _Griderator(config, num_exp=3)
+
+    init_seeds = [0, 1, 2, 3, 4]
+    if isinstance(seeds, list):
+        init_seeds = seeds
+        for i in range(len(init_seeds)):
+            init_seeds[i] = int(init_seeds[i])
+    return _Griderator(config, init_seeds=init_seeds)
 
 
 def get_input_dims(args: DotDict, transforms) -> list:

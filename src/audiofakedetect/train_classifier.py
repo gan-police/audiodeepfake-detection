@@ -20,25 +20,24 @@ from tqdm import tqdm
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
-from audiofakedetect.data_loader import get_costum_dataset
-from audiofakedetect.integrated_gradients import (
+from .data_loader import get_costum_dataset
+from .integrated_gradients import (
     Mean,
     integral_approximation,
     interpolate_images,
 )
-from audiofakedetect.models import get_model, save_model
-from audiofakedetect.utils import (
+from .models import get_model, save_model
+from .utils import (
     DotDict,
     _Griderator,
     add_default_parser_args,
     add_noise,
+    build_new_grid,
     contrast,
     get_input_dims,
-    init_grid,
     set_seed,
 )
-from audiofakedetect.wavelet_math import get_transforms
-from scripts.gridsearch_config import get_config
+from .wavelet_math import get_transforms
 
 
 def ddp_setup() -> None:
@@ -151,8 +150,8 @@ def create_data_loaders(
         persistent_workers=True,
     )
 
-    if args.unknown_prefix is not None or args.cross_dir is not None:
-        if args.cross_dir is not None:
+    if args.unknown_prefix is not None or args.cross_data_path is not None:
+        if args.cross_data_path is not None:
             cross_set_test = get_costum_dataset(
                 data_path=args.cross_data_path,
                 ds_type="test",
@@ -391,7 +390,7 @@ class Trainer:
                 self.world_size * len(ys), dtype=torch.bool, device=self.local_rank
             )  # type: ignore
             outs_gathered = torch.zeros(
-                self.world_size * len(outs), dtype=torch.Tensor, device=self.local_rank
+                self.world_size * len(outs), dtype=torch.int64, device=self.local_rank
             )  # type: ignore
             ok_sum_gathered: list[Any] = [None for _ in range(self.world_size)]
             total_gathered: list[Any] = [None for _ in range(self.world_size)]
@@ -730,7 +729,10 @@ class Trainer:
                 )
             else:
                 test_acc = test_eer = 0
-            if self.args.unknown_prefix is not None or self.args.cross_dir is not None:
+            if (
+                self.args.unknown_prefix is not None
+                or self.args.cross_data_path is not None
+            ):
                 cr_test_acc, cr_test_eer = self.val_test_loop(
                     data_loader=self.cross_loader_test,
                     pbar=self.args.pbar,
@@ -739,7 +741,7 @@ class Trainer:
             else:
                 cr_test_eer = cr_test_acc = 0
 
-        if self.args.tensorboard:
+        if self.args.tensorboard and is_lead(self.args):
             self.writer.add_scalar("accuracy/test", test_acc, self.step_total)  # type: ignore
             self.writer.add_scalar("eer/test", test_eer, self.step_total)  # type: ignore
             self.writer.add_scalar("accuracy/cross_test", cr_test_acc, self.step_total)  # type: ignore
@@ -774,14 +776,17 @@ class Trainer:
             name="val known",
         )
 
-        if self.args.unknown_prefix is not None or self.args.cross_dir is not None:
+        if (
+            self.args.unknown_prefix is not None
+            or self.args.cross_data_path is not None
+        ):
             cr_val_acc, cr_val_eer = self.val_test_loop(
                 data_loader=self.cross_loader_val,
                 pbar=self.args.pbar,
                 name="val unknown",
             )
 
-        if self.args.tensorboard:
+        if self.args.tensorboard and is_lead(self.args):
             self.writer.add_scalar("accuracy/validation", val_acc, self.step_total)
             self.writer.add_scalar("eer/validation", val_eer, self.step_total)
             self.writer.add_scalar(
@@ -833,7 +838,7 @@ class Trainer:
         self.loss_list.append([self.step_total, e, loss.item()])
         self.accuracy_list.append([self.step_total, e, acc.item()])
 
-        if self.args.tensorboard:
+        if self.args.tensorboard and is_lead(self.args):
             self.writer.add_scalar("loss/train", loss.item(), self.step_total)
             self.writer.add_scalar("accuracy/train", acc.item(), self.step_total)
             if self.step_total == 0:
@@ -914,6 +919,7 @@ def main():
         NotImplementedError: If wrong features are combined with the wrong model.
         ValueError: If stft is started with signed log scaling.
         TypeError: If there went something wrong with the results.
+        RuntimeError: If config path is not given even though gridsearch is enabled.
     """
     torch.set_num_threads(24)  # adjust this according to the number of cores available
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -944,7 +950,23 @@ def main():
         if is_lead(args):
             print("--------------- Starting grid search -----------------")
 
-        griderator = build_new_grid(random_seeds=args.random_seeds, seeds=args.seeds)
+        if args.config is None or args.config == "":
+            raise RuntimeError("Config file must be provided.")
+
+        config_namespace = {}
+
+        with open(args.config, "r") as config_script:
+            exec(config_script.read(), config_namespace)  # noqa: S102
+
+        get_config = config_namespace.get("get_config")
+
+        config = {}
+        if get_config:
+            config = get_config()
+
+        griderator = build_new_grid(
+            config, random_seeds=args.random_seeds, seeds=args.seeds
+        )
         num_exp = griderator.get_len()
 
     for _exp_number in range(num_exp):
@@ -1029,30 +1051,6 @@ def main():
             + str(args.seed)
         )
 
-        if args.tensorboard:
-            writer_str = base_dir + "/tensorboard/"
-            writer_str += f"{args.model}/"
-            writer_str += f"{args.transform}/"
-            if transform == "packets":
-                writer_str += f"{args.wavelet}/"
-            writer_str += f"{args.features}/"
-            writer_str += f"{args.batch_size}_"
-            writer_str += f"{args.learning_rate}_"
-            writer_str += f"{args.weight_decay}_"
-            writer_str += f"{args.epochs}/"
-            writer_str += f"{args.f_min}-"
-            writer_str += f"{args.f_max}/"
-            writer_str += f"{args.num_of_scales}/"
-            writer_str += f"signs{loss_less}/"
-            writer_str += f"augc{args.aug_contrast}/"
-            writer_str += f"augn{args.aug_noise}/"
-            writer_str += f"power{args.power}/"
-            writer_str += f"{known_gen_name}/"
-            writer_str += f"{args.seed}"
-            writer = SummaryWriter(writer_str, max_queue=100)
-        else:
-            writer = None  # type: ignore
-
         # fix the seed in the interest of reproducible results.
         set_seed(args.seed)
 
@@ -1086,7 +1084,6 @@ def main():
             cross_loader_test,
         ) = create_data_loaders(
             args=args,
-            limit=-1,
             num_workers=args.num_workers,
         )
 
@@ -1098,6 +1095,30 @@ def main():
             lr=lr,
             weight_decay=args.weight_decay,
         )
+
+        if args.tensorboard and is_lead(args):
+            writer_str = base_dir + "/tensorboard/"
+            writer_str += f"{model.get_name()}/"
+            writer_str += f"{args.transform}/"
+            if transform == "packets":
+                writer_str += f"{args.wavelet}/"
+            writer_str += f"{args.features}/"
+            writer_str += f"{args.batch_size}_"
+            writer_str += f"{args.learning_rate}_"
+            writer_str += f"{args.weight_decay}_"
+            writer_str += f"{args.epochs}/"
+            writer_str += f"{args.f_min}-"
+            writer_str += f"{args.f_max}/"
+            writer_str += f"{args.num_of_scales}/"
+            writer_str += f"signs{loss_less}/"
+            writer_str += f"augc{args.aug_contrast}/"
+            writer_str += f"augn{args.aug_noise}/"
+            writer_str += f"power{args.power}/"
+            writer_str += f"{known_gen_name}/"
+            writer_str += f"{args.seed}"
+            writer = SummaryWriter(writer_str, max_queue=100)
+        else:
+            writer = None  # type: ignore
 
         trainer = Trainer(
             model=model,
@@ -1142,29 +1163,6 @@ def main():
 
     if args.ddp:
         destroy_process_group()
-
-
-def build_new_grid(random_seeds: bool, seeds: list | None = None) -> _Griderator:
-    """Build a new iterable grid object using given seeds.
-
-    This method uses the config in `scripts/gridsearch_config.py`.
-
-    Args:
-        random_seeds (bool): True if random seeds should be used.
-        seeds (list): List of predefined seeds to use. Defaults to None.
-
-    Returns:
-        _Griderator: Iterable grid search object.
-    """
-    if random_seeds:
-        return init_grid(get_config(), num_exp=3)
-
-    init_seeds = [0, 1, 2, 3, 4]
-    if isinstance(seeds, list):
-        init_seeds = seeds
-        for i in range(len(init_seeds)):
-            init_seeds[i] = int(init_seeds[i])
-    return init_grid(get_config(), num_exp=1, init_seeds=init_seeds)
 
 
 def print_results(args: DotDict, exp_results: dict, griderator: _Griderator) -> None:

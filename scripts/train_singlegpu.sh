@@ -30,14 +30,14 @@ echo $SLURM_JOB_NUM_NODES
 
 echo -e "Training..."
 
-#srun --cpu-bind=none 
 torchrun \
 --rdzv_id $RANDOM \
 --rdzv_backend c10d \
 --rdzv_endpoint $head_node_ip:29400 \
 --nnodes 1 \
 --nproc_per_node 1 \
-src/train_classifier.py \
+-m src.audiofakedetect.train_classifier \
+    --config "./scripts/gridsearch_config.py" \
     --log-dir "./logs/log3/" \
     --batch-size 128 \
     --learning-rate 0.0001 \
@@ -46,8 +46,6 @@ src/train_classifier.py \
     --validation-interval 1 \
     --ckpt-every 1 \
     --data-prefix "./data/run1/fake_22050_22050_0.7_$2" \
-    --cross-dir "./data/run1/" \
-    --cross-prefix "fake_22050_22050_0.7_" \
     --nclasses 2 \
     --seed 0 \
     --model lcnn  \

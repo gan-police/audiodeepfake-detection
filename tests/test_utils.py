@@ -9,7 +9,13 @@ import torch
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_PATH)
 
-from audiofakedetect.utils import DotDict, _Griderator, add_noise, contrast, init_grid
+from audiofakedetect.utils import (
+    DotDict,
+    _Griderator,
+    add_noise,
+    build_new_grid,
+    contrast,
+)
 
 
 class TestDotDict(unittest.TestCase):
@@ -67,6 +73,9 @@ class TestGriderator(unittest.TestCase):
         )
         self.assertIsInstance(griderator, _Griderator)
 
+        griderator = build_new_grid(self.config, seeds=[1, 2, 3], random_seeds=False)
+        self.assertEqual(griderator.get_len(), 12)
+
     def test_get_keys(self):
         """Test get_keys method."""
         griderator = _Griderator(self.config)
@@ -82,7 +91,7 @@ class TestGriderator(unittest.TestCase):
         self.assertEqual(griderator.get_len(), 8)  # 2 * 2 * 2
 
         # check wrapper
-        griderator = init_grid(self.config, init_seeds=self.init_seeds)
+        griderator = build_new_grid(self.config, seeds=self.init_seeds)
         self.assertEqual(griderator.get_len(), 8)
 
         griderator = _Griderator(self.config, num_exp=3)

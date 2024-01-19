@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 from torchsummary import summary
 
-from audiofakedetect.utils import DotDict
+from .utils import DotDict
 
 
 def compute_parameter_total(net: torch.nn.Module) -> int:
@@ -308,6 +308,10 @@ class DCNN(torch.nn.Module):
 
         return x
 
+    def get_name(self) -> str:
+        """Get name of model."""
+        return "DCNN"
+
 
 class DCNNxDropout(torch.nn.Module):
     """Deep CNN with dilated convolutions."""
@@ -381,6 +385,74 @@ class DCNNxDropout(torch.nn.Module):
         x = self.fc(x).mean(1)
 
         return x
+
+    def get_name(self) -> str:
+        """Get name of model."""
+        return "DCNNxDropout"
+
+
+class DCNNxDilation(torch.nn.Module):
+    """Deep CNN without dilated convolutions."""
+
+    def __init__(
+        self,
+        args: DotDict,
+    ) -> None:
+        """Define network sturcture.
+
+        Args:
+            args (DotDict): The configuration dictionary.
+        """
+        super(DCNNxDilation, self).__init__()
+
+        self.cnn = nn.Sequential(
+            nn.Conv2d(
+                args.input_dim[1], args.ochannels1, args.kernel1, stride=1, padding=2
+            ),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.SyncBatchNorm(args.ochannels1, affine=False),
+            nn.Conv2d(args.ochannels1, args.ochannels2, 1, 1, padding=0),
+            nn.PReLU(),
+            nn.SyncBatchNorm(args.ochannels2, affine=False),
+            nn.Conv2d(args.ochannels2, args.ochannels3, 3, stride=1, padding=1),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.SyncBatchNorm(args.ochannels3, affine=False),
+            nn.Conv2d(args.ochannels3, args.ochannels4, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(args.ochannels4, affine=False),
+            nn.Conv2d(args.ochannels4, args.ochannels5, 3, 1, padding=1),
+            nn.PReLU(),
+            nn.SyncBatchNorm(args.ochannels5, affine=False),
+            nn.Conv2d(args.ochannels5, 64, 3, stride=1, padding=1),
+            nn.PReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Dropout(args.dropout_cnn),
+        )
+
+        self.fc = nn.Sequential(
+            nn.Flatten(2),
+            nn.Linear(args.flattend_size, 2),
+        )
+        self.single_gpu = not args.ddp
+
+    def forward(self, x) -> torch.Tensor:
+        """Forward pass."""
+        # [batch, channels, packets, time]
+        x = self.cnn(x.permute(0, 1, 3, 2))
+
+        # [batch, channels, time, packets]
+        x = x.permute(0, 2, 1, 3).contiguous()
+
+        # "[batch, time, channels, packets]"
+        x = self.fc(x).mean(1)
+
+        return x
+
+    def get_name(self) -> str:
+        """Get name of model."""
+        return "DCNNxDilation"
 
 
 def get_model(
