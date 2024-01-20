@@ -714,26 +714,6 @@ def parse_model_str(model_str: list) -> list:
     return parsed_output
 
 
-def save_model(model: torch.nn.Module, path) -> None:
-    """Save the state dict of the model to the specified path.
-
-    Args:
-        model (torch.nn.Module): model to store
-        path: file path of the storage file
-    """
-    torch.save(model.state_dict(), path)
-
-
-def initialize_model(model: torch.nn.Module, path) -> torch.nn.Module:
-    """Initialize the given model from a stored state dict file.
-
-    Args:
-        model (torch.nn.Module): model to initialize
-        path: file path of the storage file
-    """
-    return model.load_state_dict(torch.load(path))
-
-
 def parse_sequential(model_list, input_shape=None) -> nn.Sequential | bool:
     """Parse given model into torch.nn.Module."""
     layers = []

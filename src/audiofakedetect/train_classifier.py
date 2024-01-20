@@ -26,7 +26,7 @@ from .integrated_gradients import (
     integral_approximation,
     interpolate_images,
 )
-from .models import get_model, save_model
+from .models import get_model
 from .utils import (
     DotDict,
     _Griderator,
@@ -1166,7 +1166,12 @@ def main():
         destroy_process_group()
 
 
-def print_results(args: DotDict, exp_results: dict, griderator: _Griderator, model_file: str = "defaultmodel") -> None:
+def print_results(
+    args: DotDict,
+    exp_results: dict,
+    griderator: _Griderator,
+    model_file: str = "defaultmodel",
+) -> None:
     """Print results of all experiments.
 
     Args:
