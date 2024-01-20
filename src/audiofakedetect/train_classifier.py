@@ -616,15 +616,15 @@ class Trainer:
             except ValueError:
                 target_value = 1
 
-        target = torch.tensor(target_value).to(str(self.local_rank), non_blocking=True)
+        target = torch.tensor(target_value).to(f"cuda:{str(self.local_rank)}", non_blocking=True)
 
         if self.args.ig_times_per_target is not None:
             times = times_0 = times_1 = self.args.ig_times_per_target
         else:
             times = times_0 = times_1 = 2500
 
-        target_0 = torch.tensor(0).to(str(self.local_rank), non_blocking=True)
-        target_1 = torch.tensor(1).to(str(self.local_rank), non_blocking=True)
+        target_0 = torch.tensor(0).to(f"cuda:{str(self.local_rank)}", non_blocking=True)
+        target_1 = torch.tensor(1).to(f"cuda:{str(self.local_rank)}", non_blocking=True)
         batch_size = 128
         m_steps = 200
 
@@ -632,7 +632,7 @@ class Trainer:
 
         for val_batch in bar:
             label = (
-                val_batch["label"].to(str(self.local_rank), non_blocking=True) != 0
+                val_batch["label"].to(f"cuda:{str(self.local_rank)}", non_blocking=True) != 0
             ).type(torch.long)
             if label.shape[0] != batch_size:
                 continue
@@ -661,7 +661,7 @@ class Trainer:
             freq_time_dt_norm = self.normalize(freq_time_dt)
 
             baseline = torch.zeros_like(freq_time_dt_norm[0]).to(
-                str(self.local_rank), non_blocking=True
+                f"cuda:{str(self.local_rank)}", non_blocking=True
             )
             for i in tqdm(range(freq_time_dt_norm.shape[0])):
                 image = freq_time_dt_norm[i]

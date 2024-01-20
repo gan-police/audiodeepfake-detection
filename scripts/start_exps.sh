@@ -1,7 +1,5 @@
 #!/bin/bash
 
-sbatch scripts/train.sh packets fbmelgan 256 coif8 2.0 False 320 0
-
 sbatch scripts/train.sh packets fbmelgan 256 sym2 2.0 False 320 0
 sbatch scripts/train.sh packets fbmelgan 256 sym3 2.0 False 320 0
 sbatch scripts/train.sh packets fbmelgan 256 sym4 2.0 False 320 0

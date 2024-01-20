@@ -130,6 +130,16 @@ log_dir/plots/some_model_config_[used-sources]x2500_target-01_integrated_gradien
 
 To plot the results, configure the variables in `plot_attribution` of `src/audiofakedetect/integrated_gradients.py` and execute it using `scripts/attribution.py`.
 
+
+## Building the documentation
+To build the documentation move into `docs/` and install the requirements with `pip install -r requirements.txt`. Now you can run the makefile with
+
+```bash
+make html
+```
+
+You can finde the built version inside the `build/html/` folder.
+
 ## Issues
 As we use the Adam optimizer of the python module pytorch, we recommend to use torch 2.0.0, torchaudio 2.0.0 and cuda 11.7.
 
