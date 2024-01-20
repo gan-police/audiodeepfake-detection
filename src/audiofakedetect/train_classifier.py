@@ -227,19 +227,35 @@ class Trainer:
         self,
         snapshot_path: str,
         args: DotDict,
-        normalize,
-        transforms,
+        normalize: torch.nn.Sequential,
+        transforms: torch.nn.Sequential,
         test_data_loader: DataLoader,
-        model: torch.nn.Module | None = None,
-        train_data_loader: DataLoader | None = None,
-        val_data_loader: DataLoader | None = None,
-        cross_loader_val: DataLoader | None = None,
-        cross_loader_test: DataLoader | None = None,
-        optimizer: torch.optim.Optimizer | None = None,
-        loss_fun=None,
+        model: torch.nn.Module,
+        train_data_loader: DataLoader,
+        val_data_loader: DataLoader,
+        cross_loader_val: DataLoader,
+        cross_loader_test: DataLoader,
+        optimizer: torch.optim.Optimizer,
+        loss_fun: torch.nn.Module,
         writer: SummaryWriter | None = None,
     ) -> None:
-        """Initialize trainer."""
+        """Initialize DDP trainer class.
+
+        Args:
+            snapshot_path (str): Path and filename to save the model snapshots at.
+            args (DotDict): The training configuration dictionary.
+            normalize (torch.nn.Sequential): The normalization transform.
+            transforms (torch.nn.Sequential): The frequency-space transform modules.
+            test_data_loader (DataLoader): The test data loader to use.
+            model (torch.nn.Module): The model to train.
+            train_data_loader (DataLoader): The train data loader to use.
+            val_data_loader (DataLoader): The validation data loader.
+            cross_loader_val (DataLoader): The cross validation data loader (unknown sources).
+            cross_loader_test (DataLoader): The cross test data loader.
+            optimizer (torch.optim.Optimizer): The optimizer, e.g. Adam.
+            loss_fun (torch.nn.Module): The torch loss function module.
+            writer (SummaryWriter | None): The tensorboard writer instance. Defaults to None.
+        """
         self.args = args
 
         if self.args.ddp:
@@ -269,7 +285,7 @@ class Trainer:
         self.transforms = transforms
         self.writer = writer
 
-        self.bar = None
+        self.bar = tqdm([])
 
         self.validation_list: list = []
         self.loss_list: list = []
@@ -279,6 +295,11 @@ class Trainer:
 
     def init_model(self, model) -> None:
         """Initialize model.
+
+        This method supports ddp model initialization. Set args.ddp to use distributed training.
+
+        Args:
+            model (torch.nn.Module): The model to initialize.
 
         Raises:
             RuntimeError: If Model is not initialized correctly.
@@ -313,11 +334,18 @@ class Trainer:
         else:
             return
 
-    def calculate_eer(self, y_true, y_score) -> float:
+    def calculate_eer(self, y_true: np.ndarray, y_score: np.ndarray) -> float:
         """Return the equal error rate for a binary classifier output.
 
         Based on:
         https://github.com/scikit-learn/scikit-learn/issues/15247
+
+        Args:
+            y_true (np.ndarray): True labels.
+            y_score (np.ndarray): Model output.
+
+        Returns:
+            float: Equal Error Rate.
         """
         fpr, tpr, _ = roc_curve(y_true, y_score, pos_label=1)
         eer = brentq(lambda x: 1.0 - x - interp1d(fpr, tpr)(x), 0.0, 1.0)
@@ -454,7 +482,10 @@ class Trainer:
         m_steps: int = 50,
         batch_size: int = 32,
     ) -> torch.Tensor:
-        """Calculate integrated gradients.
+        """Calculate integrated gradients for a set of images.
+
+        This method and its sub methods are our pytorch version of the implementation at commit 15f45f8 from
+        https://github.com/tensorflow/docs/blob/master/site/en/tutorials/interpretability/integrated_gradients.ipynb
 
         Args:
             baseline (torch.Tensor): Baseline black image.
@@ -722,6 +753,14 @@ class Trainer:
     def _run_test(
         self, only_unknown: bool = False
     ) -> tuple[float, float, float, float]:
+        """Run tests on all test data loaders.
+
+        Args:
+            only_unknown (bool): If True only cross_data_loaders will be tested/used. Defaults to False.
+
+        Returns:
+            tuple[float, float, float, float]: Test accuracy, Test EER, Cross Test Acc., Cross Test EER
+        """
         self.model.eval()
         with torch.no_grad():
             if not only_unknown:
@@ -752,27 +791,39 @@ class Trainer:
 
         return test_acc, test_eer, cr_test_acc, cr_test_eer
 
-    def _run_epoch(self, e):
-        """Iterate over training data."""
+    def _run_epoch(self, epoch: int) -> None:
+        """Iterate over training data.
+
+        Args:
+            epoch (int): The epoch to run.
+        """
         self.bar = tqdm(
-            iter(self.train_data_loader),
+            iter(self.train_data_loader),  # type: ignore
             desc="training cnn",
-            total=len(self.train_data_loader),
+            total=len(self.train_data_loader),  # type: ignore
             unit="batches",
             disable=not self.args.pbar,
         )
         if is_lead(self.args):
-            print(f"+------------------- Epoch {e+1} -------------------+", flush=True)
+            print(
+                f"+------------------- Epoch {epoch+1} -------------------+", flush=True
+            )
+            if self.args.tensorboard:
+                self.writer.add_scalar("epochs", epoch, self.step_total)  # type: ignore
         if self.args.ddp:
-            self.train_data_loader.sampler.set_epoch(e)
+            self.train_data_loader.sampler.set_epoch(epoch)  # type: ignore
 
+        batch: torch.Tensor
         for _it, batch in enumerate(self.bar):
             self.model.train()
-            self._run_batch(e, batch)
-            # self._run_batch(e, batch)
+            self._run_batch(epoch, batch)
 
-    def _run_validation(self, epoch):
-        """Iterate over validation data."""
+    def _run_validation(self, epoch: int) -> None:
+        """Iterate over validation data.
+
+        Args:
+            epoch (int): Current epoch.
+        """
         val_acc, val_eer = self.val_test_loop(
             data_loader=self.val_data_loader,
             pbar=self.args.pbar,
@@ -790,18 +841,21 @@ class Trainer:
             )
 
         if self.args.tensorboard and is_lead(self.args):
-            self.writer.add_scalar("accuracy/validation", val_acc, self.step_total)
-            self.writer.add_scalar("eer/validation", val_eer, self.step_total)
-            self.writer.add_scalar(
+            self.writer.add_scalar("accuracy/validation", val_acc, self.step_total)  # type: ignore
+            self.writer.add_scalar("eer/validation", val_eer, self.step_total)  # type: ignore
+            self.writer.add_scalar(  # type: ignore
                 "accuracy/cross_validation", cr_val_acc, self.step_total
             )
-            self.writer.add_scalar("eer/cross_validation", cr_val_eer, self.step_total)
+            self.writer.add_scalar("eer/cross_validation", cr_val_eer, self.step_total)  # type: ignore
+            self.writer.add_scalar("epochs", epoch, self.step_total)  # type: ignore
 
-        if self.args.tensorboard:
-            self.writer.add_scalar("epochs", epoch, self.step_total)
+    def _run_batch(self, e: int, batch: torch.Tensor) -> None:
+        """Run one batch iteration forward pass.
 
-    def _run_batch(self, e, batch):
-        """Run one batch iteration forward pass."""
+        Args:
+            e (int): Current epoch.
+            batch (torch.Tensor): Current batch to run.
+        """
         batch_audios = batch[self.train_data_loader.dataset.key].to(
             self.local_rank, non_blocking=True
         )
@@ -842,13 +896,17 @@ class Trainer:
         self.accuracy_list.append([self.step_total, e, acc.item()])
 
         if self.args.tensorboard and is_lead(self.args):
-            self.writer.add_scalar("loss/train", loss.item(), self.step_total)
-            self.writer.add_scalar("accuracy/train", acc.item(), self.step_total)
+            self.writer.add_scalar("loss/train", loss.item(), self.step_total)  # type: ignore
+            self.writer.add_scalar("accuracy/train", acc.item(), self.step_total)  # type: ignore
             if self.step_total == 0:
-                self.writer.add_graph(self.model, batch_audios)
+                self.writer.add_graph(self.model, batch_audios)  # type: ignore
 
-    def _save_snapshot(self, epoch) -> None:
-        """Save snapshot of current model."""
+    def _save_snapshot(self, epoch: int) -> None:
+        """Save snapshot of current model.
+
+        Args:
+            epoch (int): Current epoch.
+        """
         snapshot = {
             "MODEL_STATE": self.model.state_dict() if self.args.ddp else self.model.state_dict(),  # type: ignore
             "EPOCHS_RUN": epoch,
@@ -856,16 +914,23 @@ class Trainer:
         torch.save(snapshot, self.snapshot_path)
         print(f"Epoch {epoch+1} | Training snapshot saved at {self.snapshot_path}")
 
-    def load_snapshot(self, snapshot_path):
-        """Load snapshot from given path."""
-        loc = f"cuda:{self.local_rank}"
+    def load_snapshot(self, snapshot_path: str) -> None:
+        """Load snapshot from given path.
+
+        Args:
+            snapshot_path (str): Snapshot path to load model from.
+        """
         loc = {"cuda:%d" % 0: "cuda:%d" % self.local_rank}
         snapshot = torch.load(snapshot_path, map_location=loc)
         self.model.load_state_dict(snapshot["MODEL_STATE"])
         self.epochs_run = snapshot["EPOCHS_RUN"]
 
     def train(self, max_epochs: int) -> None:
-        """Train model."""
+        """Train model on a given number of epochs.
+
+        Args:
+            max_epochs (int): Number of epochs to train the model.
+        """
         self._check_model_init()
         for epoch in range(max_epochs):
             self._run_epoch(epoch)
@@ -895,13 +960,27 @@ class Trainer:
                     )
 
     def testing(self, only_unknown: bool = False) -> tuple[float, float, float, float]:
-        """Iterate over test set."""
+        """Check model initialization and run all tests.
+
+        Args:
+            only_unknown (bool): If True only cross_data_loaders will be tested/used. Defaults to False.
+
+        Returns:
+            tuple[float, float, float, float]: Test accuracy, Test EER, Cross Test Acc., Cross Test EER
+        """
         self._check_model_init()
         return self._run_test(only_unknown=only_unknown)
 
 
-def is_lead(args) -> bool:
-    """Check if current process is lead rank."""
+def is_lead(args: DotDict) -> bool:
+    """Check if current process is lead rank.
+
+    Args:
+        args (DotDict): Experiment configuration dictionary.
+
+    Returns:
+        bool: True if DDP is off or local rank is 0.
+    """
     if not args.ddp:
         return True
     elif int(os.environ["LOCAL_RANK"]) == 0 and int(os.environ["RANK"]) == 0:
@@ -909,7 +988,7 @@ def is_lead(args) -> bool:
     return False
 
 
-def main():
+def main() -> None:
     """Trains a model to classify audios.
 
     All settings such as which model to use, parameters, normalization, data set path,
@@ -948,7 +1027,7 @@ def main():
         os.makedirs(base_dir + "/norms")
 
     num_exp = 1
-    exp_results = {}
+    exp_results: dict[str, Any] = {}
     if args.enable_gs:
         if is_lead(args):
             print("--------------- Starting grid search -----------------")
@@ -956,7 +1035,7 @@ def main():
         if args.config is None or args.config == "":
             raise RuntimeError("Config file must be provided.")
 
-        config_namespace = {}
+        config_namespace = {}  # type: ignore
 
         with open(args.config, "r") as config_script:
             exec(config_script.read(), config_namespace)  # noqa: S102
@@ -1178,6 +1257,7 @@ def print_results(
         args (DotDict): Experiment configuration.
         exp_results (dict): Experiment results.
         griderator (_Griderator): Experiment list wrapper class.
+        model_file (str): Model file string (unique for this experiment config).
     """
     results = np.asarray(list(exp_results.values()))
     if results.shape[0] == 0:

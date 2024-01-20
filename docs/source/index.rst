@@ -6,12 +6,6 @@
 AudiofakeDetect Supplementary Documentation
 =========================================================
 
-Introduction
-------------
-
-Intro
-
-
 .. toctree::
    :maxdepth: 2
    :caption: Contents  
@@ -19,6 +13,9 @@ Intro
 
    api
 
+
+.. include:: ../../README.md
+   :parser: myst_parser.sphinx_
 
 
 Indices and tables

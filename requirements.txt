@@ -3,11 +3,11 @@ librosa
 numpy
 ptwt
 pywavelets
-matplotlib
+matplotlib==3.7.4
 torch==2.0.0
 torchaudio==2.0.0
 torchvision==0.15.1
-tikzplotlib
+tikzplotlib==0.10.1
 torch-summary
 tensorboard
 torchmetrics

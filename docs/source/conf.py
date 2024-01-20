@@ -81,3 +81,5 @@ autodoc_typehints = "description"
 autodoc_class_signature = "separated"
 
 autodoc_mock_imports = ["scripts.gridsearch_config"]
+
+suppress_warnings = ['myst.xref_missing']

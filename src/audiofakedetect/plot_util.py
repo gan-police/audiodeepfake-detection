@@ -36,10 +36,6 @@ class AudioDataset(torch.utils.data.Dataset):
     """Torch dataset to load data from a provided directory.
 
     Port of: https://github.com/RUB-SysSec/WaveFake/blob/main/dfadetect/datasets.py
-    Args:
-        directory_or_path_list: Path to the directory containing wav files to load. Or a list of paths.
-    Raises:
-        IOError: If the directory does ot exists or the directory did not contain any wav files.
     """
 
     def __init__(
@@ -50,6 +46,10 @@ class AudioDataset(torch.utils.data.Dataset):
         normalize: bool = True,
     ) -> None:
         """Initialize Audioloader.
+
+        Args:
+            directory_or_path_list (str, Path, list): Path to the directory containing wav 
+                                                      files to load. Or a list of paths.
 
         Raises:
             IOError: If directory does not exist, or does not contain wav files.
@@ -129,7 +129,7 @@ def find_wav_files(path_to_dir: Union[Path, str]) -> list[Path]:
 def load_from_wav(
     path: str, start_frame: int = 0, end_frame: int = -1, normalize: bool = True
 ) -> torch.Tensor:
-    """Load signal waveform and meta data from *.wav file.
+    """Load signal waveform and meta data from .wav file.
 
     With no normalization it does not return float32 as by default in torchaudio.load
     (see torchaudio.backend). For comparable results the audio file is tested, if it

@@ -38,7 +38,6 @@ class GridModelWrapper(nn.Module):
         self,
         sequentials: list,
         transforms: list,
-        in_channels: int = 1,
     ) -> None:
         """Define network sturcture."""
         super(GridModelWrapper, self).__init__()

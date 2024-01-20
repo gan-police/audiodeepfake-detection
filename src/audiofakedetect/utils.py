@@ -378,6 +378,19 @@ class DotDict(dict):
     tensorboard: Any
     config: Any
     init_seeds: Any
+    aug_contrast: Any
+    aug_noise: Any
+    random_seeds: Any
+    model: Any
+    data_prefix: Any
+    calc_normalization: Any
+    nclasses: Any
+    learning_rate: Any
+    weight_decay: Any
+    epochs: Any
+    window_size: Any
+    only_testing: Any
+    only_ig: Any
 
 
 def contrast(waveform: torch.Tensor) -> torch.Tensor:
