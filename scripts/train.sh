@@ -43,7 +43,6 @@ srun --cpu-bind=none torchrun \
     --learning-rate 0.0001 \
     --weight-decay 0.001   \
     --epochs 10 \
-    --validation-interval 1 \
     --ckpt-every 1 \
     --data-prefix "./data/run1/fake_22050_22050_0.7_$2" \
     --nclasses 2 \

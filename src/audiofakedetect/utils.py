@@ -377,6 +377,7 @@ class DotDict(dict):
     pbar: Any
     tensorboard: Any
     config: Any
+    init_seeds: Any
 
 
 def contrast(waveform: torch.Tensor) -> torch.Tensor:

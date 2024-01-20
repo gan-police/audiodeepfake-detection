@@ -328,6 +328,8 @@ def get_transforms(
         + "/norms/"
         + args.data_path.replace("/", "_")
         + "_"
+        + "-".join(args.only_use)
+        + "_"
         + args.transform
         + "_"
         + args.wavelet

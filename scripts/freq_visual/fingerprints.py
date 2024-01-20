@@ -60,12 +60,8 @@ def _compute_fingerprint_rfft(
     masked_time_mean = np.mean(masked_time, 0)[0]
 
     mean_ln_abs_fft = np.abs(np.fft.rfft(masked_time_mean)[-use:])
-    # std_ln_abs_fft = np.log(np.abs(np.fft.rfft(masked_time_std)[-use:]))
+
     freqs = np.fft.rfftfreq(masked_time_mean.shape[-1], 1.0 / SAMPLE_RATE)[-use:]
-    # plt.subplot(2, 1, 1)
-    # plt.title(f"{gen_name} - time")
-    # plt.plot(masked_time_mean)
-    # plt.subplot(2, 1, 2)
 
     plt.title(f"{gen_name}")
     plt.semilogy(freqs, mean_ln_abs_fft, label=gen_name)

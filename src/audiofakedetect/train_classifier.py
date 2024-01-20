@@ -558,6 +558,9 @@ class Trainer:
         """
         plot_path = self.args.log_dir + "/plots/"
 
+        if not os.path.exists(plot_path):
+            os.mkdir(plot_path)
+
         welford_ig = Mean()
         welford_sal = Mean()
 
@@ -991,15 +994,57 @@ def main():
         known_gen_name = path_name[4]
         loss_less = False if args.loss_less == "False" else True
 
-        if args.model == "onednet" and loss_less:
-            raise NotImplementedError(
-                "OneDNet does not work together with the sign channel."
-            )
-
         if transform == "stft" and loss_less:
             raise ValueError(
                 "Sign channel not possible for stft due to complex data type."
             )
+
+        # fix the seed in the interest of reproducible results.
+        set_seed(args.seed)
+
+        transforms, normalize = get_transforms(
+            args,
+            features,
+            device,
+            args.calc_normalization,
+            pbar=args.pbar,
+        )
+
+        args.input_dim = get_input_dims(args=args, transforms=transforms)
+
+        try:
+            model = get_model(
+                args=args,
+                model_name=args.model,
+                nclasses=args.nclasses,
+                in_channels=2 if loss_less else 1,
+                lead=is_lead(args),
+            )
+        except RuntimeError:
+            print("Skipping model args.model_conf")
+            continue
+
+        model_name = model.get_name() if args.model == "modules" else "customModel"
+
+        (
+            train_data_loader,
+            val_data_loader,
+            test_data_loader,
+            cross_loader_val,
+            cross_loader_test,
+        ) = create_data_loaders(
+            args=args,
+            num_workers=args.num_workers,
+        )
+
+        loss_fun = torch.nn.CrossEntropyLoss()
+
+        lr = args.learning_rate
+        optimizer = Adam(
+            model.parameters(),
+            lr=lr,
+            weight_decay=args.weight_decay,
+        )
 
         model_file = base_dir + "/models/" + path_name[0] + "_"
         if transform == "stft":
@@ -1034,7 +1079,7 @@ def main():
             + "_"
             + f"{args.epochs}e"
             + "_"
-            + str(args.model)
+            + str(model_name)
             + "_signs"
             + str(loss_less)
             + "_augc"
@@ -1051,54 +1096,9 @@ def main():
             + str(args.seed)
         )
 
-        # fix the seed in the interest of reproducible results.
-        set_seed(args.seed)
-
-        transforms, normalize = get_transforms(
-            args,
-            features,
-            device,
-            args.calc_normalization,
-            pbar=args.pbar,
-        )
-
-        args.input_dim = get_input_dims(args=args, transforms=transforms)
-
-        try:
-            model = get_model(
-                args=args,
-                model_name=args.model,
-                nclasses=args.nclasses,
-                in_channels=2 if loss_less else 1,
-                lead=is_lead(args),
-            )
-        except RuntimeError:
-            print("Skipping model args.model_conf")
-            continue
-
-        (
-            train_data_loader,
-            val_data_loader,
-            test_data_loader,
-            cross_loader_val,
-            cross_loader_test,
-        ) = create_data_loaders(
-            args=args,
-            num_workers=args.num_workers,
-        )
-
-        loss_fun = torch.nn.CrossEntropyLoss()
-
-        lr = args.learning_rate
-        optimizer = Adam(
-            model.parameters(),
-            lr=lr,
-            weight_decay=args.weight_decay,
-        )
-
         if args.tensorboard and is_lead(args):
             writer_str = base_dir + "/tensorboard/"
-            writer_str += f"{model.get_name()}/"
+            writer_str += f"{model_name}/"
             writer_str += f"{args.transform}/"
             if transform == "packets":
                 writer_str += f"{args.wavelet}/"
@@ -1135,6 +1135,7 @@ def main():
             args=args,
             writer=writer,
         )
+
         if args.only_testing:
             trainer._check_model_init()
             trainer.load_snapshot(trainer.snapshot_path)
@@ -1148,6 +1149,7 @@ def main():
             trainer.integrated_gradients(path)
         else:
             trainer.train(args.epochs)
+
         if exp_results.get(args.seed) is None:
             exp_results[args.seed] = [trainer.test_results]
         elif type(exp_results[args.seed]) is list:
@@ -1155,17 +1157,16 @@ def main():
         else:
             raise TypeError("Result array must contain lists.")
 
+    if is_lead(args):
         if args.tensorboard:
             writer.close()
-
-    if is_lead(args):
-        print_results(args, exp_results, griderator)
+        print_results(args, exp_results, griderator, model_file)
 
     if args.ddp:
         destroy_process_group()
 
 
-def print_results(args: DotDict, exp_results: dict, griderator: _Griderator) -> None:
+def print_results(args: DotDict, exp_results: dict, griderator: _Griderator, model_file: str = "defaultmodel") -> None:
     """Print results of all experiments.
 
     Args:
@@ -1187,7 +1188,7 @@ def print_results(args: DotDict, exp_results: dict, griderator: _Griderator) -> 
     else:
         wavelets = ["stft"]
 
-    np.save(args.log_dir + f"/{','.join(wavelets)}_results.npy", results)
+    np.save(args.log_dir + f"/{model_file}_{','.join(wavelets)}_results.npy", results)
     mean = results.mean(0)
     std = results.std(0)
     print("results:", results)
@@ -1232,13 +1233,6 @@ def print_results(args: DotDict, exp_results: dict, griderator: _Griderator) -> 
             )
         }
         print(f"Best config: {best_config}")
-
-
-def save_model_epoch(model_file: str, model: torch.nn.Module) -> str:
-    """Save model each epoch, in case the script aborts for some reason."""
-    save_model(model, model_file + ".pt")
-    print(model_file, " saved.")
-    return model_file
 
 
 def _parse_args():

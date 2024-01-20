@@ -6,7 +6,6 @@ import os
 import sys
 from pathlib import Path
 
-# TODO: put avg_energy.py and this script in one.
 import librosa
 import matplotlib
 import matplotlib.pyplot as plt
