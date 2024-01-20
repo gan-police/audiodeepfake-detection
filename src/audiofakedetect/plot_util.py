@@ -48,7 +48,7 @@ class AudioDataset(torch.utils.data.Dataset):
         """Initialize Audioloader.
 
         Args:
-            directory_or_path_list (str, Path, list): Path to the directory containing wav 
+            directory_or_path_list (str, Path, list): Path to the directory containing wav
                                                       files to load. Or a list of paths.
 
         Raises:

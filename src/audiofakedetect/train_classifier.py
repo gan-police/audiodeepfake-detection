@@ -616,7 +616,9 @@ class Trainer:
             except ValueError:
                 target_value = 1
 
-        target = torch.tensor(target_value).to(f"cuda:{str(self.local_rank)}", non_blocking=True)
+        target = torch.tensor(target_value).to(
+            f"cuda:{str(self.local_rank)}", non_blocking=True
+        )
 
         if self.args.ig_times_per_target is not None:
             times = times_0 = times_1 = self.args.ig_times_per_target
@@ -632,7 +634,8 @@ class Trainer:
 
         for val_batch in bar:
             label = (
-                val_batch["label"].to(f"cuda:{str(self.local_rank)}", non_blocking=True) != 0
+                val_batch["label"].to(f"cuda:{str(self.local_rank)}", non_blocking=True)
+                != 0
             ).type(torch.long)
             if label.shape[0] != batch_size:
                 continue
@@ -718,12 +721,6 @@ class Trainer:
             mean_sal = welford_sal.finalize()
 
             if is_lead(self.args):
-                mean_ig_max = torch.max(mean_ig, dim=1)[0]
-                mean_ig_min = torch.min(mean_ig, dim=1)[0]
-                ig_max = mean_ig_max.cpu().detach().numpy()
-                ig_min = mean_ig_min.cpu().detach().numpy()
-                ig_abs = np.abs(ig_max + np.abs(ig_min))
-
                 if both:
                     target_str = "01"
                 else:
@@ -746,9 +743,6 @@ class Trainer:
                 np.save(
                     path + "_last_image.npy", image.squeeze().detach().cpu().numpy()
                 )
-                np.save(path + "_ig_max.npy", ig_max)
-                np.save(path + "_ig_min.npy", ig_min)
-                np.save(path + "_ig_abs.npy", ig_abs)
 
     def _run_test(
         self, only_unknown: bool = False

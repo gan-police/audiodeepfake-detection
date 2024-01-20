@@ -90,7 +90,7 @@ def im_plot(
 
 def save_plot(path):
     """Save plt as standalone latex document."""
-    plt.savefig(path)
+    plt.savefig(path + ".jpg")
     tikz.save(
         f"{path}.tex",
         encoding="utf-8",
@@ -265,22 +265,21 @@ def plot_attribution_targets(
     plt.show()
 
 
-def plot_attribution() -> None:
+def plot_attribution(
+    transformations: list,
+    wavelets: list,
+    cross_sources: list,
+    plot_path: str,
+    seconds: int = 1,
+    sample_rate: int = 22050,
+    num_of_scales: int = 256,
+) -> None:
     """Plot attribution for saved attribution scores."""
-    transformations = ["packets", "stft"]
-    wavelets = ["sym8"]
-    cross_sources = [
-        "melgan-lmelgan-mbmelgan-pwg-waveglow-avocodo-hifigan-conformer-jsutmbmelgan-jsutpwg-lbigvgan-bigvgan",
-    ]
-
-    seconds = 1
-    sample_rate = 22050
-    num_of_scales = 256
     for transformation in transformations:
         for wavelet in wavelets:
             for cross_source in cross_sources:
                 path = (
-                    f"./out/plots/files/plots/{transformation}_{sample_rate}"
+                    f"{plot_path}/{transformation}_{sample_rate}"
                     + f"_{seconds}_0_fbmelgan_{wavelet}_2.0_False_ljspeech-{cross_source}x2500_target"
                 )
                 if (
@@ -293,20 +292,10 @@ def plot_attribution() -> None:
                     ig_01 = np.load(path + "-01_integrated_gradients.npy")
                 else:
                     continue
-                # if os.path.exists(path + "-0_ig_max.npy"):
-                #     _ig_max = np.load(path + "-0_ig_max.npy")
-                # else:
-                #     continue
-                # if os.path.exists(path + "-0_ig_min.npy"):
-                #     _ig_min = np.load(path + "-0_ig_min.npy")
-                # else:
-                #     continue
-                # if os.path.exists(path + "-0_ig_abs.npy"):
-                #     _ig_abs = np.load(path + "-0_ig_abs.npy")
-                # else:
-                #     continue
 
-                print(np.min(ig_0), np.max(ig_0))
+                if not os.path.exists(f"{plot_path}/images"):
+                    os.mkdir(f"{plot_path}/images")
+
                 plot_attribution_targets(
                     seconds,
                     sample_rate,
