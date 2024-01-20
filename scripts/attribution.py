@@ -16,7 +16,7 @@ if __name__ == "__main__":
         transformations=transformations,
         wavelets=wavelets,
         cross_sources=cross_sources,
-        plot_path="/p/home/jusers/gasenzer1/juwels/project_drive/kgasenzer/audiodeepfakes/logs/log8/plots",
+        plot_path="./plots",
         seconds=seconds,
         sample_rate=sample_rate,
         num_of_scales=num_of_scales
