@@ -2,11 +2,7 @@
 
 This is the supplementary source code for our paper "[Towards generalizing deep-audio fake detection networks](https://arxiv.org/abs/2305.13033)".
 
-<div style="display:flex;">
-    <img src="fingerprints/audios/wpt_A_wavs.png" alt="LJspeech fingerprints" style="width:33%;">
-    <img src="fingerprints/audios/wpt_B_ljspeech_melgan.png" alt="MelGAN fingerprints" style="width:33%;">
-    <img src="fingerprints/audios/wpt_diff_A_wavs_K_lbigvgan.png" alt="Difference fingerprints" style="width:33%;">
-</div>
+![fingerprints](./fingerprints/fingerprints.png)
 
 The figure above shows our studies of stable frequency domain patterns created by the different GAN architectures.
 The figure shows mean absolute level 14 Haar-Wavelet packet transform coefficients for LJSpeech and MelGAN audio files.
