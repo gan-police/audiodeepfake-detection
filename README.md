@@ -2,10 +2,53 @@
 
 This is the supplementary source code for our paper "[Towards generalizing deep-audio fake detection networks](https://arxiv.org/abs/2305.13033)".
 
-By leveraging the wavelet-packet and short-time fourier transform, 
-we train excellent lightweight detectors that generalize and examine the results in our paper.
+![fingerprints](./fingerprints/fingerprints.png)
 
-## Installation
+The figure above shows our studies of stable frequency domain patterns created by the different GAN architectures.
+The figure shows mean absolute level 14 Haar-Wavelet packet transform coefficients for LJSpeech and MelGAN audio files.
+The transform reveals that MelGAN produces a spike-shaped pattern in the frequency domain.
+We observe this for newer architectures like BigVGAN an Avocodo as well.
+
+Further, by leveraging the wavelet-packet and short-time fourier transform, we train excellent lightweight
+detectors that generalize well to unseen generators and examine the results in our paper.
+
+
+## Assets
+
+For continuous wavelet computations, we use the:
+- [PyTorch-Wavelet-Toolbox: ptwt](https://github.com/v0lta/PyTorch-Wavelet-Toolbox)
+
+We compare our approach to the DCT-LFCC/MFCC-method from:
+- [WaveFake: A Data Set to Facilitate Audio DeepFake Detection](https://github.com/RUB-SysSec/WaveFake)
+
+### Datasets
+
+We utilize two datasets that appeared in previous work and add our own extension:
+
+- [LJSpeech 1.1](https://keithito.com/LJ-Speech-Dataset/)
+- [WaveFake](https://zenodo.org/record/5642694)
+- [Our Extension](https://zenodo.org/records/10512541)
+
+### GAN Architectures
+We utilize pre-trained models from the following repositories:
+
+- [WaveFake](https://github.com/RUB-SysSec/WaveFake)
+- [BigVGAN](https://github.com/NVIDIA/BigVGAN)
+
+We used the inofficial implementation of Avocodo from [commit 2999557](https://github.com/ncsoft/avocodo) to train the avocodo vocoder.
+
+
+## Fingerprint audios
+We created an audible version of the mean spectra of the GAN fingerprints, by transforming them back into the time domain.
+The folder `fingerprints/audios/` contains sound files with amplified generator artifacts. The files are exciting but not 
+aesthetically pleasing. We recommend listening at low volumes. Comparing `A_ljspeech_real.wav` with one of the GAN spectra
+reveals clearly audible distinctions.
+
+## Reproduction
+
+The following section of the README serves as a guide to reproducing the experiments from our paper.
+
+### Installation
 
 The latest code can be installed in development mode in a running installation of python 3.10 or 3.11 with:
 
@@ -20,34 +63,6 @@ and install all requirements with
 ```shell
 pip install -r requirements.txt
 ```
-
-## Assets
-
-For continuous wavelet computations, we use the:
-- [PyTorch-Wavelet-Toolbox: ptwt](https://github.com/v0lta/PyTorch-Wavelet-Toolbox)
-
-We compare our approach to the DCT-LFCC/MFCC-method from:
-- [WaveFake: A Data Set to Facilitate Audio DeepFake Detection](https://github.com/RUB-SysSec/WaveFake)
-
-### Datasets
-
-We utilize two datasets that appeared in previous work:
-
-- [LJSpeech 1.1](https://keithito.com/LJ-Speech-Dataset/)
-- [WaveFake](https://zenodo.org/record/5642694)
-- [Our Extension](https://zenodo.org/records/10512541)
-
-### GAN Architectures
-We utilize pre-trained models from the following repositories:
-
-- [WaveFake](https://github.com/RUB-SysSec/WaveFake)
-- [BigVGAN](https://github.com/NVIDIA/BigVGAN)
-
-We used the inofficial implementation of Avocodo from [commit 2999557](https://github.com/ncsoft/avocodo) to train the avocodo vocoder.
-
-## Reproduction
-
-The following section of the README serves as a guide to reproducing the experiments from our paper.
 
 ### Preparation WaveFake
 
@@ -132,7 +147,12 @@ To plot the results, configure the variables in `plot_attribution` of `src/audio
 
 
 ## Building the documentation
-To build the documentation move into `docs/` and install the requirements with `pip install -r requirements.txt`. Now you can run the makefile with
+To build the documentation move into `docs/` and install the requirements with 
+```bash
+pip install -r requirements.txt
+```
+
+Now you can run the makefile with
 
 ```bash
 make html
