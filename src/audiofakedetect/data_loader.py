@@ -353,6 +353,52 @@ class CustomDataset(Dataset):
         return sample
 
 
+class CustomDatasetDetailed(CustomDataset):
+    """Create a data loader for custom paths.
+
+    This class wraps the CustomDataset class to override __getitem__ and return a more detailed sample.
+    """
+
+    def __getitem__(self, idx: int) -> dict:
+        """Get a dataset element.
+
+        Args:
+            idx (int): The element index of the data pair to return.
+
+        Returns:
+            sample (dict): Returns a dictionary with the self.key default ("audio") and "label" key
+            and the corresponding data path in "path" and frame offset in "offset" and the number
+            of frames in "num_frames".
+
+        Raises:
+            RuntimeError: If sample rate is smaller than desired resample rate.
+        """
+        audio, sample_rate = torchaudio.load(
+            self.audio_data[idx, 0],
+            frame_offset=self.audio_data[idx, 1] * self.audio_data[idx, 2],
+            num_frames=self.audio_data[idx, 2],
+        )
+
+        if sample_rate > self.resample_rate:
+            audio = torchaudio.functional.resample(
+                audio, sample_rate, self.resample_rate
+            )
+        elif sample_rate < self.resample_rate:
+            raise RuntimeError(
+                "Sample rate is smaller than desired sample rate. No upsampling possible here."
+            )
+
+        label = torch.tensor(self.audio_data[idx, 3])
+        sample = {
+            self.key: audio,
+            "label": label,
+            "path": self.audio_data[idx, 0],
+            "offset": self.audio_data[idx, 1],
+            "num_frames": self.audio_data[idx, 2],
+        }
+        return sample
+
+
 def get_costum_dataset(
     data_path: str,
     save_path: str,
@@ -367,6 +413,7 @@ def get_costum_dataset(
     train_ratio: float = 0.7,
     val_ratio: float = 0.1,
     file_type: str = "wav",
+    get_details: bool = False,
 ) -> CustomDataset:
     """Wrap custom dataset creation.
 
@@ -392,6 +439,8 @@ def get_costum_dataset(
         val_ratio (float): Percentage of validation files in dataset as decimal.
                                      Defaults to 0.1.
         file_type (str): File type of all audio files in the folders. Defaults to "wav".
+        get_details (bool): If __getitem__ should return details about the audio file, the frame
+                            count and the offset.
 
     Raises:
         RuntimeError: If the given `data_path` does not contain subfolders.
@@ -428,19 +477,37 @@ def get_costum_dataset(
     if 0 not in labels and ds_type == "train":
         raise RuntimeError("No real training data. Aborting...")
 
-    return CustomDataset(
-        paths=str_paths,
-        labels=labels,
-        save_path=save_path,
-        abort_on_save=abort_on_save,
-        seconds=seconds,
-        resample_rate=resample_rate,
-        verbose=False,
-        limit=limit,
-        ds_type=ds_type,
-        only_test_folders=only_test_folders,
-        asvspoof_name=asvspoof_name,
-        train_ratio=train_ratio,
-        val_ratio=val_ratio,
-        filetype=file_type,
-    )
+    if get_details:
+        return CustomDatasetDetailed(
+            paths=str_paths,
+            labels=labels,
+            save_path=save_path,
+            abort_on_save=abort_on_save,
+            seconds=seconds,
+            resample_rate=resample_rate,
+            verbose=False,
+            limit=limit,
+            ds_type=ds_type,
+            only_test_folders=only_test_folders,
+            asvspoof_name=asvspoof_name,
+            train_ratio=train_ratio,
+            val_ratio=val_ratio,
+            filetype=file_type,
+        )
+    else:
+        return CustomDataset(
+            paths=str_paths,
+            labels=labels,
+            save_path=save_path,
+            abort_on_save=abort_on_save,
+            seconds=seconds,
+            resample_rate=resample_rate,
+            verbose=False,
+            limit=limit,
+            ds_type=ds_type,
+            only_test_folders=only_test_folders,
+            asvspoof_name=asvspoof_name,
+            train_ratio=train_ratio,
+            val_ratio=val_ratio,
+            filetype=file_type,
+        )
