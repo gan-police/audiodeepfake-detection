@@ -341,7 +341,8 @@ class Trainer:
         else:
             return
 
-    def calculate_eer(self, y_true: np.ndarray, y_score: np.ndarray) -> float:
+    @staticmethod
+    def calculate_eer(y_true: np.ndarray, y_score: np.ndarray) -> float:
         """Return the equal error rate for a binary classifier output.
 
         Based on:
@@ -402,14 +403,15 @@ class Trainer:
                     f"[GPU{self.global_rank}] {name} - acc: {ok_sum/total:2.8f}"
                 )
                 for lbl, okl in zip(val_batch["label"], ok_mask):
-                    if lbl.item() not in ok_dict:
-                        ok_dict[lbl.item()] = [okl.cpu()]
+                    lbl_item = lbl.item()
+                    if lbl_item not in ok_dict:
+                        ok_dict[lbl_item] = [okl.cpu()]
                     else:
-                        ok_dict[lbl.item()].append(okl.cpu())
-                    if lbl.item() not in count_dict:
-                        count_dict[lbl.item()] = 1
+                        ok_dict[lbl_item].append(okl.cpu())
+                    if lbl_item not in count_dict:
+                        count_dict[lbl_item] = 1
                     else:
-                        count_dict[lbl.item()] += 1
+                        count_dict[lbl_item] += 1
 
                 y_list.append(y)
                 out_list.append(out_max)
@@ -451,25 +453,12 @@ class Trainer:
             barrier()  # synchronize all processes
 
         if is_lead(self.args):
-            print(
-                f"{name} - ",
-                [
-                    (
-                        data_loader.dataset.get_label_name(key),
-                        (
-                            sum([sum(ok_dict_g[key]) for ok_dict_g in ok_dict_gathered])  # type: ignore
-                            / sum(
-                                [
-                                    count_dict_g[key]  # type: ignore
-                                    for count_dict_g in count_dict_gathered
-                                ]  # type: ignore
-                            )
-                        ).item(),
-                    )
-                    for key in common_keys
-                ],
-            )  # type: ignore
-            eer = self.calculate_eer(
+            acc_list = Trainer.caculate_acc_dict(
+                data_loader, common_keys, ok_dict_gathered, count_dict_gathered
+            )
+
+            print(f"{name} - ", acc_list)
+            eer = Trainer.calculate_eer(
                 ys_gathered.cpu().numpy(), outs_gathered.cpu().numpy()
             )
             val_acc = sum(ok_sum_gathered) / sum(total_gathered)  # type: ignore
@@ -479,7 +468,84 @@ class Trainer:
         else:
             eer = 0
             val_acc = 0
-        return val_acc, eer  # type: ignore
+        return val_acc, eer
+
+    @staticmethod
+    def caculate_acc_dict(
+        data_loader: DataLoader,
+        common_keys: set,
+        ok_dict_gathered: list,
+        count_dict_gathered: list,
+    ) -> list[tuple[str | int, float]]:
+        """Calculate accuracy over each label using the gathered list.
+
+        Args:
+            data_loader (DataLoader): Current dataloader.
+            common_keys (set): Set containing the labels to iterate over.
+            count_dict_gathered (list): A list for each thread holding a dict of count for occurence of all labels.
+            ok_dict_gathered (list): A list for each thread holding a dict of boolean tensors for all correctly
+                                     predicted labels.
+
+        Returns:
+            list[tuple[str | int, float]]: List of acc for each label, e.g. [("ljspeech", 0.74), ("melgan", 0.81)]
+        """
+        return [
+            (
+                data_loader.dataset.get_label_name(key),
+                Trainer.calculate_acc_label(count_dict_gathered, ok_dict_gathered, key),
+            )
+            for key in common_keys
+        ]
+
+    @staticmethod
+    def calculate_acc_label(
+        count_dict_gathered: list, ok_dict_gathered: list, key: int
+    ) -> float:
+        """Calculate accuracy over one label using the gathered list from each thread.
+
+        See tests in tests/test_trainer.py for examples.
+
+        Args:
+            count_dict_gathered (list): A list for each thread holding a dict of count for occurence of all labels.
+            ok_dict_gathered (list): A list for each thread holding a dict of boolean tensors for all correctly
+                                     predicted labels.
+            key (int): Label to look at.
+
+        Returns:
+            float: The accuracy for the given label (key) over all threads.
+
+        Raises:
+            KeyError: If the requested label is not part of both given lists.
+            TypeError: If type of result is not tensor or float.
+        """
+        all_keys = set()
+        for count_dict in count_dict_gathered:
+            all_keys.update(count_dict.keys())
+        for ok_dict in ok_dict_gathered:
+            for key_list in ok_dict.values():
+                all_keys.update(key_list)
+        all_keys = all_keys.intersection(*[set(d.keys()) for d in count_dict_gathered])
+        all_keys = list(  # type: ignore
+            all_keys.intersection(*[set(d.keys()) for d in ok_dict_gathered])
+        )
+
+        if key not in all_keys:
+            raise KeyError(
+                f"Key {key} does not exist in both dictionaries. Only available keys: {all_keys}."
+            )
+
+        acc = sum(
+            [sum(ok_dict_g[key]) for ok_dict_g in ok_dict_gathered]
+        ) / sum(  # type: ignore
+            [count_dict_g[key] for count_dict_g in count_dict_gathered]
+        )  # type: ignore
+
+        if isinstance(acc, torch.Tensor):
+            return acc.item()
+        elif isinstance(acc, float):
+            return acc
+        else:
+            raise TypeError("Result should either be float or tensor.")
 
     def integrated_grad(
         self,
