@@ -4,6 +4,7 @@ Holds a custom torch Dataset class implementation that prepares the audio
 and cuts it to frames and transforms it with CWT. Dataloader methods
 can be found here to.
 """
+
 import os
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
@@ -71,7 +72,15 @@ class WelfordEstimator:
 
 
 class CustomDataset(Dataset):
-    """Create a data loader for custom paths."""
+    """Create a data loader for custom paths.
+
+    This class will traverse the given directories and create an equally distributed dataset (all labels
+    are represented with same amount) over these folders. If two folders with real and fake audios are given,
+    this class will represent a binary dataset. You can give any amount of folders and set the limit for each label
+    as well. The dataset will contain information about each audio file (where it is saved), about the used samples
+    from this audio, the corresponding label and the desired resample rate. All these infos will be applied when
+    a data sample is retrieved (e.g. by torch dataloader).
+    """
 
     def __init__(
         self,
@@ -91,20 +100,33 @@ class CustomDataset(Dataset):
         filetype: str = "wav",
         asvspoof_name: str | None = None,
     ):
-        """Create a Wavefake-dataset object.
-
-        Dataset with additional transforming in cwt space.
+        """Create a custom-dataset object.
 
         Args:
-            key: The key for the input or 'x' component of the dataset.
-                 Defaults to "audio".
+            paths (list): Paths to audio files to include.
+            labels (list): Labels for given audio paths.
+            save_path (str): Path to save the dataset in.
+            only_test_folders (Optional[list]): List of folders that only contain audios for testing. Defaults to None.
+            abort_on_save (bool): Abort after saving. Use this to only prepare the datasets. Defaults to False.
+            ds_type (str): Type of this dataset. Can be train, test or val. Defaults to "train".
+            seconds (float): Length of desired audio snippets. This will be used to cut the audio files
+                             into same-length frames. Defaults to 1.
+            resample_rate (int): Desired sample rate. This will later on be used to resample the given audio.
+                                 Defaults to 16000.
+            train_ratio (float): Size of train set as decimal number. Defaults to 0.7.
+            val_ratio (float): Size of validation set as decimal number. Defaults to 0.1.
+            key (Optional[str]): Key for the audio data in the resulting get item method. Defaults to "audio".
+            limit (int): Limit of maximum audios per label. Defaults to 555000.
+            verbose (Optional[bool]): If more verbose messages should be displayed. Defaults to False.
+            filetype (str): The file ending of the audio files. Defaults to "wav".
+            asvspoof_name (str | None): The file prefix if asvspoof files are provided, e.g. DF_E. Defaults to None.
 
         Raises:
-            ValueError: If an unexpected file name is given or directory is empty.
-
-        # noqa: DAR401
+            RuntimeError: If desired resample rate for auido files is bigger than the actual sample rate (no upsampling
+                          possible).
+            ValueError: If only_test_folders are specified and ds_type is "train". This is contradictory.
+            RuntimeError: If ds_type is not "train", "test" or "val".
         """
-        # TODO: Docu update
         if verbose:
             print("Loading ", ds_type, paths, flush=True)
 

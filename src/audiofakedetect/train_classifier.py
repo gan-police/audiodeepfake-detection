@@ -1,4 +1,5 @@
 """Source code to train audio deepfake detectors in wavelet space."""
+
 import argparse
 import os
 import sys
@@ -74,9 +75,11 @@ def create_data_loaders(
         only_use=only_use,
         save_path=save_path,
         limit=limit_train[0],
-        asvspoof_name=f"{args.asvspoof_name}_T"
-        if args.asvspoof_name is not None and "LA" in args.asvspoof_name
-        else args.asvspoof_name,
+        asvspoof_name=(
+            f"{args.asvspoof_name}_T"
+            if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+            else args.asvspoof_name
+        ),
         file_type=args.file_type,
         resample_rate=args.sample_rate,
         seconds=args.seconds,
@@ -87,9 +90,11 @@ def create_data_loaders(
         only_use=only_use,
         save_path=save_path,
         limit=limit_train[1],
-        asvspoof_name=f"{args.asvspoof_name}_D"
-        if args.asvspoof_name is not None and "LA" in args.asvspoof_name
-        else args.asvspoof_name,
+        asvspoof_name=(
+            f"{args.asvspoof_name}_D"
+            if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+            else args.asvspoof_name
+        ),
         file_type=args.file_type,
         resample_rate=args.sample_rate,
         seconds=args.seconds,
@@ -100,9 +105,11 @@ def create_data_loaders(
         only_use=only_use,
         save_path=save_path,
         limit=limit_train[2],
-        asvspoof_name=f"{args.asvspoof_name}_E"
-        if args.asvspoof_name is not None and "LA" in args.asvspoof_name
-        else args.asvspoof_name,
+        asvspoof_name=(
+            f"{args.asvspoof_name}_E"
+            if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+            else args.asvspoof_name
+        ),
         file_type=args.file_type,
         resample_rate=args.sample_rate,
         seconds=args.seconds,

@@ -3,6 +3,7 @@
 The idea is to provide functionality to make the cwt useful
 for audio analysis and gan-content recognition.
 """
+
 import os
 import pickle
 from math import log
@@ -406,9 +407,11 @@ def calc_normalization(
         only_use=args.only_use,
         save_path=args.save_path,
         limit=args.limit_train[0],
-        asvspoof_name=f"{args.asvspoof_name}_T"
-        if args.asvspoof_name is not None and "LA" in args.asvspoof_name
-        else args.asvspoof_name,
+        asvspoof_name=(
+            f"{args.asvspoof_name}_T"
+            if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+            else args.asvspoof_name
+        ),
         file_type=args.file_type,
         resample_rate=args.sample_rate,
         seconds=args.seconds,

@@ -1,4 +1,5 @@
 """Return configuration for grid search."""
+
 from functools import partial
 
 import torch
@@ -133,7 +134,7 @@ def get_config() -> dict:
         "ochannels5": [32],
         "hop_length": [220],
         "only_testing": [False],
-        "only_ig": [False]
+        "only_ig": [False],
         # "target": [0, 1, None],
     }
 

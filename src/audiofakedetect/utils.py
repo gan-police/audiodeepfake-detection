@@ -1,4 +1,5 @@
 """Set utility functions."""
+
 from __future__ import annotations  # Required for forward references
 
 import itertools
@@ -592,9 +593,11 @@ def get_input_dims(args: DotDict, transforms) -> list:
         only_use=args.only_use,
         save_path=args.save_path,
         limit=args.limit_train[0],
-        asvspoof_name=f"{args.asvspoof_name}_T"
-        if args.asvspoof_name is not None and "LA" in args.asvspoof_name
-        else args.asvspoof_name,
+        asvspoof_name=(
+            f"{args.asvspoof_name}_T"
+            if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+            else args.asvspoof_name
+        ),
         file_type=args.file_type,
         resample_rate=args.sample_rate,
         seconds=args.seconds,
