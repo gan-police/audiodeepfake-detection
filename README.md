@@ -127,6 +127,12 @@ Keep in mind that each experiment will be run for the several different seeds (d
 
 Important: Set the `data_path`, `save_path`, `limit_train`, `cross_limit`, `seconds` the same as in `scripts/prepare_ljspeech.py`.
 
+Using a cluster with slurm installed an examplary run for training the DCNN with a sym5 could be achieved by using the given config and executing
+
+```bash
+sbatch scripts/train.sh packets fbmelgan 256 sym5 2.0 False 320 1
+```
+
 ### Evaluating the Classifier
 
 #### Calculating accuracy and equal error rate (EER)
@@ -145,6 +151,18 @@ log_dir/plots/some_model_config_[used-sources]x2500_target-01_integrated_gradien
 
 To plot the results, configure the variables in `plot_attribution` of `src/audiofakedetect/integrated_gradients.py` and execute it using `scripts/attribution.py`.
 
+
+#### Example Misclassifications per Model
+
+It is possible to extract misclassified audio fakes by comparing the correct classifications of different models. This can be done by using the `"get_details": [True]` config in your `gridsearch_config.py`. Set `"only_testing": [True]` as well if you have trained your models already. Using this configuration each test loop for each individual experiment will produce an output numpy file in the log dir with a file name starting with `true_ind...`.
+
+To compare to experiment results (e.g. of a model with dilation and one without), use the `scripts/analyze_model_diffs.py` script to extract 10 sample audios which are correctly classified by the first given model and incorrectly classified by the second given model. You might need to adjust the corresponding file paths in the script to point to the result from the testing process and also specify a save path for the audios.
+
+In the following we provide some examplary audios that were correctly classified as deep fake by our DCNN and misclassified (as real) by the same model without dilation:
+- [B_melgan_LJ016-0433_gen_4.wav](fingerprints/classification_examples/B_melgan_LJ016-0433_gen_4.wav)
+- [D_mbmelgan_LJ014-0293_gen_2.wav](fingerprints/classification_examples/D_mbmelgan_LJ014-0293_gen_2.wav)
+- [H_lmelgan_LJ002-0228_gen_10.wav](fingerprints/classification_examples/H_lmelgan_LJ002-0228_gen_10.wav)
+- [K_lbigvgan_LJ021-0060_generated_6.wav](fingerprints/classification_examples/K_lbigvgan_LJ021-0060_generated_6.wav)
 
 ## Building the documentation
 To build the documentation move into `docs/` and install the requirements with 

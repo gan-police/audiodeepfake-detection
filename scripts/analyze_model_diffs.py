@@ -37,6 +37,7 @@ if __name__ == "__main__":
     if not os.path.exists(save_path):
         os.mkdir(save_path)
 
+    np.random.shuffle(data_only_in_first)
     i = 0
     for data in data_only_in_first:
         print(i)
@@ -47,7 +48,7 @@ if __name__ == "__main__":
             i += 1
 
         # assuming a file is saved as some_folder/B_melgan/L2934-234_gen.wav or similar
-        split_name = str(file_name).split('/')
+        split_name = str(file_name).split("/")
         new_name = f"{split_name[-2]}_{split_name[-1].split('.')[0]}_{i}.wav"
         print(f"Saved {str(file_name)} in {new_name}")
         cut_and_save_wav(

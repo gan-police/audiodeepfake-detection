@@ -1392,7 +1392,10 @@ def print_results(
     else:
         wavelets = ["stft"]
 
-    np.save(args.log_dir + f"/{model_file.split('/')[-1]}_{','.join(wavelets)}_results.npy", results)
+    np.save(
+        args.log_dir + f"/{model_file.split('/')[-1]}_{','.join(wavelets)}_results.npy",
+        results,
+    )
     mean = results.mean(0)
     std = results.std(0)
     print("results:", results)
