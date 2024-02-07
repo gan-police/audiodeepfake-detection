@@ -19,7 +19,7 @@ if __name__ == "__main__":
     file_base = ""
     file_comp = ""
     save_path = ""
-    
+
     if not os.path.exists(file_base) or not os.path.exists(file_comp):
         raise RuntimeError("Files not found")
 
@@ -46,13 +46,15 @@ if __name__ == "__main__":
         else:
             i += 1
 
-        print(f"Saved {str(file_name)} in {str(file_name).split('/')[-1].split('.')[0]}_{i}.wav")
+        print(
+            f"Saved {str(file_name)} in {str(file_name).split('/')[-1].split('.')[0]}_{i}.wav"
+        )
         cut_and_save_wav(
             file_name,
             f"{save_path}/{str(file_name).split('/')[-1].split('.')[0]}_{i}.wav",
             data[1],
             data[2],
         )
-        
+
         if i == 10:
             break

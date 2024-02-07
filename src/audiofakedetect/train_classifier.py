@@ -1328,10 +1328,7 @@ def main() -> None:
 
         known_indices = trainer.current_true_indices.get("test known", [])
         unknown_indices = trainer.current_true_indices.get("test unknown", [])
-        if args.get_details and (
-            len(known_indices) > 0
-            or len(unknown_indices) > 0
-        ):
+        if args.get_details and (len(known_indices) > 0 or len(unknown_indices) > 0):
             if isinstance(known_indices, torch.Tensor):
                 true_ind_known = known_indices.detach().cpu().numpy()
             elif isinstance(known_indices, np.ndarray):
@@ -1351,7 +1348,8 @@ def main() -> None:
                 "dataset": trainer.cross_loader_test.dataset.audio_data,
             }
             np.save(
-                f"{args.log_dir}/true_ind_{model_file.split('/')[-1]}_{args.seed}.npy", true_ind_data
+                f"{args.log_dir}/true_ind_{model_file.split('/')[-1]}_{args.seed}.npy",
+                true_ind_data,
             )
 
     if is_lead(args):
