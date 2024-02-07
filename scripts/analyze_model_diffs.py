@@ -46,12 +46,13 @@ if __name__ == "__main__":
         else:
             i += 1
 
-        print(
-            f"Saved {str(file_name)} in {str(file_name).split('/')[-1].split('.')[0]}_{i}.wav"
-        )
+        # assuming a file is saved as some_folder/B_melgan/L2934-234_gen.wav or similar
+        split_name = str(file_name).split('/')
+        new_name = f"{split_name[-2]}_{split_name[-1].split('.')[0]}_{i}.wav"
+        print(f"Saved {str(file_name)} in {new_name}")
         cut_and_save_wav(
             file_name,
-            f"{save_path}/{str(file_name).split('/')[-1].split('.')[0]}_{i}.wav",
+            f"{save_path}/{new_name}",
             data[1],
             data[2],
         )
