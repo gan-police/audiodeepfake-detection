@@ -5,7 +5,7 @@ from functools import partial
 import torch
 import torchvision
 
-from audiofakedetect.models import DCNN
+from src.audiofakedetect.models import DCNN
 
 
 def get_config() -> dict:
@@ -77,9 +77,9 @@ def get_config() -> dict:
         "save_path": ["./data/run3"],
         "data_path": ["./data/fake"],
         "only_use": [["ljspeech", "fbmelgan"]],
-        "limit_train": [(55504, 7504, 15504)],
+        "limit_train": [(55504, 7504, 15504)],  # train, val, test
         "cross_data_path": ["./data/fake"],
-        "cross_limit": [(55500, 7304, 14600)],
+        "cross_limit": [(55500, 7304, 14600)],  # train, val, test
         "only_test_folders": [["conformer", "jsutmbmelgan", "jsutpwg"]],
         "file_type": ["wav"],
         "dropout_cnn": [0.6],
@@ -136,6 +136,7 @@ def get_config() -> dict:
         "only_testing": [False],
         "only_ig": [False],
         # "target": [0, 1, None],
+        "get_details": [False],
     }
 
     # Alternatively, the config for the In The Wild dataset could look like this:

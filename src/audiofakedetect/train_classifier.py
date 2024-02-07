@@ -487,7 +487,7 @@ class Trainer:
             eer = 0
             val_acc = 0
 
-        if isinstance(true_indices_gathered, list):
+        if is_lead(self.args) and isinstance(true_indices_gathered, list):
             true_indices_gathered = torch.cat(true_indices_gathered, dim=0)
         self.current_true_indices[name] = true_indices_gathered
 
@@ -1326,32 +1326,22 @@ def main() -> None:
         else:
             raise TypeError("Result array must contain lists.")
 
+        known_indices = trainer.current_true_indices.get("test known", [])
+        unknown_indices = trainer.current_true_indices.get("test unknown", [])
         if args.get_details and (
-            len(trainer.current_true_indices.get("test known", [])) > 0
-            or len(trainer.current_true_indices.get("test unknown", [])) > 0
+            len(known_indices) > 0
+            or len(unknown_indices) > 0
         ):
-            if isinstance(
-                trainer.current_true_indices.get("test known", []), torch.Tensor
-            ):
-                true_ind_known = (
-                    trainer.current_true_indices["test known"].detach().cpu().numpy()
-                )
-            elif isinstance(
-                trainer.current_true_indices.get("test known", []), np.ndarray
-            ):
-                true_ind_known = trainer.current_true_indices["test known"]
+            if isinstance(known_indices, torch.Tensor):
+                true_ind_known = known_indices.detach().cpu().numpy()
+            elif isinstance(known_indices, np.ndarray):
+                true_ind_known = known_indices
             else:
                 true_ind_known = []
-            if isinstance(
-                trainer.current_true_indices.get("test unknown", []), torch.Tensor
-            ):
-                true_ind_unknown = (
-                    trainer.current_true_indices["test unknown"].detach().cpu().numpy()
-                )
-            elif isinstance(
-                trainer.current_true_indices.get("test unknown", []), np.ndarray
-            ):
-                true_ind_unknown = trainer.current_true_indices["test unknown"]
+            if isinstance(unknown_indices, torch.Tensor):
+                true_ind_unknown = unknown_indices.detach().cpu().numpy()
+            elif isinstance(unknown_indices, np.ndarray):
+                true_ind_unknown = unknown_indices
             else:
                 true_ind_unknown = []
 
@@ -1361,7 +1351,7 @@ def main() -> None:
                 "dataset": trainer.cross_loader_test.dataset.audio_data,
             }
             np.save(
-                f"{args.log_dir}/true_ind_{model_file}_{args.seed}.npy", true_ind_data
+                f"{args.log_dir}/true_ind_{model_file.split('/')[-1]}_{args.seed}.npy", true_ind_data
             )
 
     if is_lead(args):
