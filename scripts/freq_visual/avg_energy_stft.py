@@ -2,6 +2,7 @@
 
 Direct port of: https://github.com/RUB-SysSec/WaveFake/blob/main/statistics.py
 """
+
 import os
 import sys
 from pathlib import Path

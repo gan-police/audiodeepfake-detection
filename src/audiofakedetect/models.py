@@ -1,4 +1,5 @@
 """Models for classification of audio deepfakes."""
+
 import ast
 import sys
 from copy import copy

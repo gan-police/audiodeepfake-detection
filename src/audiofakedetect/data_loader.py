@@ -4,6 +4,7 @@ Holds a custom torch Dataset class implementation that prepares the audio
 and cuts it to frames and transforms it with CWT. Dataloader methods
 can be found here to.
 """
+
 import os
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
@@ -71,7 +72,15 @@ class WelfordEstimator:
 
 
 class CustomDataset(Dataset):
-    """Create a data loader for custom paths."""
+    """Create a data loader for custom paths.
+
+    This class will traverse the given directories and create an equally distributed dataset (all labels
+    are represented with same amount) over these folders. If two folders with real and fake audios are given,
+    this class will represent a binary dataset. You can give any amount of folders and set the limit for each label
+    as well. The dataset will contain information about each audio file (where it is saved), about the used samples
+    from this audio, the corresponding label and the desired resample rate. All these infos will be applied when
+    a data sample is retrieved (e.g. by torch dataloader).
+    """
 
     def __init__(
         self,
@@ -91,20 +100,33 @@ class CustomDataset(Dataset):
         filetype: str = "wav",
         asvspoof_name: str | None = None,
     ):
-        """Create a Wavefake-dataset object.
-
-        Dataset with additional transforming in cwt space.
+        """Create a custom-dataset object.
 
         Args:
-            key: The key for the input or 'x' component of the dataset.
-                 Defaults to "audio".
+            paths (list): Paths to audio files to include.
+            labels (list): Labels for given audio paths.
+            save_path (str): Path to save the dataset in.
+            only_test_folders (Optional[list]): List of folders that only contain audios for testing. Defaults to None.
+            abort_on_save (bool): Abort after saving. Use this to only prepare the datasets. Defaults to False.
+            ds_type (str): Type of this dataset. Can be train, test or val. Defaults to "train".
+            seconds (float): Length of desired audio snippets. This will be used to cut the audio files
+                             into same-length frames. Defaults to 1.
+            resample_rate (int): Desired sample rate. This will later on be used to resample the given audio.
+                                 Defaults to 16000.
+            train_ratio (float): Size of train set as decimal number. Defaults to 0.7.
+            val_ratio (float): Size of validation set as decimal number. Defaults to 0.1.
+            key (Optional[str]): Key for the audio data in the resulting get item method. Defaults to "audio".
+            limit (int): Limit of maximum audios per label. Defaults to 555000.
+            verbose (Optional[bool]): If more verbose messages should be displayed. Defaults to False.
+            filetype (str): The file ending of the audio files. Defaults to "wav".
+            asvspoof_name (str | None): The file prefix if asvspoof files are provided, e.g. DF_E. Defaults to None.
 
         Raises:
-            ValueError: If an unexpected file name is given or directory is empty.
-
-        # noqa: DAR401
+            RuntimeError: If desired resample rate for auido files is bigger than the actual sample rate (no upsampling
+                          possible).
+            ValueError: If only_test_folders are specified and ds_type is "train". This is contradictory.
+            RuntimeError: If ds_type is not "train", "test" or "val".
         """
-        # TODO: Docu update
         if verbose:
             print("Loading ", ds_type, paths, flush=True)
 
@@ -331,6 +353,46 @@ class CustomDataset(Dataset):
         return sample
 
 
+class CustomDatasetDetailed(CustomDataset):
+    """Create a data loader for custom paths.
+
+    This class wraps the CustomDataset class to override __getitem__ and return a more detailed sample.
+    """
+
+    def __getitem__(self, idx: int) -> dict:
+        """Get a dataset element.
+
+        Args:
+            idx (int): The element index of the data pair to return.
+
+        Returns:
+            sample (dict): Returns a dictionary with the self.key default ("audio") and "label" key
+            and the corresponding data path in "path" and frame offset in "offset" and the number
+            of frames in "num_frames".
+
+        Raises:
+            RuntimeError: If sample rate is smaller than desired resample rate.
+        """
+        audio, sample_rate = torchaudio.load(
+            self.audio_data[idx, 0],
+            frame_offset=self.audio_data[idx, 1] * self.audio_data[idx, 2],
+            num_frames=self.audio_data[idx, 2],
+        )
+
+        if sample_rate > self.resample_rate:
+            audio = torchaudio.functional.resample(
+                audio, sample_rate, self.resample_rate
+            )
+        elif sample_rate < self.resample_rate:
+            raise RuntimeError(
+                "Sample rate is smaller than desired sample rate. No upsampling possible here."
+            )
+
+        label = torch.tensor(self.audio_data[idx, 3])
+        sample = {self.key: audio, "label": label, "index": idx}
+        return sample
+
+
 def get_costum_dataset(
     data_path: str,
     save_path: str,
@@ -345,6 +407,7 @@ def get_costum_dataset(
     train_ratio: float = 0.7,
     val_ratio: float = 0.1,
     file_type: str = "wav",
+    get_details: bool = False,
 ) -> CustomDataset:
     """Wrap custom dataset creation.
 
@@ -370,6 +433,8 @@ def get_costum_dataset(
         val_ratio (float): Percentage of validation files in dataset as decimal.
                                      Defaults to 0.1.
         file_type (str): File type of all audio files in the folders. Defaults to "wav".
+        get_details (bool): If __getitem__ should return details about the audio file, the frame
+                            count and the offset.
 
     Raises:
         RuntimeError: If the given `data_path` does not contain subfolders.
@@ -406,19 +471,37 @@ def get_costum_dataset(
     if 0 not in labels and ds_type == "train":
         raise RuntimeError("No real training data. Aborting...")
 
-    return CustomDataset(
-        paths=str_paths,
-        labels=labels,
-        save_path=save_path,
-        abort_on_save=abort_on_save,
-        seconds=seconds,
-        resample_rate=resample_rate,
-        verbose=False,
-        limit=limit,
-        ds_type=ds_type,
-        only_test_folders=only_test_folders,
-        asvspoof_name=asvspoof_name,
-        train_ratio=train_ratio,
-        val_ratio=val_ratio,
-        filetype=file_type,
-    )
+    if get_details:
+        return CustomDatasetDetailed(
+            paths=str_paths,
+            labels=labels,
+            save_path=save_path,
+            abort_on_save=abort_on_save,
+            seconds=seconds,
+            resample_rate=resample_rate,
+            verbose=False,
+            limit=limit,
+            ds_type=ds_type,
+            only_test_folders=only_test_folders,
+            asvspoof_name=asvspoof_name,
+            train_ratio=train_ratio,
+            val_ratio=val_ratio,
+            filetype=file_type,
+        )
+    else:
+        return CustomDataset(
+            paths=str_paths,
+            labels=labels,
+            save_path=save_path,
+            abort_on_save=abort_on_save,
+            seconds=seconds,
+            resample_rate=resample_rate,
+            verbose=False,
+            limit=limit,
+            ds_type=ds_type,
+            only_test_folders=only_test_folders,
+            asvspoof_name=asvspoof_name,
+            train_ratio=train_ratio,
+            val_ratio=val_ratio,
+            filetype=file_type,
+        )

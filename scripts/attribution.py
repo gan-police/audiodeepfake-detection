@@ -1,4 +1,5 @@
 """Plot attribution using saved attribution means."""
+
 from src.audiofakedetect.integrated_gradients import plot_attribution
 
 if __name__ == "__main__":
@@ -19,5 +20,5 @@ if __name__ == "__main__":
         plot_path="./plots",
         seconds=seconds,
         sample_rate=sample_rate,
-        num_of_scales=num_of_scales
+        num_of_scales=num_of_scales,
     )

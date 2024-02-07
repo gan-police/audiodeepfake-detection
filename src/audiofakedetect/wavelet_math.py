@@ -3,6 +3,7 @@
 The idea is to provide functionality to make the cwt useful
 for audio analysis and gan-content recognition.
 """
+
 import os
 import pickle
 from math import log
@@ -362,7 +363,7 @@ def get_transforms(
     elif normalization:
         if verbose:
             print("computing mean and std values.", flush=True)
-        welford_dict = calc_normalization(args, pbar, transforms, norm_dir)
+        welford_dict, mean, std = calc_normalization(args, pbar, transforms, norm_dir)
     else:
         if verbose:
             print("Using default mean and std.")
@@ -388,7 +389,7 @@ def calc_normalization(
     pbar: bool,
     transforms: torch.nn.Sequential,
     norm_dir: str,
-):
+) -> tuple:
     """Calculate normalization of training dataset.
 
     Args:
@@ -398,7 +399,7 @@ def calc_normalization(
         norm_dir (str): Path to directory where to save the mean and std.
 
     Returns:
-        dict: The block norm dictionary. Is None if block norm is disabled.
+        tuple: The block norm dictionary, the mean and std. blocknorm is None if block norm is disabled.
     """
     dataset = get_costum_dataset(
         data_path=args.data_path,
@@ -406,9 +407,11 @@ def calc_normalization(
         only_use=args.only_use,
         save_path=args.save_path,
         limit=args.limit_train[0],
-        asvspoof_name=f"{args.asvspoof_name}_T"
-        if args.asvspoof_name is not None and "LA" in args.asvspoof_name
-        else args.asvspoof_name,
+        asvspoof_name=(
+            f"{args.asvspoof_name}_T"
+            if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+            else args.asvspoof_name
+        ),
         file_type=args.file_type,
         resample_rate=args.sample_rate,
         seconds=args.seconds,
@@ -446,4 +449,4 @@ def calc_normalization(
             with open(f"{norm_dir}_mean_std.pkl", "wb") as f:
                 pickle.dump([mean.cpu().numpy(), std.cpu().numpy()], f)
 
-    return welford_dict
+    return welford_dict, mean, std

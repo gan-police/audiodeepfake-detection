@@ -1,4 +1,5 @@
 """Plot individual GAN fingerprints in audio deepfakes."""
+
 import os
 import sys
 from pathlib import Path

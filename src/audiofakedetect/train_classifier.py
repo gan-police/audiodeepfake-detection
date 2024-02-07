@@ -1,4 +1,5 @@
 """Source code to train audio deepfake detectors in wavelet space."""
+
 import argparse
 import os
 import sys
@@ -74,9 +75,11 @@ def create_data_loaders(
         only_use=only_use,
         save_path=save_path,
         limit=limit_train[0],
-        asvspoof_name=f"{args.asvspoof_name}_T"
-        if args.asvspoof_name is not None and "LA" in args.asvspoof_name
-        else args.asvspoof_name,
+        asvspoof_name=(
+            f"{args.asvspoof_name}_T"
+            if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+            else args.asvspoof_name
+        ),
         file_type=args.file_type,
         resample_rate=args.sample_rate,
         seconds=args.seconds,
@@ -87,9 +90,11 @@ def create_data_loaders(
         only_use=only_use,
         save_path=save_path,
         limit=limit_train[1],
-        asvspoof_name=f"{args.asvspoof_name}_D"
-        if args.asvspoof_name is not None and "LA" in args.asvspoof_name
-        else args.asvspoof_name,
+        asvspoof_name=(
+            f"{args.asvspoof_name}_D"
+            if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+            else args.asvspoof_name
+        ),
         file_type=args.file_type,
         resample_rate=args.sample_rate,
         seconds=args.seconds,
@@ -100,12 +105,15 @@ def create_data_loaders(
         only_use=only_use,
         save_path=save_path,
         limit=limit_train[2],
-        asvspoof_name=f"{args.asvspoof_name}_E"
-        if args.asvspoof_name is not None and "LA" in args.asvspoof_name
-        else args.asvspoof_name,
+        asvspoof_name=(
+            f"{args.asvspoof_name}_E"
+            if args.asvspoof_name is not None and "LA" in args.asvspoof_name
+            else args.asvspoof_name
+        ),
         file_type=args.file_type,
         resample_rate=args.sample_rate,
         seconds=args.seconds,
+        get_details=args.get_details,
     )
     if args.ddp:
         train_sampler: DistributedSampler | None = DistributedSampler(
@@ -163,6 +171,7 @@ def create_data_loaders(
                 file_type=args.file_type,
                 resample_rate=args.sample_rate,
                 seconds=args.seconds,
+                get_details=args.get_details,
             )
             cross_set_val = get_costum_dataset(
                 data_path=args.cross_data_path,
@@ -292,6 +301,7 @@ class Trainer:
         self.accuracy_list: list = []
         self.step_total: int = 0
         self.test_results: tuple = ()
+        self.current_true_indices: dict = {}
 
     def init_model(self, model) -> None:
         """Initialize model.
@@ -334,7 +344,8 @@ class Trainer:
         else:
             return
 
-    def calculate_eer(self, y_true: np.ndarray, y_score: np.ndarray) -> float:
+    @staticmethod
+    def calculate_eer(y_true: np.ndarray, y_score: np.ndarray) -> float:
         """Return the equal error rate for a binary classifier output.
 
         Based on:
@@ -366,7 +377,7 @@ class Trainer:
             pbar (bool): Disable/Enable tqdm bar (default: False).
 
         Returns:
-            tuple[float, Any]: The measured accuracy and eer of the model on the data set.
+            tuple[float, float]: The measured accuracy and eer of the model on the data set.
         """
         ok_sum = 0
         total = 0
@@ -378,6 +389,7 @@ class Trainer:
         count_dict = {}
         y_list = []
         out_list = []
+        true_indices = torch.tensor([]).to(self.local_rank)
         for val_batch in bar:
             with torch.no_grad():
                 freq_time_dt, _ = self.transforms(
@@ -394,15 +406,27 @@ class Trainer:
                 bar.set_description(
                     f"[GPU{self.global_rank}] {name} - acc: {ok_sum/total:2.8f}"
                 )
+
+                # fill details if custom detailed dataset is used
+                if "index" in val_batch.keys():
+                    indices = val_batch["index"].to(self.local_rank, non_blocking=True)
+                    true_indices = torch.cat(
+                        (
+                            true_indices,
+                            indices[ok_mask == True],  # noqa: E712
+                        )
+                    ).to(int)
+
                 for lbl, okl in zip(val_batch["label"], ok_mask):
-                    if lbl.item() not in ok_dict:
-                        ok_dict[lbl.item()] = [okl.cpu()]
+                    lbl_item = lbl.item()
+                    if lbl_item not in ok_dict:
+                        ok_dict[lbl_item] = [okl.cpu()]
                     else:
-                        ok_dict[lbl.item()].append(okl.cpu())
-                    if lbl.item() not in count_dict:
-                        count_dict[lbl.item()] = 1
+                        ok_dict[lbl_item].append(okl.cpu())
+                    if lbl_item not in count_dict:
+                        count_dict[lbl_item] = 1
                     else:
-                        count_dict[lbl.item()] += 1
+                        count_dict[lbl_item] += 1
 
                 y_list.append(y)
                 out_list.append(out_max)
@@ -424,6 +448,7 @@ class Trainer:
             total_gathered: list[Any] = [None for _ in range(self.world_size)]
             ok_dict_gathered: list[Any] = [None for _ in range(self.world_size)]
             count_dict_gathered: list[Any] = [None for _ in range(self.world_size)]
+            true_indices_gathered: list[Any] = [None for _ in range(self.world_size)]
 
             torch.distributed.all_gather_into_tensor(ys_gathered, ys)
             torch.distributed.all_gather_into_tensor(outs_gathered, outs)
@@ -431,9 +456,11 @@ class Trainer:
             torch.distributed.all_gather_object(total_gathered, total)
             torch.distributed.all_gather_object(ok_dict_gathered, ok_dict)
             torch.distributed.all_gather_object(count_dict_gathered, count_dict)
+            torch.distributed.all_gather_object(true_indices_gathered, true_indices)
         else:
             ys_gathered = ys
             outs_gathered = outs
+            true_indices_gathered = true_indices
             ok_sum_gathered = [ok_sum]
             total_gathered = [total]
             ok_dict_gathered = [ok_dict]
@@ -444,25 +471,12 @@ class Trainer:
             barrier()  # synchronize all processes
 
         if is_lead(self.args):
-            print(
-                f"{name} - ",
-                [
-                    (
-                        data_loader.dataset.get_label_name(key),
-                        (
-                            sum([sum(ok_dict_g[key]) for ok_dict_g in ok_dict_gathered])  # type: ignore
-                            / sum(
-                                [
-                                    count_dict_g[key]  # type: ignore
-                                    for count_dict_g in count_dict_gathered
-                                ]  # type: ignore
-                            )
-                        ).item(),
-                    )
-                    for key in common_keys
-                ],
-            )  # type: ignore
-            eer = self.calculate_eer(
+            acc_list = Trainer.caculate_acc_dict(
+                data_loader, common_keys, ok_dict_gathered, count_dict_gathered
+            )
+
+            print(f"{name} - ", acc_list)
+            eer = Trainer.calculate_eer(
                 ys_gathered.cpu().numpy(), outs_gathered.cpu().numpy()
             )
             val_acc = sum(ok_sum_gathered) / sum(total_gathered)  # type: ignore
@@ -472,7 +486,92 @@ class Trainer:
         else:
             eer = 0
             val_acc = 0
-        return val_acc, eer  # type: ignore
+
+        if is_lead(self.args) and isinstance(true_indices_gathered, list):
+            true_indices_gathered_cpu = []
+            for part in true_indices_gathered:
+                true_indices_gathered_cpu.append(part.cpu())
+            true_indices_gathered = torch.cat(true_indices_gathered_cpu, dim=0)
+        self.current_true_indices[name] = true_indices_gathered
+
+        return val_acc, eer
+
+    @staticmethod
+    def caculate_acc_dict(
+        data_loader: DataLoader,
+        common_keys: set,
+        ok_dict_gathered: list,
+        count_dict_gathered: list,
+    ) -> list[tuple[str | int, float]]:
+        """Calculate accuracy over each label using the gathered list.
+
+        Args:
+            data_loader (DataLoader): Current dataloader.
+            common_keys (set): Set containing the labels to iterate over.
+            count_dict_gathered (list): A list for each thread holding a dict of count for occurence of all labels.
+            ok_dict_gathered (list): A list for each thread holding a dict of boolean tensors for all correctly
+                                     predicted labels.
+
+        Returns:
+            list[tuple[str | int, float]]: List of acc for each label, e.g. [("ljspeech", 0.74), ("melgan", 0.81)]
+        """
+        return [
+            (
+                data_loader.dataset.get_label_name(key),
+                Trainer.calculate_acc_label(count_dict_gathered, ok_dict_gathered, key),
+            )
+            for key in common_keys
+        ]
+
+    @staticmethod
+    def calculate_acc_label(
+        count_dict_gathered: list, ok_dict_gathered: list, key: int
+    ) -> float:
+        """Calculate accuracy over one label using the gathered list from each thread.
+
+        See tests in tests/test_trainer.py for examples.
+
+        Args:
+            count_dict_gathered (list): A list for each thread holding a dict of count for occurence of all labels.
+            ok_dict_gathered (list): A list for each thread holding a dict of boolean tensors for all correctly
+                                     predicted labels.
+            key (int): Label to look at.
+
+        Returns:
+            float: The accuracy for the given label (key) over all threads.
+
+        Raises:
+            KeyError: If the requested label is not part of both given lists.
+            TypeError: If type of result is not tensor or float.
+        """
+        all_keys = set()
+        for count_dict in count_dict_gathered:
+            all_keys.update(count_dict.keys())
+        for ok_dict in ok_dict_gathered:
+            for key_list in ok_dict.values():
+                all_keys.update(key_list)
+        all_keys = all_keys.intersection(*[set(d.keys()) for d in count_dict_gathered])
+        all_keys = list(  # type: ignore
+            all_keys.intersection(*[set(d.keys()) for d in ok_dict_gathered])
+        )
+
+        if key not in all_keys:
+            raise KeyError(
+                f"Key {key} does not exist in both dictionaries. Only available keys: {all_keys}."
+            )
+
+        acc = sum(
+            [sum(ok_dict_g[key]) for ok_dict_g in ok_dict_gathered]
+        ) / sum(  # type: ignore
+            [count_dict_g[key] for count_dict_g in count_dict_gathered]
+        )  # type: ignore
+
+        if isinstance(acc, torch.Tensor):
+            return acc.item()
+        elif isinstance(acc, float):
+            return acc
+        else:
+            raise TypeError("Result should either be float or tensor.")
 
     def integrated_grad(
         self,
@@ -1230,6 +1329,32 @@ def main() -> None:
         else:
             raise TypeError("Result array must contain lists.")
 
+        known_indices = trainer.current_true_indices.get("test known", [])
+        unknown_indices = trainer.current_true_indices.get("test unknown", [])
+        if args.get_details and (len(known_indices) > 0 or len(unknown_indices) > 0):
+            if isinstance(known_indices, torch.Tensor):
+                true_ind_known = known_indices.detach().cpu().numpy()
+            elif isinstance(known_indices, np.ndarray):
+                true_ind_known = known_indices
+            else:
+                true_ind_known = []
+            if isinstance(unknown_indices, torch.Tensor):
+                true_ind_unknown = unknown_indices.detach().cpu().numpy()
+            elif isinstance(unknown_indices, np.ndarray):
+                true_ind_unknown = unknown_indices
+            else:
+                true_ind_unknown = []
+
+            true_ind_data = {
+                "known": true_ind_known,
+                "unknown": true_ind_unknown,
+                "dataset": trainer.cross_loader_test.dataset.audio_data,
+            }
+            np.save(
+                f"{args.log_dir}/true_ind_{model_file.split('/')[-1]}_{args.seed}.npy",
+                true_ind_data,
+            )
+
     if is_lead(args):
         if args.tensorboard:
             writer.close()
@@ -1267,7 +1392,10 @@ def print_results(
     else:
         wavelets = ["stft"]
 
-    np.save(args.log_dir + f"/{model_file}_{','.join(wavelets)}_results.npy", results)
+    np.save(
+        args.log_dir + f"/{model_file.split('/')[-1]}_{','.join(wavelets)}_results.npy",
+        results,
+    )
     mean = results.mean(0)
     std = results.std(0)
     print("results:", results)
