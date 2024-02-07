@@ -488,7 +488,10 @@ class Trainer:
             val_acc = 0
 
         if is_lead(self.args) and isinstance(true_indices_gathered, list):
-            true_indices_gathered = torch.cat(true_indices_gathered, dim=0)
+            true_indices_gathered_cpu = []
+            for part in true_indices_gathered:
+                true_indices_gathered_cpu.append(part.cpu())
+            true_indices_gathered = torch.cat(true_indices_gathered_cpu, dim=0)
         self.current_true_indices[name] = true_indices_gathered
 
         return val_acc, eer
@@ -1389,7 +1392,7 @@ def print_results(
     else:
         wavelets = ["stft"]
 
-    np.save(args.log_dir + f"/{model_file}_{','.join(wavelets)}_results.npy", results)
+    np.save(args.log_dir + f"/{model_file.split('/')[-1]}_{','.join(wavelets)}_results.npy", results)
     mean = results.mean(0)
     std = results.std(0)
     print("results:", results)
