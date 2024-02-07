@@ -389,13 +389,7 @@ class CustomDatasetDetailed(CustomDataset):
             )
 
         label = torch.tensor(self.audio_data[idx, 3])
-        sample = {
-            self.key: audio,
-            "label": label,
-            "path": self.audio_data[idx, 0],
-            "offset": self.audio_data[idx, 1],
-            "num_frames": self.audio_data[idx, 2],
-        }
+        sample = {self.key: audio, "label": label, "index": idx}
         return sample
 
 

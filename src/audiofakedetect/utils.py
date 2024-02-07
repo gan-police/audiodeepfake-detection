@@ -392,6 +392,7 @@ class DotDict(dict):
     window_size: Any
     only_testing: Any
     only_ig: Any
+    get_details: Any
 
 
 def contrast(waveform: torch.Tensor) -> torch.Tensor:

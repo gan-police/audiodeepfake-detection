@@ -113,6 +113,7 @@ def create_data_loaders(
         file_type=args.file_type,
         resample_rate=args.sample_rate,
         seconds=args.seconds,
+        get_details=args.get_details,
     )
     if args.ddp:
         train_sampler: DistributedSampler | None = DistributedSampler(
@@ -170,6 +171,7 @@ def create_data_loaders(
                 file_type=args.file_type,
                 resample_rate=args.sample_rate,
                 seconds=args.seconds,
+                get_details=args.get_details,
             )
             cross_set_val = get_costum_dataset(
                 data_path=args.cross_data_path,
@@ -299,6 +301,7 @@ class Trainer:
         self.accuracy_list: list = []
         self.step_total: int = 0
         self.test_results: tuple = ()
+        self.current_true_indices: dict = {}
 
     def init_model(self, model) -> None:
         """Initialize model.
@@ -374,7 +377,7 @@ class Trainer:
             pbar (bool): Disable/Enable tqdm bar (default: False).
 
         Returns:
-            tuple[float, Any]: The measured accuracy and eer of the model on the data set.
+            tuple[float, float]: The measured accuracy and eer of the model on the data set.
         """
         ok_sum = 0
         total = 0
@@ -386,6 +389,7 @@ class Trainer:
         count_dict = {}
         y_list = []
         out_list = []
+        true_indices = torch.tensor([]).to(self.local_rank)
         for val_batch in bar:
             with torch.no_grad():
                 freq_time_dt, _ = self.transforms(
@@ -402,6 +406,17 @@ class Trainer:
                 bar.set_description(
                     f"[GPU{self.global_rank}] {name} - acc: {ok_sum/total:2.8f}"
                 )
+
+                # fill details if custom detailed dataset is used
+                if "index" in val_batch.keys():
+                    indices = val_batch["index"].to(self.local_rank, non_blocking=True)
+                    true_indices = torch.cat(
+                        (
+                            true_indices,
+                            indices[ok_mask == True],  # noqa: E712
+                        )
+                    ).to(int)
+
                 for lbl, okl in zip(val_batch["label"], ok_mask):
                     lbl_item = lbl.item()
                     if lbl_item not in ok_dict:
@@ -433,6 +448,7 @@ class Trainer:
             total_gathered: list[Any] = [None for _ in range(self.world_size)]
             ok_dict_gathered: list[Any] = [None for _ in range(self.world_size)]
             count_dict_gathered: list[Any] = [None for _ in range(self.world_size)]
+            true_indices_gathered: list[Any] = [None for _ in range(self.world_size)]
 
             torch.distributed.all_gather_into_tensor(ys_gathered, ys)
             torch.distributed.all_gather_into_tensor(outs_gathered, outs)
@@ -440,9 +456,11 @@ class Trainer:
             torch.distributed.all_gather_object(total_gathered, total)
             torch.distributed.all_gather_object(ok_dict_gathered, ok_dict)
             torch.distributed.all_gather_object(count_dict_gathered, count_dict)
+            torch.distributed.all_gather_object(true_indices_gathered, true_indices)
         else:
             ys_gathered = ys
             outs_gathered = outs
+            true_indices_gathered = true_indices
             ok_sum_gathered = [ok_sum]
             total_gathered = [total]
             ok_dict_gathered = [ok_dict]
@@ -468,6 +486,11 @@ class Trainer:
         else:
             eer = 0
             val_acc = 0
+
+        if isinstance(true_indices_gathered, list):
+            true_indices_gathered = torch.cat(true_indices_gathered, dim=0)
+        self.current_true_indices[name] = true_indices_gathered
+
         return val_acc, eer
 
     @staticmethod
@@ -1302,6 +1325,44 @@ def main() -> None:
             exp_results[args.seed].append(trainer.test_results)
         else:
             raise TypeError("Result array must contain lists.")
+
+        if args.get_details and (
+            len(trainer.current_true_indices.get("test known", [])) > 0
+            or len(trainer.current_true_indices.get("test unknown", [])) > 0
+        ):
+            if isinstance(
+                trainer.current_true_indices.get("test known", []), torch.Tensor
+            ):
+                true_ind_known = (
+                    trainer.current_true_indices["test known"].detach().cpu().numpy()
+                )
+            elif isinstance(
+                trainer.current_true_indices.get("test known", []), np.ndarray
+            ):
+                true_ind_known = trainer.current_true_indices["test known"]
+            else:
+                true_ind_known = []
+            if isinstance(
+                trainer.current_true_indices.get("test unknown", []), torch.Tensor
+            ):
+                true_ind_unknown = (
+                    trainer.current_true_indices["test unknown"].detach().cpu().numpy()
+                )
+            elif isinstance(
+                trainer.current_true_indices.get("test unknown", []), np.ndarray
+            ):
+                true_ind_unknown = trainer.current_true_indices["test unknown"]
+            else:
+                true_ind_unknown = []
+
+            true_ind_data = {
+                "known": true_ind_known,
+                "unknown": true_ind_unknown,
+                "dataset": trainer.cross_loader_test.dataset.audio_data,
+            }
+            np.save(
+                f"{args.log_dir}/true_ind_{model_file}_{args.seed}.npy", true_ind_data
+            )
 
     if is_lead(args):
         if args.tensorboard:
