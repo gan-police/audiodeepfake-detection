@@ -2,7 +2,7 @@
 
 This is the supplementary source code for our paper "[Towards generalizing deep-audio fake detection networks](https://arxiv.org/abs/2305.13033)".
 
-![fingerprints](./fingerprints/fingerprints.png)
+![fingerprints](./audio-samples/fingerprints.png)
 
 The figure above shows our studies of stable frequency domain patterns created by the different GAN architectures.
 The figure shows mean absolute level 14 Haar-Wavelet packet transform coefficients for LJSpeech and MelGAN audio files.
@@ -40,7 +40,7 @@ We used the inofficial implementation of Avocodo from [commit 2999557](https://g
 
 ## Fingerprint audios
 We created an audible version of the mean spectra of the GAN fingerprints, by transforming them back into the time domain.
-The folder `fingerprints/audios/` contains sound files with amplified generator artifacts. The files are exciting but not 
+The folder `audio-samples/generator_artifacts/` contains sound files with amplified generator artifacts. The files are exciting but not 
 aesthetically pleasing. We recommend listening at low volumes. Comparing `A_ljspeech_real.wav` with one of the GAN spectra
 reveals clearly audible distinctions.
 
@@ -159,10 +159,10 @@ It is possible to extract misclassified audio fakes by comparing the correct cla
 To compare to experiment results (e.g. of a model with dilation and one without), use the `scripts/analyze_model_diffs.py` script to extract 10 sample audios which are correctly classified by the first given model and incorrectly classified by the second given model. You might need to adjust the corresponding file paths in the script to point to the result from the testing process and also specify a save path for the audios.
 
 In the following we provide some examplary audios that were correctly classified as deep fake by our DCNN and misclassified (as real) by the same model without dilation:
-- [B_melgan_LJ016-0433_gen_4.wav](fingerprints/classification_examples/B_melgan_LJ016-0433_gen_4.wav)
-- [D_mbmelgan_LJ014-0293_gen_2.wav](fingerprints/classification_examples/D_mbmelgan_LJ014-0293_gen_2.wav)
-- [H_lmelgan_LJ002-0228_gen_10.wav](fingerprints/classification_examples/H_lmelgan_LJ002-0228_gen_10.wav)
-- [K_lbigvgan_LJ021-0060_generated_6.wav](fingerprints/classification_examples/K_lbigvgan_LJ021-0060_generated_6.wav)
+- [B_melgan_LJ016-0433_gen_4.wav](audio-samples/classification_examples/B_melgan_LJ016-0433_gen_4.wav)
+- [D_mbmelgan_LJ014-0293_gen_2.wav](audio-samples/classification_examples/D_mbmelgan_LJ014-0293_gen_2.wav)
+- [H_lmelgan_LJ002-0228_gen_10.wav](audio-samples/classification_examples/H_lmelgan_LJ002-0228_gen_10.wav)
+- [K_lbigvgan_LJ021-0060_generated_6.wav](audio-samples/classification_examples/K_lbigvgan_LJ021-0060_generated_6.wav)
 
 ## Building the documentation
 To build the documentation move into `docs/` and install the requirements with 
