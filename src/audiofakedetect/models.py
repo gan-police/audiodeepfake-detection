@@ -8,7 +8,11 @@ from typing import Any, Union
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.cuda.amp import autocast
 from torchsummary import summary
+
+import timm
+from timm.models.layers import to_2tuple, trunc_normal_
 
 from .utils import DotDict
 
@@ -453,6 +457,254 @@ class DCNNxDilation(torch.nn.Module):
     def get_name(self) -> str:
         """Get name of model."""
         return "DCNNxDilation"
+
+
+class PatchEmbed(nn.Module):
+    """Patch embedding to be used in ASTModel.
+
+    Fork from official repo for Audio Spectrogram Transformer (AST) at
+    https://github.com/YuanGongND/ast/blob/master/src/models/ast_models.py.
+    """
+
+    def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768):
+        """Init patch embedding."""
+        super().__init__()
+
+        img_size = to_2tuple(img_size)
+        patch_size = to_2tuple(patch_size)
+        num_patches = (img_size[1] // patch_size[1]) * (img_size[0] // patch_size[0])
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.num_patches = num_patches
+
+        self.proj = nn.Conv2d(
+            in_chans, embed_dim, kernel_size=patch_size, stride=patch_size
+        )
+
+    def forward(self, x):
+        """Forward patch."""
+        x = self.proj(x).flatten(2).transpose(1, 2)
+        return x
+
+
+class ASTModel(nn.Module):
+    """AST model.
+
+    Fork from official repo for Audio Spectrogram Transformer (AST) at
+    https://github.com/YuanGongND/ast/blob/master/src/models/ast_models.py.
+    """
+
+    def __init__(
+        self,
+        args: DotDict,
+        label_dim: int = 2,
+        fstride: int = 10,
+        tstride: int = 10,
+        input_fdim: int = 256,
+        input_tdim: int = 101,
+        imagenet_pretrain: bool = True,
+        model_size: str = "base384",
+        verbose: bool = True,
+    ):
+        """Initialize AST model.
+
+        Args:
+            args (DotDict): Experiment config.
+            label_dim (int): The label dimension, i.e., the number of total classes. Defaults to 2.
+            fstride (int): The stride of patch spliting on the frequency dimension,
+                           for 16*16 patchs, fstride=16 means no overlap, fstride=10 means overlap
+                           of 6. Defaults to 10.
+            tstride (int): The stride of patch spliting on the time dimension, for 16*16 patchs,
+                           tstride=16 means no overlap, tstride=10 means overlap of 6. Defaults to 10.
+            input_fdim (int): The number of frequency bins of the input spectrogram. Defaults to 256.
+            input_tdim (int): The number of time frames of the input spectrogram. Defaults to 101.
+            imagenet_pretrain (bool): If use ImageNet pretrained model. Defaults to True.
+            model_size (str): The model size of AST, should be in [tiny224, small224, base224, base384],
+                              base224 and base 384 are same model, but are trained differently during
+                              ImageNet pretraining. Defaults to 'base384'.
+            verbose (bool): If verbose output should be shown in detail. Defaults to True.
+
+        Raises:
+            Exception: If timm version is not 0.4.5.
+        """
+        super(ASTModel, self).__init__()
+        assert (
+            timm.__version__ == "0.4.5"
+        ), "Please use timm == 0.4.5, the code might not be compatible with newer versions."
+
+        input_tdim = args.flattend_size
+
+        if verbose:
+            print("---------------AST Model Summary---------------")
+            print("ImageNet pretraining: {:s}".format(str(imagenet_pretrain)))
+
+        # override timm input shape restriction
+        timm.models.vision_transformer.PatchEmbed = PatchEmbed
+
+        # if AudioSet pretraining is not used (but ImageNet pretraining may still apply)
+        if imagenet_pretrain:
+            if model_size == "tiny224":
+                self.v = timm.create_model(
+                    "vit_deit_tiny_distilled_patch16_224", pretrained=imagenet_pretrain
+                )
+            elif model_size == "small224":
+                self.v = timm.create_model(
+                    "vit_deit_small_distilled_patch16_224", pretrained=imagenet_pretrain
+                )
+            elif model_size == "base224":
+                self.v = timm.create_model(
+                    "vit_deit_base_distilled_patch16_224", pretrained=imagenet_pretrain
+                )
+            elif model_size == "base384":
+                self.v = timm.create_model(
+                    "vit_deit_base_distilled_patch16_384", pretrained=imagenet_pretrain
+                )
+            else:
+                raise Exception(
+                    "Model size must be one of tiny224, small224, base224, base384."
+                )
+            self.original_num_patches = self.v.patch_embed.num_patches
+            self.oringal_hw = int(self.original_num_patches**0.5)
+            self.original_embedding_dim = self.v.pos_embed.shape[2]
+            self.mlp_head = nn.Sequential(
+                nn.LayerNorm(self.original_embedding_dim),
+                nn.Linear(self.original_embedding_dim, label_dim),
+            )
+
+            # automatcially get the intermediate shape
+            f_dim, t_dim = self.get_shape(fstride, tstride, input_fdim, input_tdim)
+            num_patches = f_dim * t_dim
+            self.v.patch_embed.num_patches = num_patches
+            if verbose:
+                print(
+                    "frequncey stride={:d}, time stride={:d}".format(fstride, tstride)
+                )
+                print("number of patches={:d}".format(num_patches))
+
+            # the linear projection layer
+            new_proj = torch.nn.Conv2d(
+                1,
+                self.original_embedding_dim,
+                kernel_size=(16, 16),
+                stride=(fstride, tstride),
+            )
+            if imagenet_pretrain:
+                new_proj.weight = torch.nn.Parameter(
+                    torch.sum(self.v.patch_embed.proj.weight, dim=1).unsqueeze(1)
+                )
+                new_proj.bias = self.v.patch_embed.proj.bias
+            self.v.patch_embed.proj = new_proj
+
+            # the positional embedding
+            if imagenet_pretrain:
+                # get the positional embedding from deit model, skip the first two tokens
+                # (cls token and distillation token), reshape it to original 2D shape (24*24).
+                new_pos_embed = (
+                    self.v.pos_embed[:, 2:, :]
+                    .detach()
+                    .reshape(1, self.original_num_patches, self.original_embedding_dim)
+                    .transpose(1, 2)
+                    .reshape(
+                        1, self.original_embedding_dim, self.oringal_hw, self.oringal_hw
+                    )
+                )
+                # cut (from middle) or interpolate the second dimension of the positional embedding
+                if t_dim <= self.oringal_hw:
+                    new_pos_embed = new_pos_embed[
+                        :,
+                        :,
+                        :,
+                        int(self.oringal_hw / 2)
+                        - int(t_dim / 2) : int(self.oringal_hw / 2)
+                        - int(t_dim / 2)
+                        + t_dim,
+                    ]
+                else:
+                    new_pos_embed = torch.nn.functional.interpolate(
+                        new_pos_embed, size=(self.oringal_hw, t_dim), mode="bilinear"
+                    )
+                # cut (from middle) or interpolate the first dimension of the positional embedding
+                if f_dim <= self.oringal_hw:
+                    new_pos_embed = new_pos_embed[
+                        :,
+                        :,
+                        int(self.oringal_hw / 2)
+                        - int(f_dim / 2) : int(self.oringal_hw / 2)
+                        - int(f_dim / 2)
+                        + f_dim,
+                        :,
+                    ]
+                else:
+                    new_pos_embed = torch.nn.functional.interpolate(
+                        new_pos_embed, size=(f_dim, t_dim), mode="bilinear"
+                    )
+                # flatten the positional embedding
+                new_pos_embed = new_pos_embed.reshape(
+                    1, self.original_embedding_dim, num_patches
+                ).transpose(1, 2)
+                # concatenate the above positional embedding with the cls token and distillation token
+                # of the deit model.
+                self.v.pos_embed = nn.Parameter(
+                    torch.cat(
+                        [self.v.pos_embed[:, :2, :].detach(), new_pos_embed], dim=1
+                    )
+                )
+            else:
+                # if not use imagenet pretrained model, just randomly initialize a learnable
+                # positional embedding
+                new_pos_embed = nn.Parameter(
+                    torch.zeros(
+                        1,
+                        self.v.patch_embed.num_patches + 2,
+                        self.original_embedding_dim,
+                    )
+                )
+                self.v.pos_embed = new_pos_embed
+                trunc_normal_(self.v.pos_embed, std=0.02)
+
+    def get_shape(self, fstride, tstride, input_fdim=256, input_tdim=101):
+        """Get shape of f_dim and t_dim."""
+        test_input = torch.randn(1, 1, input_fdim, input_tdim)
+        test_proj = nn.Conv2d(
+            1,
+            self.original_embedding_dim,
+            kernel_size=(16, 16),
+            stride=(fstride, tstride),
+        )
+        test_out = test_proj(test_input)
+        f_dim = test_out.shape[2]
+        t_dim = test_out.shape[3]
+        return f_dim, t_dim
+
+    @autocast()
+    def forward(self, x):
+        """Forward model input.
+
+        Args:
+            x (torch.Tensor): The input spectrogram, expected shape(batch_size, channels,
+                              frequency_bins, time_frame_num), e.g. (128, 1, 256, 101).
+
+        Returns:
+            torch.Tensor: Prediction.
+        """
+        b = x.shape[0]
+        x = self.v.patch_embed(x)
+        cls_tokens = self.v.cls_token.expand(b, -1, -1)
+        dist_token = self.v.dist_token.expand(b, -1, -1)
+        x = torch.cat((cls_tokens, dist_token, x), dim=1)
+        x = x + self.v.pos_embed
+        x = self.v.pos_drop(x)
+        for blk in self.v.blocks:
+            x = blk(x)
+        x = self.v.norm(x)
+        x = (x[:, 0] + x[:, 1]) / 2
+
+        x = self.mlp_head(x)
+        return x
+
+    def get_name(self) -> str:
+        """Get name of model."""
+        return "AST"
 
 
 def get_model(

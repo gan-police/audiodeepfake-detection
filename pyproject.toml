@@ -64,6 +64,7 @@ dependencies = [
     "optuna",
     "pandas",
     "tox",
+    "timm==0.4.5"
 ]
 
 [project.urls]

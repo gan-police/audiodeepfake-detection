@@ -15,3 +15,4 @@ captum
 tqdm
 optuna
 pandas
+timm==0.4.5
