@@ -1356,7 +1356,11 @@ def main() -> None:
             )
 
     if is_lead(args):
-        if args.tensorboard:
+        if (
+            args.tensorboard
+            and writer is not None
+            and isinstance(writer, SummaryWriter)
+        ):
             writer.close()
         print_results(args, exp_results, griderator, model_file)
 
