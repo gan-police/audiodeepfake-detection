@@ -1,6 +1,6 @@
 # Towards generalizing deep-audio-fake detection networks
 
-This is the supplementary source code for our paper "[Towards generalizing deep-audio fake detection networks](https://arxiv.org/abs/2305.13033)".
+This is the supplementary source code for our paper "[Towards generalizing deep-audio fake detection networks](https://openreview.net/pdf?id=RGewtLtvHz)".
 
 ![fingerprints](./audio-samples/fingerprints.png)
 
