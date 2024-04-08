@@ -15,7 +15,7 @@ detectors that generalize well to unseen generators and examine the results in o
 
 ## Assets
 
-For continuous wavelet computations, we use the:
+For wavelet computations, we use the:
 - [PyTorch-Wavelet-Toolbox: ptwt](https://github.com/v0lta/PyTorch-Wavelet-Toolbox)
 
 We compare our approach to the DCT-LFCC/MFCC-method from:
