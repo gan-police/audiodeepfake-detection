@@ -195,12 +195,14 @@ The research leading to the development of this dataset was supported by the Bun
 ### Citation
 If you use this work in a scientific context, please cite the following:
 ```
-@article{gasenzerwolter2023generalizingadf,
-      title={Towards generalizing deep-audio fake detection networks}, 
-      author={Konstantin Gasenzer and Moritz Wolter},
-      year={2023},
-      eprint={2305.13033},
-      archivePrefix={arXiv},
-      primaryClass={cs.SD}
+@article{
+gasenzer2024towards,
+title={Towards generalizing deep-audio fake detection networks},
+author={Konstantin Gasenzer and Moritz Wolter},
+journal={Transactions on Machine Learning Research},
+issn={2835-8856},
+year={2024},
+url={https://openreview.net/forum?id=RGewtLtvHz},
+note={}
 }
 ```
